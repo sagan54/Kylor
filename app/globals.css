@@ -1,3 +1,15 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: #050816; /* your dark background */
+  overflow-x: hidden;
+}
 .kylor-scroll {
   scrollbar-width: thin;
   scrollbar-color: rgba(124, 58, 237, 0.75) transparent;
