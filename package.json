@@ -1,0 +1,18 @@
+{
+  "name": "kylor",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.98.0",
+    "framer-motion": "^12.35.1",
+    "lucide-react": "^0.577.0",
+    "next": "latest",
+    "react": "latest",
+    "react-dom": "latest"
+  }
+}
