@@ -1,39 +1,7 @@
 "use client";
 
-export default function Home() {
-  return (
-
-    <main className="relative">
-
-      {/* AUTH BUTTONS */}
-      <div className="absolute top-6 right-6 flex gap-4">
-
-        <a
-          href="/login"
-          className="px-4 py-2 rounded-lg text-white/80 hover:text-white"
-        >
-          Login
-        </a>
-
-        <a
-          href="/signup"
-          className="px-5 py-2 rounded-lg bg-violet-600 hover:bg-violet-500 text-white"
-        >
-          Get Started
-        </a>
-
-      </div>
-
-      {/* YOUR EXISTING PAGE CONTENT */}
-      {/* Everything that was already in the homepage stays here */}
-
-    </main>
-
-  );
-}
-
-
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import {
   Sparkles,
@@ -47,11 +15,33 @@ import {
   Settings,
   ChevronRight,
 } from "lucide-react";
+import { supabase } from "../lib/supabase";
 
 export default function Home() {
+  const [session, setSession] = useState(null);
+
+  useEffect(() => {
+    async function loadSession() {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      setSession(session);
+    }
+
+    loadSession();
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
   const sidebarItems = [
     { label: "Home", icon: Compass, active: true, href: "/" },
-{ label: "Explore", icon: Compass, href: "/explore" },
+    { label: "Explore", icon: Compass, href: "/explore" },
     { label: "Story", icon: Clapperboard, href: "/story" },
     { label: "Image", icon: ImageIcon, href: "#" },
     { label: "Video", icon: Video, href: "#" },
@@ -96,12 +86,12 @@ export default function Home() {
     {
       title: "Story Engine",
       subtitle: "Live now",
-      href: "/story",
+      href: session ? "/story" : "/login",
     },
     {
       title: "Project Workspace",
       subtitle: "Continue building",
-      href: "/story",
+      href: session ? "/story" : "/login",
     },
     {
       title: "Creative Modules",
@@ -109,6 +99,11 @@ export default function Home() {
       href: "#",
     },
   ];
+
+  async function handleLogout() {
+    await supabase.auth.signOut();
+    setSession(null);
+  }
 
   return (
     <main
@@ -252,6 +247,86 @@ export default function Home() {
               zIndex: 1,
             }}
           >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "flex-end",
+                gap: "12px",
+                marginBottom: "18px",
+                flexWrap: "wrap",
+              }}
+            >
+              {session ? (
+                <>
+                  <Link
+                    href="/story"
+                    style={{
+                      textDecoration: "none",
+                      color: "rgba(255,255,255,0.85)",
+                      padding: "10px 16px",
+                      borderRadius: "12px",
+                      border: "1px solid rgba(255,255,255,0.10)",
+                      background: "rgba(255,255,255,0.04)",
+                      fontSize: "14px",
+                      fontWeight: 500,
+                    }}
+                  >
+                    Dashboard
+                  </Link>
+
+                  <button
+                    onClick={handleLogout}
+                    style={{
+                      padding: "10px 16px",
+                      borderRadius: "12px",
+                      border: "1px solid rgba(255,255,255,0.10)",
+                      background: "rgba(255,255,255,0.04)",
+                      color: "white",
+                      fontSize: "14px",
+                      fontWeight: 500,
+                      cursor: "pointer",
+                    }}
+                  >
+                    Logout
+                  </button>
+                </>
+              ) : (
+                <>
+                  <Link
+                    href="/login"
+                    style={{
+                      textDecoration: "none",
+                      color: "rgba(255,255,255,0.80)",
+                      padding: "10px 16px",
+                      borderRadius: "12px",
+                      border: "1px solid rgba(255,255,255,0.10)",
+                      background: "rgba(255,255,255,0.04)",
+                      fontSize: "14px",
+                      fontWeight: 500,
+                    }}
+                  >
+                    Login
+                  </Link>
+
+                  <Link
+                    href="/signup"
+                    style={{
+                      textDecoration: "none",
+                      color: "white",
+                      padding: "10px 16px",
+                      borderRadius: "12px",
+                      background: "linear-gradient(135deg, #4f46e5, #7c3aed)",
+                      boxShadow: "0 10px 26px rgba(124,58,237,0.24)",
+                      fontSize: "14px",
+                      fontWeight: 600,
+                    }}
+                  >
+                    Get Started
+                  </Link>
+                </>
+              )}
+            </div>
+
             <motion.div
               initial={{ opacity: 0, y: 26 }}
               animate={{ opacity: 1, y: 0 }}
@@ -426,9 +501,9 @@ export default function Home() {
                     zIndex: 1,
                     padding: "28px 28px 34px 28px",
                     display: "flex",
-flexDirection: "column",
-justifyContent: "flex-start",
-height: "100%",
+                    flexDirection: "column",
+                    justifyContent: "flex-start",
+                    height: "100%",
                   }}
                 >
                   <div>
@@ -493,7 +568,7 @@ height: "100%",
                     }}
                   >
                     <Link
-                      href="/story"
+                      href={session ? "/story" : "/login"}
                       style={{
                         textDecoration: "none",
                         color: "white",
@@ -511,7 +586,7 @@ height: "100%",
                           boxShadow: "0 10px 26px rgba(124,58,237,0.24)",
                         }}
                       >
-                        Open Story Engine
+                        {session ? "Open Story Engine" : "Login to Start"}
                       </motion.div>
                     </Link>
 
@@ -627,7 +702,7 @@ height: "100%",
                 gap: "18px",
               }}
             >
-              {tools.map((tool, index) => {
+              {tools.map((tool) => {
                 const Icon = tool.icon;
 
                 return (
