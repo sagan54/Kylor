@@ -82,9 +82,3 @@ export default function ExplorePage() {
     </main>
   );
 }
-<button
-onClick={generateBreakdown}
-className="mt-6 bg-purple-600 text-white px-6 py-3 rounded-xl hover:bg-purple-700"
->
-Break Into Scenes
-</button>
