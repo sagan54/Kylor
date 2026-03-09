@@ -345,17 +345,9 @@ ${structuredResult.sceneBreakdown?.join("\n") || ""}`;
     setActiveView("projects");
   }
 
-  function handleLoadProject(project) {
-    setTitle(project.title || "");
-    setGenre(project.genre || "Sci-Fi");
-    setTone(project.tone || "Cinematic");
-    setIdea(project.idea || "");
-    setStructuredResult(project.structured_result || null);
-    setResult(project.result || "");
-    setCopied(false);
-    setActiveView("output");
-  }
-
+function handleLoadProject(project) {
+  router.push(`/project/${project.id}`);
+}
   async function handleDeleteProject(id) {
     const {
       data: { user: currentUser },
