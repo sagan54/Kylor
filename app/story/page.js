@@ -20,7 +20,24 @@ import {
   ChevronDown,
 } from "lucide-react";
 import { supabase } from "../../lib/supabase";
+async function generateBreakdown() {
 
+  if (!result) return;
+
+  const res = await fetch("/api/breakdown", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      script: result
+    })
+  });
+
+  const data = await res.json();
+
+  setStructuredResult(data.breakdown);
+}
 function CustomSelect({ value, onChange, options, placeholder = "Select" }) {
   const [open, setOpen] = useState(false);
   const wrapperRef = useRef(null);
@@ -157,8 +174,8 @@ export default function StoryPage() {
   const [tone, setTone] = useState("Cinematic");
   const [idea, setIdea] = useState("");
   const [result, setResult] = useState("");
-  const [structuredResult, setStructuredResult] = useState(null);
-  const [loading, setLoading] = useState(false);
+const [structuredResult, setStructuredResult] = useState(null);
+const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
   const [projects, setProjects] = useState([]);
   const [saving, setSaving] = useState(false);
@@ -989,6 +1006,16 @@ ${structuredResult.sceneBreakdown?.join("\n") || ""}`;
                       >
                         New Project
                       </button>
+                      {result && (
+  <div className="mt-6">
+    <button
+      onClick={generateBreakdown}
+      className="bg-purple-600 px-6 py-3 rounded-xl text-white"
+    >
+      Break Into Scenes
+    </button>
+  </div>
+)}
                     </div>
                   </div>
 
