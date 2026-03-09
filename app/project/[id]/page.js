@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useEffect, useState } from "react";
+import { use, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
@@ -17,8 +17,131 @@ import {
   Folder,
   Grid3X3,
   List,
+  ChevronDown,
 } from "lucide-react";
 import { supabase } from "../../../lib/supabase";
+
+function CustomSelect({ value, onChange, options, placeholder = "Select" }) {
+  const [open, setOpen] = useState(false);
+  const wrapperRef = useRef(null);
+
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (wrapperRef.current && !wrapperRef.current.contains(event.target)) {
+        setOpen(false);
+      }
+    }
+
+    function handleEscape(event) {
+      if (event.key === "Escape") {
+        setOpen(false);
+      }
+    }
+
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleEscape);
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, []);
+
+  return (
+    <div ref={wrapperRef} style={{ position: "relative", width: "100%" }}>
+      <button
+        type="button"
+        onClick={() => setOpen((prev) => !prev)}
+        style={{
+          width: "100%",
+          height: "56px",
+          padding: "10px 14px",
+          fontSize: "15px",
+          borderRadius: "12px",
+          border: "1px solid rgba(255,255,255,0.08)",
+          background: "rgba(255,255,255,0.03)",
+          color: "white",
+          outline: "none",
+          boxSizing: "border-box",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          cursor: "pointer",
+          transition: "border-color 0.2s ease, background 0.2s ease",
+        }}
+      >
+        <span>{value || placeholder}</span>
+        <ChevronDown
+          size={16}
+          style={{
+            color: "rgba(255,255,255,0.72)",
+            transform: open ? "rotate(180deg)" : "rotate(0deg)",
+            transition: "transform 0.2s ease",
+            flexShrink: 0,
+          }}
+        />
+      </button>
+
+      {open && (
+        <div
+          style={{
+            position: "absolute",
+            top: "calc(100% + 8px)",
+            left: 0,
+            width: "100%",
+            background: "rgba(14,18,28,0.98)",
+            border: "1px solid rgba(255,255,255,0.08)",
+            borderRadius: "14px",
+            boxShadow: "0 18px 40px rgba(0,0,0,0.35)",
+            overflow: "hidden",
+            zIndex: 1000,
+            backdropFilter: "blur(14px)",
+          }}
+        >
+          {options.map((option, index) => (
+            <button
+              key={option}
+              type="button"
+              onClick={() => {
+                onChange(option);
+                setOpen(false);
+              }}
+              style={{
+                width: "100%",
+                padding: "12px 14px",
+                background:
+                  value === option
+                    ? "linear-gradient(135deg, rgba(79,70,229,0.22), rgba(124,58,237,0.18))"
+                    : "transparent",
+                color: "white",
+                border: "none",
+                borderBottom:
+                  index !== options.length - 1
+                    ? "1px solid rgba(255,255,255,0.04)"
+                    : "none",
+                textAlign: "left",
+                cursor: "pointer",
+                fontSize: "15px",
+              }}
+              onMouseEnter={(e) => {
+                if (value !== option) {
+                  e.currentTarget.style.background = "rgba(255,255,255,0.05)";
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (value !== option) {
+                  e.currentTarget.style.background = "transparent";
+                }
+              }}
+            >
+              {option}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function ProjectPage({ params }) {
   const resolvedParams = use(params);
@@ -289,14 +412,132 @@ export default function ProjectPage({ params }) {
       <main
         style={{
           minHeight: "100vh",
-          background: "#05070c",
+          background:
+            "radial-gradient(circle at top left, rgba(79,70,229,0.14), transparent 22%), radial-gradient(circle at top right, rgba(124,58,237,0.14), transparent 24%), #05070c",
           color: "white",
-          display: "grid",
-          placeItems: "center",
           fontFamily: "Inter, sans-serif",
         }}
       >
-        Loading project...
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "92px 1fr",
+            minHeight: "100vh",
+          }}
+        >
+          <aside
+            style={{
+              borderRight: "1px solid rgba(255,255,255,0.08)",
+              background: "#0a0d14",
+              padding: "20px 14px",
+              position: "sticky",
+              top: 0,
+              height: "100vh",
+            }}
+          >
+            <div
+              style={{
+                width: "50px",
+                height: "50px",
+                borderRadius: "18px",
+                margin: "0 auto 24px",
+                display: "grid",
+                placeItems: "center",
+                background:
+                  "linear-gradient(135deg, rgba(79,70,229,0.28), rgba(124,58,237,0.18))",
+                border: "1px solid rgba(255,255,255,0.08)",
+              }}
+            >
+              <Sparkles size={22} />
+            </div>
+          </aside>
+
+          <section
+            style={{
+              display: "grid",
+              placeItems: "center",
+              padding: "24px",
+            }}
+          >
+            <div
+              style={{
+                width: "100%",
+                maxWidth: "760px",
+                border: "1px solid rgba(255,255,255,0.08)",
+                borderRadius: "24px",
+                background:
+                  "linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.02))",
+                padding: "40px 32px",
+                textAlign: "center",
+                boxShadow: "0 20px 60px rgba(0,0,0,0.35)",
+              }}
+            >
+              <div
+                style={{
+                  width: "58px",
+                  height: "58px",
+                  margin: "0 auto 18px",
+                  borderRadius: "18px",
+                  display: "grid",
+                  placeItems: "center",
+                  background:
+                    "linear-gradient(135deg, rgba(79,70,229,0.28), rgba(124,58,237,0.18))",
+                  border: "1px solid rgba(255,255,255,0.08)",
+                  boxShadow: "0 14px 28px rgba(124,58,237,0.22)",
+                }}
+              >
+                <Sparkles size={24} />
+              </div>
+
+              <h2
+                style={{
+                  margin: "0 0 10px 0",
+                  fontSize: "28px",
+                  lineHeight: 1.1,
+                }}
+              >
+                Opening Project Workspace
+              </h2>
+
+              <p
+                style={{
+                  margin: "0 0 18px 0",
+                  color: "rgba(255,255,255,0.64)",
+                  fontSize: "15px",
+                }}
+              >
+                Loading your saved story and workspace modules...
+              </p>
+
+              <div
+                style={{
+                  width: "100%",
+                  height: "10px",
+                  borderRadius: "999px",
+                  background: "rgba(255,255,255,0.05)",
+                  overflow: "hidden",
+                }}
+              >
+                <motion.div
+                  initial={{ x: "-35%" }}
+                  animate={{ x: "115%" }}
+                  transition={{
+                    repeat: Infinity,
+                    duration: 1.3,
+                    ease: "easeInOut",
+                  }}
+                  style={{
+                    width: "35%",
+                    height: "100%",
+                    borderRadius: "999px",
+                    background: "linear-gradient(135deg, #4f46e5, #7c3aed)",
+                    boxShadow: "0 0 18px rgba(124,58,237,0.38)",
+                  }}
+                />
+              </div>
+            </div>
+          </section>
+        </div>
       </main>
     );
   }
@@ -592,11 +833,19 @@ export default function ProjectPage({ params }) {
                     onChange={(e) => setEditTitle(e.target.value)}
                     placeholder="Project title"
                     style={{
-                      ...inputStyle,
+                      width: "100%",
+                      border: "1px solid rgba(255,255,255,0.08)",
+                      background: "rgba(255,255,255,0.03)",
+                      color: "white",
+                      borderRadius: "18px",
+                      padding: "12px 16px",
+                      outline: "none",
+                      boxSizing: "border-box",
+                      fontFamily: "Inter, sans-serif",
                       fontSize: "56px",
+                      fontWeight: 700,
                       lineHeight: 1,
                       letterSpacing: "-1.4px",
-                      padding: "10px 14px",
                     }}
                   />
 
@@ -608,32 +857,32 @@ export default function ProjectPage({ params }) {
                       maxWidth: "540px",
                     }}
                   >
-                    <select
+                    <CustomSelect
                       value={editGenre}
-                      onChange={(e) => setEditGenre(e.target.value)}
-                      style={inputStyle}
-                    >
-                      <option>Sci-Fi</option>
-                      <option>Thriller</option>
-                      <option>Drama</option>
-                      <option>Horror</option>
-                      <option>Action</option>
-                      <option>Mystery</option>
-                      <option>Romance</option>
-                    </select>
+                      onChange={setEditGenre}
+                      options={[
+                        "Sci-Fi",
+                        "Thriller",
+                        "Drama",
+                        "Horror",
+                        "Action",
+                        "Mystery",
+                        "Romance",
+                      ]}
+                    />
 
-                    <select
+                    <CustomSelect
                       value={editTone}
-                      onChange={(e) => setEditTone(e.target.value)}
-                      style={inputStyle}
-                    >
-                      <option>Cinematic</option>
-                      <option>Dark</option>
-                      <option>Emotional</option>
-                      <option>Gritty</option>
-                      <option>Epic</option>
-                      <option>Suspenseful</option>
-                    </select>
+                      onChange={setEditTone}
+                      options={[
+                        "Cinematic",
+                        "Dark",
+                        "Emotional",
+                        "Gritty",
+                        "Epic",
+                        "Suspenseful",
+                      ]}
+                    />
                   </div>
 
                   <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
