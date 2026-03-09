@@ -25,6 +25,7 @@ export default function ProjectPage({ params }) {
   const projectId = resolvedParams.id;
   const router = useRouter();
 
+  const [user, setUser] = useState(null);
   const [project, setProject] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("Overview");
@@ -34,12 +35,32 @@ export default function ProjectPage({ params }) {
   const [sceneLoadingIndex, setSceneLoadingIndex] = useState(null);
   const [assetView, setAssetView] = useState("grid");
 
+  const [editMode, setEditMode] = useState(false);
+  const [savingEdits, setSavingEdits] = useState(false);
+  const [editTitle, setEditTitle] = useState("");
+  const [editGenre, setEditGenre] = useState("Sci-Fi");
+  const [editTone, setEditTone] = useState("Cinematic");
+  const [editIdea, setEditIdea] = useState("");
+
   useEffect(() => {
     async function fetchProject() {
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError || !user) {
+        router.push("/login");
+        return;
+      }
+
+      setUser(user);
+
       const { data, error } = await supabase
         .from("projects")
         .select("*")
         .eq("id", projectId)
+        .eq("user_id", user.id)
         .single();
 
       if (error) {
@@ -50,13 +71,17 @@ export default function ProjectPage({ params }) {
       }
 
       setProject(data);
+      setEditTitle(data.title || "");
+      setEditGenre(data.genre || "Sci-Fi");
+      setEditTone(data.tone || "Cinematic");
+      setEditIdea(data.idea || "");
       setLoading(false);
     }
 
     if (projectId) {
       fetchProject();
     }
-  }, [projectId]);
+  }, [projectId, router]);
 
   async function handleGenerateCharacterBios() {
     const characters = project?.structured_result?.characters || [];
@@ -140,6 +165,72 @@ export default function ProjectPage({ params }) {
     setSceneLoadingIndex(null);
   }
 
+  function handleStartEdit() {
+    if (!project) return;
+    setEditTitle(project.title || "");
+    setEditGenre(project.genre || "Sci-Fi");
+    setEditTone(project.tone || "Cinematic");
+    setEditIdea(project.idea || "");
+    setEditMode(true);
+  }
+
+  function handleCancelEdit() {
+    if (!project) return;
+    setEditTitle(project.title || "");
+    setEditGenre(project.genre || "Sci-Fi");
+    setEditTone(project.tone || "Cinematic");
+    setEditIdea(project.idea || "");
+    setEditMode(false);
+  }
+
+  async function handleSaveEdits() {
+    if (!user || !project) return;
+
+    setSavingEdits(true);
+
+    const updatedStructuredResult = project.structured_result
+      ? {
+          ...project.structured_result,
+          title: editTitle || project.structured_result.title,
+          genre: editGenre,
+          tone: editTone,
+        }
+      : project.structured_result;
+
+    const { error } = await supabase
+      .from("projects")
+      .update({
+        title: editTitle || "Untitled Project",
+        genre: editGenre,
+        tone: editTone,
+        idea: editIdea,
+        structured_result: updatedStructuredResult,
+      })
+      .eq("id", projectId)
+      .eq("user_id", user.id);
+
+    setSavingEdits(false);
+
+    if (error) {
+      console.error("Update project error:", error);
+      alert("Failed to update project.");
+      return;
+    }
+
+    const updatedProject = {
+      ...project,
+      title: editTitle || "Untitled Project",
+      genre: editGenre,
+      tone: editTone,
+      idea: editIdea,
+      structured_result: updatedStructuredResult,
+    };
+
+    setProject(updatedProject);
+    setEditMode(false);
+    alert("Project updated successfully!");
+  }
+
   const sidebarItems = [
     { label: "Home", icon: Compass, href: "/" },
     { label: "Explore", icon: Compass, href: "/explore" },
@@ -179,6 +270,18 @@ export default function ProjectPage({ params }) {
     background: "rgba(255,255,255,0.05)",
     color: "white",
     cursor: "pointer",
+  };
+
+  const inputStyle = {
+    width: "100%",
+    padding: "12px 14px",
+    fontSize: "15px",
+    borderRadius: "12px",
+    border: "1px solid rgba(255,255,255,0.08)",
+    background: "rgba(255,255,255,0.03)",
+    color: "white",
+    outline: "none",
+    boxSizing: "border-box",
   };
 
   if (loading) {
@@ -225,7 +328,7 @@ export default function ProjectPage({ params }) {
         >
           ← Back to Story Engine
         </Link>
-        <h1>Project not found</h1>
+        <h1>Project not found or access denied</h1>
       </main>
     );
   }
@@ -482,20 +585,101 @@ export default function ProjectPage({ params }) {
                 Kylor Project Workspace
               </p>
 
-              <h1
-                style={{
-                  fontSize: "56px",
-                  lineHeight: 1,
-                  margin: "0 0 12px 0",
-                  letterSpacing: "-1.4px",
-                }}
-              >
-                {project.title}
-              </h1>
+              {editMode ? (
+                <div style={{ display: "grid", gap: "12px" }}>
+                  <input
+                    value={editTitle}
+                    onChange={(e) => setEditTitle(e.target.value)}
+                    placeholder="Project title"
+                    style={{
+                      ...inputStyle,
+                      fontSize: "56px",
+                      lineHeight: 1,
+                      letterSpacing: "-1.4px",
+                      padding: "10px 14px",
+                    }}
+                  />
 
-              <p style={{ color: "rgba(255,255,255,0.72)", margin: 0 }}>
-                {project.genre} • {project.tone}
-              </p>
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "1fr 1fr",
+                      gap: "12px",
+                      maxWidth: "540px",
+                    }}
+                  >
+                    <select
+                      value={editGenre}
+                      onChange={(e) => setEditGenre(e.target.value)}
+                      style={inputStyle}
+                    >
+                      <option>Sci-Fi</option>
+                      <option>Thriller</option>
+                      <option>Drama</option>
+                      <option>Horror</option>
+                      <option>Action</option>
+                      <option>Mystery</option>
+                      <option>Romance</option>
+                    </select>
+
+                    <select
+                      value={editTone}
+                      onChange={(e) => setEditTone(e.target.value)}
+                      style={inputStyle}
+                    >
+                      <option>Cinematic</option>
+                      <option>Dark</option>
+                      <option>Emotional</option>
+                      <option>Gritty</option>
+                      <option>Epic</option>
+                      <option>Suspenseful</option>
+                    </select>
+                  </div>
+
+                  <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+                    <button
+                      onClick={handleSaveEdits}
+                      disabled={savingEdits}
+                      style={{
+                        ...actionButton,
+                        background: savingEdits
+                          ? "rgba(255,255,255,0.10)"
+                          : "linear-gradient(135deg, #4f46e5, #7c3aed)",
+                        border: "none",
+                      }}
+                    >
+                      {savingEdits ? "Saving..." : "Save Changes"}
+                    </button>
+
+                    <button onClick={handleCancelEdit} style={actionButton}>
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <h1
+                    style={{
+                      fontSize: "56px",
+                      lineHeight: 1,
+                      margin: "0 0 12px 0",
+                      letterSpacing: "-1.4px",
+                    }}
+                  >
+                    {project.title}
+                  </h1>
+
+                  <p style={{ color: "rgba(255,255,255,0.72)", margin: 0 }}>
+                    {project.genre} • {project.tone}
+                  </p>
+
+                  <div style={{ marginTop: "16px" }}>
+                    <button onClick={handleStartEdit} style={actionButton}>
+                      Edit Project
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
 
             <div
@@ -520,17 +704,48 @@ export default function ProjectPage({ params }) {
             {activeTab === "Overview" && (
               <div style={{ display: "grid", gap: "20px" }}>
                 <section style={panelStyle}>
-                  <h3 style={{ marginTop: 0 }}>Original Idea</h3>
-                  <p
+                  <div
                     style={{
-                      whiteSpace: "pre-wrap",
-                      lineHeight: "1.8",
-                      margin: 0,
-                      color: "rgba(255,255,255,0.80)",
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      gap: "12px",
+                      flexWrap: "wrap",
+                      marginBottom: "14px",
                     }}
                   >
-                    {project.idea}
-                  </p>
+                    <h3 style={{ margin: 0 }}>Original Idea</h3>
+
+                    {!editMode && (
+                      <button onClick={handleStartEdit} style={actionButton}>
+                        Edit
+                      </button>
+                    )}
+                  </div>
+
+                  {editMode ? (
+                    <textarea
+                      value={editIdea}
+                      onChange={(e) => setEditIdea(e.target.value)}
+                      rows={8}
+                      style={{
+                        ...inputStyle,
+                        resize: "vertical",
+                        lineHeight: "1.8",
+                      }}
+                    />
+                  ) : (
+                    <p
+                      style={{
+                        whiteSpace: "pre-wrap",
+                        lineHeight: "1.8",
+                        margin: 0,
+                        color: "rgba(255,255,255,0.80)",
+                      }}
+                    >
+                      {project.idea}
+                    </p>
+                  )}
                 </section>
 
                 {structured && (
@@ -539,7 +754,7 @@ export default function ProjectPage({ params }) {
                       <div>
                         <h4 style={{ marginBottom: "6px" }}>Title</h4>
                         <p style={{ margin: 0, color: "rgba(255,255,255,0.78)" }}>
-                          {structured.title}
+                          {project.structured_result?.title || project.title}
                         </p>
                       </div>
 
@@ -553,13 +768,13 @@ export default function ProjectPage({ params }) {
                         <div>
                           <h4 style={{ marginBottom: "6px" }}>Genre</h4>
                           <p style={{ margin: 0, color: "rgba(255,255,255,0.78)" }}>
-                            {structured.genre}
+                            {project.structured_result?.genre || project.genre}
                           </p>
                         </div>
                         <div>
                           <h4 style={{ marginBottom: "6px" }}>Tone</h4>
                           <p style={{ margin: 0, color: "rgba(255,255,255,0.78)" }}>
-                            {structured.tone}
+                            {project.structured_result?.tone || project.tone}
                           </p>
                         </div>
                       </div>
