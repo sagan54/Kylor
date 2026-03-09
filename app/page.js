@@ -86,12 +86,12 @@ export default function Home() {
     {
       title: "Story Engine",
       subtitle: "Live now",
-      href: session ? "/story" : "/login",
+      href: session ? "/story" : "/signup",
     },
     {
       title: "Project Workspace",
       subtitle: "Continue building",
-      href: session ? "/story" : "/login",
+      href: session ? "/story" : "/signup",
     },
     {
       title: "Creative Modules",
@@ -380,7 +380,7 @@ export default function Home() {
 
                 <p
                   style={{
-                    margin: 0,
+                    margin: "0 0 10px 0",
                     maxWidth: "760px",
                     color: "rgba(255,255,255,0.68)",
                     fontSize: "18px",
@@ -389,6 +389,17 @@ export default function Home() {
                 >
                   A cinematic AI production workspace for story, image, video,
                   character consistency, and motion-driven creative workflows.
+                </p>
+
+                <p
+                  style={{
+                    margin: 0,
+                    color: "rgba(255,255,255,0.58)",
+                    fontSize: "15px",
+                    lineHeight: "1.7",
+                  }}
+                >
+                  Start free. Build your first cinematic project in minutes.
                 </p>
               </div>
 
@@ -568,7 +579,7 @@ export default function Home() {
                     }}
                   >
                     <Link
-                      href={session ? "/story" : "/login"}
+                      href={session ? "/story" : "/signup"}
                       style={{
                         textDecoration: "none",
                         color: "white",
@@ -586,7 +597,7 @@ export default function Home() {
                           boxShadow: "0 10px 26px rgba(124,58,237,0.24)",
                         }}
                       >
-                        {session ? "Open Story Engine" : "Login to Start"}
+                        {session ? "Open Story Engine" : "Get Started"}
                       </motion.div>
                     </Link>
 
