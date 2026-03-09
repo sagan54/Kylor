@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabase";
@@ -15,6 +16,7 @@ export default function SignupPage() {
   async function handleSignup(e) {
     e.preventDefault();
     setLoading(true);
+    setMessage("");
 
     const { error } = await supabase.auth.signUp({
       email,
@@ -27,63 +29,174 @@ export default function SignupPage() {
       return;
     }
 
-    router.push("/");
+    setLoading(false);
+    router.push("/login");
   }
 
   return (
-    <main className="min-h-screen bg-[#050816] flex items-center justify-center px-6 text-white">
+    <main
+      style={{
+        minHeight: "100vh",
+        background:
+          "radial-gradient(circle at top left, rgba(99,102,241,0.18), transparent 24%), radial-gradient(circle at top right, rgba(139,92,246,0.14), transparent 28%), linear-gradient(180deg, #04070f 0%, #070d19 42%, #050914 100%)",
+        color: "white",
+        fontFamily: "Inter, sans-serif",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "24px",
+      }}
+    >
+      <div
+        style={{
+          width: "100%",
+          maxWidth: "460px",
+          borderRadius: "24px",
+          border: "1px solid rgba(255,255,255,0.10)",
+          background:
+            "linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.03))",
+          backdropFilter: "blur(18px)",
+          boxShadow:
+            "0 18px 40px rgba(0,0,0,0.28), 0 0 0 1px rgba(255,255,255,0.03) inset",
+          padding: "32px",
+        }}
+      >
+        <div
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "10px",
+            padding: "7px 13px",
+            border: "1px solid rgba(255,255,255,0.10)",
+            borderRadius: "999px",
+            background: "rgba(255,255,255,0.03)",
+            color: "rgba(255,255,255,0.76)",
+            fontSize: "13px",
+            marginBottom: "18px",
+          }}
+        >
+          <span
+            style={{
+              width: "8px",
+              height: "8px",
+              borderRadius: "999px",
+              background: "#7c3aed",
+              boxShadow: "0 0 12px #7c3aed",
+            }}
+          />
+          Kylor Access
+        </div>
 
-      <div className="w-full max-w-md bg-white/5 border border-white/10 backdrop-blur-xl rounded-2xl p-8">
+        <h1
+          style={{
+            fontSize: "40px",
+            lineHeight: 1.05,
+            margin: "0 0 10px 0",
+            letterSpacing: "-1px",
+          }}
+        >
+          Create your Kylor account
+        </h1>
 
-        <h1 className="text-3xl font-bold mb-2">Create your Kylor account</h1>
-
-        <p className="text-white/60 mb-6">
+        <p
+          style={{
+            margin: "0 0 24px 0",
+            color: "rgba(255,255,255,0.65)",
+            fontSize: "16px",
+            lineHeight: "1.7",
+          }}
+        >
           Start building cinematic AI projects.
         </p>
 
-        <form onSubmit={handleSignup} className="space-y-4">
-
+        <form onSubmit={handleSignup} style={{ display: "grid", gap: "14px" }}>
           <input
             type="email"
             placeholder="Email"
-            className="w-full rounded-xl bg-white/10 border border-white/10 px-4 py-3 outline-none"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
+            style={{
+              width: "100%",
+              padding: "14px 16px",
+              borderRadius: "14px",
+              border: "1px solid rgba(255,255,255,0.10)",
+              background: "rgba(255,255,255,0.05)",
+              color: "white",
+              outline: "none",
+              fontSize: "15px",
+            }}
           />
 
           <input
             type="password"
             placeholder="Password"
-            className="w-full rounded-xl bg-white/10 border border-white/10 px-4 py-3 outline-none"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
+            style={{
+              width: "100%",
+              padding: "14px 16px",
+              borderRadius: "14px",
+              border: "1px solid rgba(255,255,255,0.10)",
+              background: "rgba(255,255,255,0.05)",
+              color: "white",
+              outline: "none",
+              fontSize: "15px",
+            }}
           />
 
           <button
             type="submit"
             disabled={loading}
-            className="w-full rounded-xl bg-violet-600 hover:bg-violet-500 transition px-4 py-3 font-semibold"
+            style={{
+              padding: "14px 18px",
+              borderRadius: "14px",
+              border: "none",
+              background: "linear-gradient(135deg, #4f46e5, #7c3aed)",
+              color: "white",
+              fontWeight: 600,
+              fontSize: "15px",
+              cursor: "pointer",
+              boxShadow: "0 10px 26px rgba(124,58,237,0.24)",
+            }}
           >
             {loading ? "Creating account..." : "Sign Up"}
           </button>
-
         </form>
 
-        {message && (
-          <p className="mt-4 text-sm text-red-400">{message}</p>
-        )}
+        {message ? (
+          <p
+            style={{
+              marginTop: "16px",
+              color: "#f87171",
+              fontSize: "14px",
+            }}
+          >
+            {message}
+          </p>
+        ) : null}
 
-        <p className="mt-6 text-sm text-white/60">
+        <p
+          style={{
+            marginTop: "22px",
+            color: "rgba(255,255,255,0.65)",
+            fontSize: "14px",
+          }}
+        >
           Already have an account?{" "}
-          <a href="/login" className="text-violet-400 hover:underline">
+          <Link
+            href="/login"
+            style={{
+              color: "#a78bfa",
+              textDecoration: "none",
+              fontWeight: 600,
+            }}
+          >
             Login
-          </a>
+          </Link>
         </p>
-
       </div>
-
     </main>
   );
 }
