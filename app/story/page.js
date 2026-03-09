@@ -521,7 +521,7 @@ function handleLoadProject(project) {
             gridTemplateColumns: "460px 1fr",
             height: "100vh",
             background:
-              "radial-gradient(circle at top left, rgba(79,70,229,0.14), transparent 22%), radial-gradient(circle at top right, rgba(124,58,237,0.14), transparent 24%), #05070c",
+  "radial-gradient(circle at 20% 10%, rgba(124,58,237,0.18), transparent 28%), radial-gradient(circle at 80% 0%, rgba(79,70,229,0.16), transparent 30%), radial-gradient(circle at 50% 100%, rgba(168,85,247,0.10), transparent 40%), #05070c",
             overflow: "hidden",
           }}
         >
@@ -554,6 +554,7 @@ function handleLoadProject(project) {
                   padding: "8px 14px",
                   fontSize: "14px",
                   background: "rgba(255,255,255,0.03)",
+backdropFilter: "blur(20px)",
                 }}
               >
                 ← Back to Kylor AI
