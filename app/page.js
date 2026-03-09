@@ -1,21 +1,37 @@
 "use client";
-<div className="absolute top-6 right-6 flex gap-4">
 
-<a
-href="/login"
-className="px-4 py-2 rounded-lg text-white/80 hover:text-white"
->
-Login
-</a>
+export default function Home() {
+  return (
 
-<a
-href="/signup"
-className="px-5 py-2 rounded-lg bg-violet-600 hover:bg-violet-500"
->
-Get Started
-</a>
+    <main className="relative">
 
-</div>
+      {/* AUTH BUTTONS */}
+      <div className="absolute top-6 right-6 flex gap-4">
+
+        <a
+          href="/login"
+          className="px-4 py-2 rounded-lg text-white/80 hover:text-white"
+        >
+          Login
+        </a>
+
+        <a
+          href="/signup"
+          className="px-5 py-2 rounded-lg bg-violet-600 hover:bg-violet-500 text-white"
+        >
+          Get Started
+        </a>
+
+      </div>
+
+      {/* YOUR EXISTING PAGE CONTENT */}
+      {/* Everything that was already in the homepage stays here */}
+
+    </main>
+
+  );
+}
+
 
 import Link from "next/link";
 import { motion } from "framer-motion";
