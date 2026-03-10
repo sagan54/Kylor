@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { motion } from "framer-motion";
 import {
   Sparkles,
@@ -31,8 +32,8 @@ export default function ImagePage() {
   const [mood, setMood] = useState("Epic");
   const [ratio, setRatio] = useState("16:9");
 
-  const [selectedCamera, setSelectedCamera] = useState("ARRI Alexa 35");
-  const [selectedLens, setSelectedLens] = useState("Signature Prime");
+  const [selectedCamera, setSelectedCamera] = useState("arri-alexa-35");
+  const [selectedLens, setSelectedLens] = useState("signature-prime");
 
   const sidebarItems = [
     { label: "Home", icon: Compass, href: "/" },
@@ -46,59 +47,73 @@ export default function ImagePage() {
     { label: "Settings", icon: Settings, href: "#" },
   ];
 
+  // Put your real image files in /public/cameras and /public/lenses
   const cameras = [
     {
+      id: "arri-alexa-35",
       name: "ARRI Alexa 35",
       type: "Cinema Digital",
       note: "Premium narrative look",
-      icon: "📷",
+      image: "/cameras/arri-alexa-35.png",
     },
     {
+      id: "sony-venice-2",
       name: "Sony Venice 2",
       type: "Full Frame Cinema",
       note: "Elegant cinematic contrast",
-      icon: "🎥",
+      image: "/cameras/sony-venice-2.png",
     },
     {
+      id: "red-v-raptor",
       name: "RED V-Raptor",
       type: "Large Format",
       note: "High-end sharp visual detail",
-      icon: "📹",
+      image: "/cameras/red-v-raptor.png",
     },
     {
+      id: "blackmagic-ursa-cine",
       name: "Blackmagic URSA Cine",
       type: "Studio Digital",
       note: "Rich texture balance",
-      icon: "📸",
+      image: "/cameras/blackmagic-ursa-cine.png",
     },
   ];
 
   const lenses = [
     {
+      id: "signature-prime",
       name: "Signature Prime",
       type: "Modern Prime",
       note: "Premium polished cinema",
-      icon: "◉",
+      image: "/lenses/signature-prime.png",
     },
     {
+      id: "cooke-s4i",
       name: "Cooke S4/i",
       type: "Classic Prime",
       note: "Warm organic softness",
-      icon: "◎",
+      image: "/lenses/cooke-s4i.png",
     },
     {
+      id: "master-prime",
       name: "Master Prime",
       type: "High Precision",
       note: "Clean premium sharpness",
-      icon: "⬤",
+      image: "/lenses/master-prime.png",
     },
     {
+      id: "anamorphic-set",
       name: "Anamorphic Set",
       type: "Scope Cinema",
       note: "Epic wide-screen character",
-      icon: "◌",
+      image: "/lenses/anamorphic-set.png",
     },
   ];
+
+  const currentCamera =
+    cameras.find((camera) => camera.id === selectedCamera) || cameras[0];
+  const currentLens =
+    lenses.find((lens) => lens.id === selectedLens) || lenses[0];
 
   const panelStyle = {
     border: "1px solid rgba(255,255,255,0.08)",
@@ -153,6 +168,22 @@ export default function ImagePage() {
     margin: "0 0 6px 0",
     fontSize: "24px",
   };
+
+  const thumbCard = (active) => ({
+    minWidth: "150px",
+    flexShrink: 0,
+    padding: "10px",
+    borderRadius: "16px",
+    border: active
+      ? "1px solid rgba(124,58,237,0.55)"
+      : "1px solid rgba(255,255,255,0.08)",
+    background: active
+      ? "linear-gradient(180deg, rgba(79,70,229,0.16), rgba(124,58,237,0.12))"
+      : "linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.015))",
+    cursor: "pointer",
+    color: "white",
+    textAlign: "left",
+  });
 
   return (
     <main
@@ -376,7 +407,6 @@ export default function ImagePage() {
               </div>
 
               <div style={{ display: "grid", gap: "22px" }}>
-                {/* TOP — BIG PREVIEW */}
                 <div style={{ ...panelStyle, padding: "22px" }}>
                   <div
                     style={{
@@ -464,209 +494,11 @@ export default function ImagePage() {
                   </div>
                 </div>
 
-                {/* MIDDLE — CAMERA & LENS */}
-                <div style={{ ...panelStyle, padding: "22px" }}>
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      gap: "12px",
-                      flexWrap: "wrap",
-                      marginBottom: "16px",
-                    }}
-                  >
-                    <div>
-                      <h3 style={sectionTitle}>Camera & Lens</h3>
-                      <p
-                        style={{
-                          margin: 0,
-                          color: "rgba(255,255,255,0.60)",
-                          fontSize: "14px",
-                        }}
-                      >
-                        Scroll and choose a cinematic camera setup.
-                      </p>
-                    </div>
-
-                    <div style={chipStyle}>Premium Optics</div>
-                  </div>
-
-                  <div style={{ display: "grid", gap: "18px" }}>
-                    <div>
-                      <div
-                        style={{
-                          display: "flex",
-                          gap: "14px",
-                          overflowX: "auto",
-                          paddingBottom: "4px",
-                          scrollbarWidth: "thin",
-                        }}
-                      >
-                        {cameras.map((camera) => {
-                          const active = selectedCamera === camera.name;
-
-                          return (
-                            <button
-                              key={camera.name}
-                              onClick={() => setSelectedCamera(camera.name)}
-                              style={{
-                                minWidth: "260px",
-                                ...softCard,
-                                padding: "18px",
-                                textAlign: "left",
-                                cursor: "pointer",
-                                color: "white",
-                                background: active
-                                  ? "linear-gradient(135deg, rgba(79,70,229,0.22), rgba(124,58,237,0.16))"
-                                  : softCard.background,
-                                flexShrink: 0,
-                              }}
-                            >
-                              <div
-                                style={{
-                                  height: "120px",
-                                  borderRadius: "16px",
-                                  marginBottom: "14px",
-                                  display: "grid",
-                                  placeItems: "center",
-                                  background:
-                                    "radial-gradient(circle at top, rgba(79,70,229,0.18), transparent 34%), rgba(255,255,255,0.03)",
-                                  border: "1px solid rgba(255,255,255,0.06)",
-                                  fontSize: "42px",
-                                }}
-                              >
-                                {camera.icon}
-                              </div>
-
-                              <div
-                                style={{
-                                  display: "flex",
-                                  justifyContent: "space-between",
-                                  alignItems: "center",
-                                  gap: "8px",
-                                  marginBottom: "6px",
-                                }}
-                              >
-                                <strong style={{ fontSize: "18px" }}>{camera.name}</strong>
-                                {active && <Check size={16} />}
-                              </div>
-
-                              <div
-                                style={{
-                                  fontSize: "13px",
-                                  color: "rgba(255,255,255,0.62)",
-                                  marginBottom: "6px",
-                                }}
-                              >
-                                {camera.type}
-                              </div>
-
-                              <div
-                                style={{
-                                  fontSize: "13px",
-                                  color: "rgba(255,255,255,0.82)",
-                                }}
-                              >
-                                {camera.note}
-                              </div>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-
-                    <div>
-                      <div
-                        style={{
-                          display: "flex",
-                          gap: "14px",
-                          overflowX: "auto",
-                          paddingBottom: "4px",
-                          scrollbarWidth: "thin",
-                        }}
-                      >
-                        {lenses.map((lens) => {
-                          const active = selectedLens === lens.name;
-
-                          return (
-                            <button
-                              key={lens.name}
-                              onClick={() => setSelectedLens(lens.name)}
-                              style={{
-                                minWidth: "240px",
-                                ...softCard,
-                                padding: "18px",
-                                textAlign: "left",
-                                cursor: "pointer",
-                                color: "white",
-                                background: active
-                                  ? "linear-gradient(135deg, rgba(79,70,229,0.22), rgba(124,58,237,0.16))"
-                                  : softCard.background,
-                                flexShrink: 0,
-                              }}
-                            >
-                              <div
-                                style={{
-                                  height: "110px",
-                                  borderRadius: "16px",
-                                  marginBottom: "14px",
-                                  display: "grid",
-                                  placeItems: "center",
-                                  background:
-                                    "radial-gradient(circle at top, rgba(79,70,229,0.18), transparent 34%), rgba(255,255,255,0.03)",
-                                  border: "1px solid rgba(255,255,255,0.06)",
-                                  fontSize: "42px",
-                                }}
-                              >
-                                {lens.icon}
-                              </div>
-
-                              <div
-                                style={{
-                                  display: "flex",
-                                  justifyContent: "space-between",
-                                  alignItems: "center",
-                                  gap: "8px",
-                                  marginBottom: "6px",
-                                }}
-                              >
-                                <strong style={{ fontSize: "18px" }}>{lens.name}</strong>
-                                {active && <Check size={16} />}
-                              </div>
-
-                              <div
-                                style={{
-                                  fontSize: "13px",
-                                  color: "rgba(255,255,255,0.62)",
-                                  marginBottom: "6px",
-                                }}
-                              >
-                                {lens.type}
-                              </div>
-
-                              <div
-                                style={{
-                                  fontSize: "13px",
-                                  color: "rgba(255,255,255,0.82)",
-                                }}
-                              >
-                                {lens.note}
-                              </div>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* BOTTOM — SMALL COMPOSER */}
                 <div style={{ ...panelStyle, padding: "16px" }}>
                   <div
                     style={{
                       display: "grid",
-                      gridTemplateColumns: "1fr 360px",
+                      gridTemplateColumns: "1fr 340px",
                       gap: "18px",
                       alignItems: "stretch",
                     }}
@@ -817,65 +649,149 @@ export default function ImagePage() {
                     <div
                       style={{
                         ...softCard,
-                        padding: "16px",
+                        padding: "14px",
                         display: "grid",
-                        alignContent: "space-between",
+                        gridTemplateRows: "auto auto auto",
+                        alignContent: "start",
+                        gap: "14px",
                       }}
                     >
-                      <div>
-                        <div
-                          style={{
-                            display: "inline-flex",
-                            alignItems: "center",
-                            gap: "8px",
-                            marginBottom: "10px",
-                            ...chipStyle,
-                          }}
-                        >
-                          <Layers3 size={14} />
-                          Selected Setup
+                      <div
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "8px",
+                          ...chipStyle,
+                          width: "fit-content",
+                        }}
+                      >
+                        <Layers3 size={14} />
+                        Selected Setup
+                      </div>
+
+                      <div
+                        style={{
+                          ...softCard,
+                          padding: "12px",
+                        }}
+                      >
+                        <div style={{ display: "grid", gap: "12px" }}>
+                          <div style={{ display: "flex", gap: "10px", overflowX: "auto", paddingBottom: "2px" }}>
+                            {cameras.map((camera) => {
+                              const active = selectedCamera === camera.id;
+                              return (
+                                <button
+                                  key={camera.id}
+                                  onClick={() => setSelectedCamera(camera.id)}
+                                  style={thumbCard(active)}
+                                >
+                                  <div
+                                    style={{
+                                      height: "78px",
+                                      borderRadius: "12px",
+                                      overflow: "hidden",
+                                      position: "relative",
+                                      background: "rgba(255,255,255,0.03)",
+                                      border: "1px solid rgba(255,255,255,0.06)",
+                                      marginBottom: "8px",
+                                    }}
+                                  >
+                                    <Image
+                                      src={camera.image}
+                                      alt={camera.name}
+                                      fill
+                                      style={{ objectFit: "contain", padding: "10px" }}
+                                    />
+                                  </div>
+                                  <div style={{ fontSize: "13px", fontWeight: 700, display: "flex", justifyContent: "space-between", gap: "8px" }}>
+                                    <span>{camera.name}</span>
+                                    {active && <Check size={14} />}
+                                  </div>
+                                </button>
+                              );
+                            })}
+                          </div>
+
+                          <div style={{ display: "flex", gap: "10px", overflowX: "auto", paddingBottom: "2px" }}>
+                            {lenses.map((lens) => {
+                              const active = selectedLens === lens.id;
+                              return (
+                                <button
+                                  key={lens.id}
+                                  onClick={() => setSelectedLens(lens.id)}
+                                  style={thumbCard(active)}
+                                >
+                                  <div
+                                    style={{
+                                      height: "78px",
+                                      borderRadius: "12px",
+                                      overflow: "hidden",
+                                      position: "relative",
+                                      background: "rgba(255,255,255,0.03)",
+                                      border: "1px solid rgba(255,255,255,0.06)",
+                                      marginBottom: "8px",
+                                    }}
+                                  >
+                                    <Image
+                                      src={lens.image}
+                                      alt={lens.name}
+                                      fill
+                                      style={{ objectFit: "contain", padding: "10px" }}
+                                    />
+                                  </div>
+                                  <div style={{ fontSize: "13px", fontWeight: 700, display: "flex", justifyContent: "space-between", gap: "8px" }}>
+                                    <span>{lens.name}</span>
+                                    {active && <Check size={14} />}
+                                  </div>
+                                </button>
+                              );
+                            })}
+                          </div>
                         </div>
+                      </div>
 
-                        <h4 style={{ margin: "0 0 8px 0", fontSize: "22px" }}>
-                          {selectedCamera}
+                      <div>
+                        <h4 style={{ margin: "0 0 8px 0", fontSize: "18px" }}>
+                          {currentCamera.name}
                         </h4>
-
                         <p
                           style={{
-                            margin: "0 0 12px 0",
+                            margin: "0 0 14px 0",
                             color: "rgba(255,255,255,0.62)",
                             lineHeight: 1.6,
                             fontSize: "14px",
                           }}
                         >
-                          {selectedLens} • {shotType} • {lighting} • {mood} • {ratio}
+                          {currentLens.name} • {shotType} • {lighting} • {mood} • {ratio}
                         </p>
-                      </div>
 
-                      <button
-                        style={{
-                          padding: "16px 20px",
-                          borderRadius: "16px",
-                          border: "none",
-                          background: "linear-gradient(135deg, #4f46e5, #7c3aed)",
-                          color: "white",
-                          cursor: "pointer",
-                          fontSize: "16px",
-                          fontWeight: 700,
-                          boxShadow: "0 14px 30px rgba(124,58,237,0.20)",
-                          display: "inline-flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          gap: "10px",
-                        }}
-                      >
-                        <Wand2 size={18} />
-                        Generate Image
-                        <ChevronRight size={18} />
-                      </button>
+                        <button
+                          style={{
+                            width: "100%",
+                            padding: "16px 20px",
+                            borderRadius: "16px",
+                            border: "none",
+                            background: "linear-gradient(135deg, #4f46e5, #7c3aed)",
+                            color: "white",
+                            cursor: "pointer",
+                            fontSize: "16px",
+                            fontWeight: 700,
+                            boxShadow: "0 14px 30px rgba(124,58,237,0.20)",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            gap: "10px",
+                          }}
+                        >
+                          <Wand2 size={18} />
+                          Generate Image
+                          <ChevronRight size={18} />
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
+
               </div>
             </div>
           </div>
