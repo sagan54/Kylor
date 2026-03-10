@@ -101,25 +101,6 @@ export default function ImagePage() {
     },
   ];
 
-  const previewCards = [
-    {
-      title: "Alien Desert Arrival",
-      meta: "Wide Shot • Cinematic • 16:9",
-    },
-    {
-      title: "Hero Close Portrait",
-      meta: "Close Up • Moody • 4:5",
-    },
-    {
-      title: "Neon City Chase",
-      meta: "Tracking Frame • Night • 21:9",
-    },
-    {
-      title: "Temple Reveal",
-      meta: "Wide Shot • Epic • 16:9",
-    },
-  ];
-
   const panelStyle = {
     border: "1px solid rgba(255,255,255,0.08)",
     borderRadius: "24px",
@@ -917,53 +898,6 @@ export default function ImagePage() {
                         </div>
                       ))}
                     </div>
-                  </div>
-                </div>
-
-                <div style={{ marginTop: "4px" }}>
-                  <h3 style={{ margin: "0 0 14px 0", fontSize: "24px" }}>
-                    Recent Image Frames
-                  </h3>
-
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
-                      gap: "18px",
-                    }}
-                  >
-                    {previewCards.map((card) => (
-                      <div key={card.title} style={softCard}>
-                        <div
-                          style={{
-                            height: "220px",
-                            background:
-                              "radial-gradient(circle at top left, rgba(79,70,229,0.22), transparent 30%), linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.015))",
-                            display: "grid",
-                            placeItems: "center",
-                            borderTopLeftRadius: "18px",
-                            borderTopRightRadius: "18px",
-                          }}
-                        >
-                          <Monitor size={28} style={{ opacity: 0.75 }} />
-                        </div>
-
-                        <div style={{ padding: "16px" }}>
-                          <h4 style={{ margin: "0 0 8px 0", fontSize: "18px" }}>
-                            {card.title}
-                          </h4>
-                          <p
-                            style={{
-                              margin: 0,
-                              color: "rgba(255,255,255,0.62)",
-                              fontSize: "14px",
-                            }}
-                          >
-                            {card.meta}
-                          </p>
-                        </div>
-                      </div>
-                    ))}
                   </div>
                 </div>
               </div>
