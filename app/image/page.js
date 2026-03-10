@@ -1,947 +1,324 @@
 "use client";
 
 import Link from "next/link";
-import Image from "next/image";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import {
-  Sparkles,
-  Compass,
-  Clapperboard,
+  ChevronDown,
   Image as ImageIcon,
   Video,
   UserCircle2,
-  Orbit,
   FolderKanban,
   Settings,
+  Compass,
+  Sparkles,
+  Orbit,
   Grid3X3,
   List,
-  Wand2,
-  Camera,
-  Aperture,
-  Layers3,
-  ChevronRight,
+  Folder,
   Check,
+  Settings2,
+  Bell,
+  PanelLeft,
+  Wand2,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 export default function ImagePage() {
   const [assetView, setAssetView] = useState("grid");
   const [prompt, setPrompt] = useState("");
-  const [shotType, setShotType] = useState("Wide Shot");
-  const [lighting, setLighting] = useState("Cinematic");
-  const [mood, setMood] = useState("Epic");
-  const [ratio, setRatio] = useState("16:9");
+  const [selectedModel, setSelectedModel] = useState("IMAGE 3.0");
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
-  const [selectedCamera, setSelectedCamera] = useState("arri-alexa-35");
-  const [selectedLens, setSelectedLens] = useState("signature-prime");
-  const cameraScrollRef = useRef(null);
-const lensScrollRef = useRef(null);
+  const [mode, setMode] = useState("2K HD");
+  const [ratio, setRatio] = useState("3:4");
+  const [outputCount, setOutputCount] = useState(4);
 
-const CARD_HEIGHT = 170;
+  const panelRef = useRef(null);
 
-  const sidebarItems = [
-    { label: "Home", icon: Compass, href: "/" },
-    { label: "Explore", icon: Compass, href: "/explore" },
-    { label: "Story", icon: Clapperboard, href: "/story" },
-    { label: "Image", icon: ImageIcon, href: "/image", active: true },
-    { label: "Video", icon: Video, href: "#" },
-    { label: "Consistency", icon: UserCircle2, href: "#" },
-    { label: "Motion", icon: Orbit, href: "#" },
-    { label: "Projects", icon: FolderKanban, href: "/story" },
-    { label: "Settings", icon: Settings, href: "#" },
-  ];
+  const modes = ["1K SD", "2K HD", "4K"];
+  const ratios = ["Auto", "9:16", "2:3", "3:4", "1:1", "4:3", "3:2", "16:9", "21:9"];
+  const outputs = [1, 2, 3, 4, 5, 6, 7, 8, 9];
 
-  // Put your real image files in /public/cameras and /public/lenses
-  const cameras = [
-    {
-      id: "arri-alexa-35",
-      name: "ARRI Alexa 35",
-      type: "Cinema Digital",
-      note: "Premium narrative look",
-      image: "/cameras/arri-alexa-35.png",
-    },
-    {
-      id: "sony-venice-2",
-      name: "Sony Venice 2",
-      type: "Full Frame Cinema",
-      note: "Elegant cinematic contrast",
-      image: "/cameras/sony-venice-2.png",
-    },
-    {
-      id: "red-v-raptor",
-      name: "RED V-Raptor",
-      type: "Large Format",
-      note: "High-end sharp visual detail",
-      image: "/cameras/red-v-raptor.png",
-    },
-    {
-      id: "blackmagic-ursa-cine",
-      name: "Blackmagic URSA Cine",
-      type: "Studio Digital",
-      note: "Rich texture balance",
-      image: "/cameras/blackmagic-ursa-cine.png",
-    },
-  ];
-
-  const lenses = [
-    {
-      id: "signature-prime",
-      name: "Signature Prime",
-      type: "Modern Prime",
-      note: "Premium polished cinema",
-      image: "/lenses/signature-prime.png",
-    },
-    {
-      id: "cooke-s4i",
-      name: "Cooke S4/i",
-      type: "Classic Prime",
-      note: "Warm organic softness",
-      image: "/lenses/cooke-s4i.png",
-    },
-    {
-      id: "master-prime",
-      name: "Master Prime",
-      type: "High Precision",
-      note: "Clean premium sharpness",
-      image: "/lenses/master-prime.png",
-    },
-    {
-      id: "anamorphic-set",
-      name: "Anamorphic Set",
-      type: "Scope Cinema",
-      note: "Epic wide-screen character",
-      image: "/lenses/anamorphic-set.png",
-    },
-  ];
-
-  const currentCamera =
-    cameras.find((camera) => camera.id === selectedCamera) || cameras[0];
-  const currentLens =
-    lenses.find((lens) => lens.id === selectedLens) || lenses[0];
-
-    useEffect(() => {
-  const cameraEl = cameraScrollRef.current;
-  const lensEl = lensScrollRef.current;
-
-  function handleSnapSelect(container, items, setter) {
-    if (!container) return;
-
-    const centerY = container.scrollTop + container.clientHeight / 2;
-    const index = Math.round((centerY - CARD_HEIGHT / 2) / CARD_HEIGHT);
-    const safeIndex = Math.max(0, Math.min(items.length - 1, index));
-
-    setter(items[safeIndex].id);
-  }
-
-  let cameraTimeout;
-  let lensTimeout;
-
-  function onCameraScroll() {
-    clearTimeout(cameraTimeout);
-    cameraTimeout = setTimeout(() => {
-      handleSnapSelect(cameraEl, cameras, setSelectedCamera);
-    }, 40);
-  }
-
-  function onLensScroll() {
-    clearTimeout(lensTimeout);
-    lensTimeout = setTimeout(() => {
-      handleSnapSelect(lensEl, lenses, setSelectedLens);
-    }, 40);
-  }
-
-  if (cameraEl) {
-    cameraEl.addEventListener("scroll", onCameraScroll);
-  }
-
-  if (lensEl) {
-    lensEl.addEventListener("scroll", onLensScroll);
-  }
-
-  return () => {
-    if (cameraEl) {
-      cameraEl.removeEventListener("scroll", onCameraScroll);
+  useEffect(() => {
+    function handleClickOutside(e) {
+      if (panelRef.current && !panelRef.current.contains(e.target)) {
+        setSettingsOpen(false);
+      }
     }
-    if (lensEl) {
-      lensEl.removeEventListener("scroll", onLensScroll);
-    }
-  };
-}, [cameras, lenses]);
 
-  const panelStyle = {
-    border: "1px solid rgba(255,255,255,0.08)",
-    borderRadius: "24px",
-    background:
-      "linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.02))",
-    backdropFilter: "blur(10px)",
-    boxShadow: "0 20px 60px rgba(0,0,0,0.28)",
-  };
-
-  const softCard = {
-    border: "1px solid rgba(255,255,255,0.08)",
-    borderRadius: "18px",
-    background:
-      "linear-gradient(180deg, rgba(255,255,255,0.035), rgba(255,255,255,0.018))",
-  };
-
-  const inputStyle = {
-    width: "100%",
-    padding: "14px 16px",
-    fontSize: "15px",
-    borderRadius: "16px",
-    border: "1px solid rgba(255,255,255,0.08)",
-    background: "rgba(255,255,255,0.03)",
-    color: "white",
-    outline: "none",
-    boxSizing: "border-box",
-  };
-
-  const selectStyle = {
-    width: "100%",
-    padding: "14px 16px",
-    fontSize: "15px",
-    borderRadius: "14px",
-    border: "1px solid rgba(255,255,255,0.08)",
-    background: "#0d1220",
-    color: "white",
-    outline: "none",
-    boxSizing: "border-box",
-  };
-
-  const chipStyle = {
-    padding: "8px 12px",
-    borderRadius: "999px",
-    border: "1px solid rgba(255,255,255,0.08)",
-    background: "rgba(255,255,255,0.03)",
-    color: "rgba(255,255,255,0.78)",
-    fontSize: "13px",
-  };
-
-  const sectionTitle = {
-    margin: "0 0 6px 0",
-    fontSize: "24px",
-  };
-
-  const thumbCard = (active) => ({
-    width: "100%",
-    padding: "10px",
-    borderRadius: "16px",
-    border: active
-      ? "1px solid rgba(124,58,237,0.55)"
-      : "1px solid rgba(255,255,255,0.08)",
-    background: active
-      ? "linear-gradient(180deg, rgba(79,70,229,0.16), rgba(124,58,237,0.12))"
-      : "linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.015))",
-    cursor: "pointer",
-    color: "white",
-    textAlign: "left",
-  });
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   return (
-    <main
-      style={{
-        minHeight: "100vh",
-        background:
-          "radial-gradient(circle at top left, rgba(79,70,229,0.16), transparent 24%), radial-gradient(circle at top right, rgba(124,58,237,0.16), transparent 28%), #05070c",
-        color: "white",
-        fontFamily: "Inter, sans-serif",
-      }}
-    >
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "92px 1fr",
-          minHeight: "100vh",
-        }}
-      >
-        <aside
-          style={{
-            borderRight: "1px solid rgba(255,255,255,0.08)",
-            background: "#0a0d14",
-            padding: "20px 14px",
-            position: "sticky",
-            top: 0,
-            height: "100vh",
-          }}
-        >
-          <div
-            style={{
-              width: "50px",
-              height: "50px",
-              borderRadius: "18px",
-              margin: "0 auto 24px",
-              display: "grid",
-              placeItems: "center",
-              background:
-                "linear-gradient(135deg, rgba(79,70,229,0.28), rgba(124,58,237,0.18))",
-              border: "1px solid rgba(255,255,255,0.08)",
-            }}
-          >
-            <Sparkles size={22} />
+    <main className="min-h-screen bg-[#090b10] text-white">
+      <div className="flex min-h-screen">
+        {/* LEFT SIDEBAR */}
+        <aside className="w-[72px] border-r border-white/10 bg-[#0b0d12] flex flex-col items-center py-5">
+          <div className="mb-8 flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.03]">
+            <Orbit className="h-5 w-5 text-white/90" />
           </div>
 
-          <div style={{ display: "grid", gap: "10px" }}>
-            {sidebarItems.map((item) => {
-              const Icon = item.icon;
+          <div className="flex flex-col items-center gap-2">
+            <button className="flex w-[56px] flex-col items-center gap-2 rounded-2xl py-3 text-white/55 hover:bg-white/[0.04] hover:text-white transition">
+              <Compass className="h-4 w-4" />
+              <span className="text-[10px]">Explore</span>
+            </button>
 
-              const content = (
-                <motion.div
-                  whileHover={{ y: -1 }}
-                  style={{
-                    display: "grid",
-                    justifyItems: "center",
-                    gap: "8px",
-                    padding: "10px 8px",
-                    borderRadius: "18px",
-                    background: item.active
-                      ? "linear-gradient(180deg, rgba(79,70,229,0.18), rgba(124,58,237,0.12))"
-                      : "transparent",
-                    border: item.active
-                      ? "1px solid rgba(255,255,255,0.08)"
-                      : "1px solid transparent",
-                    color: item.active ? "white" : "rgba(255,255,255,0.66)",
-                  }}
-                >
-                  <div
-                    style={{
-                      width: "38px",
-                      height: "38px",
-                      borderRadius: "14px",
-                      display: "grid",
-                      placeItems: "center",
-                      background: item.active
-                        ? "rgba(255,255,255,0.05)"
-                        : "rgba(255,255,255,0.025)",
-                    }}
-                  >
-                    <Icon size={18} />
-                  </div>
-                  <span
-                    style={{
-                      fontSize: "11px",
-                      textAlign: "center",
-                      lineHeight: 1.2,
-                    }}
-                  >
-                    {item.label}
-                  </span>
-                </motion.div>
-              );
+            <button className="flex w-[56px] flex-col items-center gap-2 rounded-2xl py-3 text-white/55 hover:bg-white/[0.04] hover:text-white transition">
+              <Folder className="h-4 w-4" />
+              <span className="text-[10px]">Assets</span>
+            </button>
 
-              return item.href === "#" ? (
-                <div key={item.label}>{content}</div>
-              ) : (
-                <Link
-                  key={item.label}
-                  href={item.href}
-                  style={{ textDecoration: "none", color: "inherit" }}
-                >
-                  {content}
-                </Link>
-              );
-            })}
+            <div className="my-2 h-px w-8 bg-white/10" />
+
+            <button className="flex w-[56px] flex-col items-center gap-2 rounded-2xl py-3 text-white/55 hover:bg-white/[0.04] hover:text-white transition">
+              <Sparkles className="h-4 w-4" />
+              <span className="text-[10px]">Omni</span>
+            </button>
+
+            <button className="flex w-[56px] flex-col items-center gap-2 rounded-2xl bg-lime-400/10 py-3 text-lime-400 transition">
+              <Wand2 className="h-4 w-4" />
+              <span className="text-[10px]">Generate</span>
+            </button>
+
+            <button className="flex w-[56px] flex-col items-center gap-2 rounded-2xl py-3 text-white/55 hover:bg-white/[0.04] hover:text-white transition">
+              <PanelLeft className="h-4 w-4" />
+              <span className="text-[10px]">Canvas</span>
+            </button>
+
+            <button className="flex w-[56px] flex-col items-center gap-2 rounded-2xl py-3 text-white/55 hover:bg-white/[0.04] hover:text-white transition">
+              <Grid3X3 className="h-4 w-4" />
+              <span className="text-[10px]">Tools</span>
+            </button>
+          </div>
+
+          <div className="mt-auto flex flex-col items-center gap-3">
+            <button className="flex w-[56px] flex-col items-center gap-2 rounded-2xl py-3 text-white/55 hover:bg-white/[0.04] hover:text-white transition">
+              <Bell className="h-4 w-4" />
+              <span className="text-[10px]">API</span>
+            </button>
+
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-sm font-medium">
+              S
+            </div>
           </div>
         </aside>
 
-        <section
-          style={{
-            display: "grid",
-            gridTemplateRows: "56px 1fr",
-            minHeight: "100vh",
-          }}
-        >
-          <div
-            style={{
-              borderBottom: "1px solid rgba(255,255,255,0.08)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              padding: "0 22px",
-              background: "rgba(255,255,255,0.015)",
-            }}
-          >
-            <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
-              <div style={chipStyle}>Image Engine</div>
-              <div style={chipStyle}>Cinema Studio</div>
+        {/* LEFT GENERATION PANEL */}
+        <section className="relative w-[520px] border-r border-white/10 bg-[#0b0d12] px-5 pb-5 pt-4">
+          {/* top tabs */}
+          <div className="mb-6 flex items-center gap-6 border-b border-white/6 pb-4 text-sm">
+            <button className="relative font-semibold text-white">
+              Image Generation
+              <span className="absolute -bottom-[17px] left-0 h-[2px] w-full rounded-full bg-white" />
+            </button>
+            <button className="text-white/65 hover:text-white">Video Generation</button>
+            <button className="text-white/65 hover:text-white">Motion Control</button>
+            <button className="text-white/65 hover:text-white">Avatar</button>
+          </div>
+
+          {/* model selector */}
+          <button className="mb-5 flex w-full items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-left transition hover:border-white/20 hover:bg-white/[0.05]">
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-lime-300/80 via-emerald-400/70 to-cyan-400/70 text-lg font-bold text-black shadow-lg">
+              3.0
             </div>
 
-            <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
-              <button
-                onClick={() => setAssetView("grid")}
-                style={{
-                  width: "36px",
-                  height: "36px",
-                  borderRadius: "10px",
-                  border: "1px solid rgba(255,255,255,0.08)",
-                  background:
-                    assetView === "grid" ? "rgba(255,255,255,0.08)" : "transparent",
-                  color: "white",
-                  display: "grid",
-                  placeItems: "center",
-                  cursor: "pointer",
-                }}
-              >
-                <Grid3X3 size={16} />
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-[15px] font-semibold">{selectedModel}</div>
+              <div className="truncate text-xs text-white/50">
+                Strengthen consistency, free multi-reference image generation
+              </div>
+            </div>
+
+            <ChevronDown className="h-4 w-4 text-white/55" />
+          </button>
+
+          {/* image reference */}
+          <div className="mb-4 rounded-2xl border border-white/10 bg-white/[0.02] px-4 py-3">
+            <div className="flex items-center justify-between">
+              <div className="text-sm font-medium">
+                Image Reference <span className="text-white/35">(Optional)</span>
+              </div>
+              <div className="text-xs text-white/45">0/10</div>
+            </div>
+          </div>
+
+          {/* prompt area */}
+          <div className="mb-5 rounded-2xl border border-white/10 bg-white/[0.02] p-3">
+            <textarea
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              placeholder="You can directly describe the image you want to generate..."
+              className="h-[280px] w-full resize-none bg-transparent text-sm text-white/90 placeholder:text-white/30 outline-none"
+            />
+
+            <div className="mt-3 flex items-center justify-between">
+              <button className="rounded-xl border border-lime-400/30 bg-lime-400/10 px-3 py-1.5 text-xs font-medium text-lime-400 transition hover:bg-lime-400/15">
+                Styles
               </button>
 
-              <button
-                onClick={() => setAssetView("list")}
-                style={{
-                  width: "36px",
-                  height: "36px",
-                  borderRadius: "10px",
-                  border: "1px solid rgba(255,255,255,0.08)",
-                  background:
-                    assetView === "list" ? "rgba(255,255,255,0.08)" : "transparent",
-                  color: "white",
-                  display: "grid",
-                  placeItems: "center",
-                  cursor: "pointer",
-                }}
-              >
-                <List size={16} />
+              <button className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/[0.05] text-white/75 hover:bg-white/[0.08]">
+                <Sparkles className="h-4 w-4" />
               </button>
             </div>
           </div>
 
-          <div style={{ padding: "28px", overflow: "auto" }}>
-            <div style={{ width: "100%" }}>
-              <div style={{ marginBottom: "24px" }}>
-                <div
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: "8px",
-                    padding: "8px 12px",
-                    borderRadius: "999px",
-                    border: "1px solid rgba(255,255,255,0.08)",
-                    background: "rgba(255,255,255,0.03)",
-                    fontSize: "13px",
-                    color: "rgba(255,255,255,0.82)",
-                    marginBottom: "14px",
-                  }}
+          {/* bottom settings area */}
+          <div className="absolute bottom-5 left-5 right-5" ref={panelRef}>
+            <AnimatePresence>
+              {settingsOpen && (
+                <motion.div
+                  initial={{ opacity: 0, y: 20, scale: 0.985 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 14, scale: 0.985 }}
+                  transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+                  className="mb-4 rounded-[28px] border border-white/10 bg-[#1a1d24]/95 p-4 shadow-[0_24px_80px_rgba(0,0,0,0.45)] backdrop-blur-xl"
                 >
-                  <span
-                    style={{
-                      width: "8px",
-                      height: "8px",
-                      borderRadius: "999px",
-                      background: "#7c3aed",
-                      boxShadow: "0 0 12px #7c3aed",
-                    }}
-                  />
-                  AI Visual Production
-                </div>
-
-                <h1
-                  style={{
-                    fontSize: "56px",
-                    lineHeight: 1,
-                    margin: "0 0 14px 0",
-                    letterSpacing: "-1.4px",
-                  }}
-                >
-                  Kylor Image Engine
-                </h1>
-
-                <p
-                  style={{
-                    maxWidth: "920px",
-                    color: "rgba(255,255,255,0.68)",
-                    fontSize: "20px",
-                    lineHeight: 1.6,
-                    margin: 0,
-                  }}
-                >
-                  Generate cinematic stills and concept frames with a clean,
-                  filmmaker-friendly workflow.
-                </p>
-              </div>
-
-              <div style={{ display: "grid", gap: "22px" }}>
-                <div style={{ ...panelStyle, padding: "22px" }}>
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      gap: "12px",
-                      flexWrap: "wrap",
-                      marginBottom: "14px",
-                    }}
-                  >
-                    <h3 style={{ margin: 0, fontSize: "24px" }}>Render Preview</h3>
-                    <div style={chipStyle}>4 Variations</div>
-                  </div>
-
-                  <div
-                    style={{
-                      minHeight: "620px",
-                      padding: "28px",
-                      borderRadius: "22px",
-                      border: "1px solid rgba(255,255,255,0.08)",
-                      background:
-                        "radial-gradient(circle at top, rgba(79,70,229,0.22), transparent 36%), linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.015))",
-                      overflow: "hidden",
-                      boxShadow: "0 0 60px rgba(79,70,229,0.15)",
-                    }}
-                  >
-                    <div
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns: "repeat(4, 1fr)",
-                        gridTemplateRows: "1fr",
-                        gap: "18px",
-                        width: "100%",
-                        minHeight: "100%",
-                      }}
-                    >
-                      {[1, 2, 3, 4].map((i) => (
-                        <div
-                          key={i}
-                          style={{
-                            borderRadius: "18px",
-                            border: "1px solid rgba(255,255,255,0.08)",
-                            background:
-                              "radial-gradient(circle at top, rgba(124,58,237,0.14), transparent 32%), linear-gradient(180deg, rgba(255,255,255,0.035), rgba(255,255,255,0.018))",
-                            aspectRatio: "16 / 9",
-                            display: "grid",
-                            placeItems: "center",
-                            position: "relative",
-                            overflow: "hidden",
-                          }}
+                  {/* Mode */}
+                  <div className="mb-5">
+                    <div className="mb-2 text-xs text-white/55">Mode</div>
+                    <div className="grid grid-cols-3 gap-2 rounded-2xl bg-white/[0.03] p-1">
+                      {modes.map((item) => (
+                        <button
+                          key={item}
+                          onClick={() => setMode(item)}
+                          className={`h-11 rounded-xl text-sm font-medium transition ${
+                            mode === item
+                              ? "bg-white/14 text-white"
+                              : "text-white/55 hover:bg-white/[0.06] hover:text-white"
+                          }`}
                         >
-                          <div style={{ textAlign: "center", padding: "20px" }}>
-                            <div
-                              style={{
-                                width: "66px",
-                                height: "66px",
-                                margin: "0 auto 12px",
-                                borderRadius: "20px",
-                                display: "grid",
-                                placeItems: "center",
-                                background:
-                                  "linear-gradient(135deg, rgba(79,70,229,0.22), rgba(124,58,237,0.18))",
-                                border: "1px solid rgba(255,255,255,0.08)",
-                              }}
-                            >
-                              <ImageIcon size={24} />
-                            </div>
-                            <div style={{ fontSize: "16px", fontWeight: 700 }}>
-                              Variation {i}
-                            </div>
-                            <div
-                              style={{
-                                marginTop: "6px",
-                                fontSize: "13px",
-                                color: "rgba(255,255,255,0.62)",
-                              }}
-                            >
-                              Ready for image output
-                            </div>
-                          </div>
-                        </div>
+                          {item}
+                        </button>
                       ))}
                     </div>
                   </div>
-                </div>
 
-                <div style={{ ...panelStyle, padding: "16px" }}>
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "1fr 340px",
-                      gap: "18px",
-                      alignItems: "stretch",
-                    }}
-                  >
-                    <div style={{ display: "grid", gap: "14px" }}>
-                      <div>
-                        <h3 style={sectionTitle}>Image Composer</h3>
-                        <p
-                          style={{
-                            margin: 0,
-                            color: "rgba(255,255,255,0.60)",
-                            fontSize: "14px",
-                          }}
-                        >
-                          Write your scene, choose the visual feel, and generate.
-                        </p>
-                      </div>
-
-                      <div>
-                        <label
-                          style={{
-                            display: "block",
-                            fontSize: "14px",
-                            marginBottom: "8px",
-                            color: "rgba(255,255,255,0.84)",
-                          }}
-                        >
-                          Scene Prompt
-                        </label>
-                        <textarea
-                          value={prompt}
-                          onChange={(e) => setPrompt(e.target.value)}
-                          rows={3}
-                          placeholder="A lone astronaut walking through a red alien desert, massive planets in the sky, cinematic dust atmosphere..."
-                          style={{
-                            ...inputStyle,
-                            resize: "vertical",
-                            lineHeight: "1.7",
-                          }}
-                        />
-                      </div>
-
-                      <div
-                        style={{
-                          display: "grid",
-                          gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
-                          gap: "14px",
-                        }}
-                      >
-                        <div>
-                          <label
-                            style={{
-                              display: "block",
-                              fontSize: "14px",
-                              marginBottom: "8px",
-                              color: "rgba(255,255,255,0.84)",
-                            }}
-                          >
-                            Shot Type
-                          </label>
-                          <select
-                            value={shotType}
-                            onChange={(e) => setShotType(e.target.value)}
-                            style={selectStyle}
-                          >
-                            <option>Wide Shot</option>
-                            <option>Medium Shot</option>
-                            <option>Close Up</option>
-                            <option>Overhead Shot</option>
-                            <option>Tracking Frame</option>
-                          </select>
-                        </div>
-
-                        <div>
-                          <label
-                            style={{
-                              display: "block",
-                              fontSize: "14px",
-                              marginBottom: "8px",
-                              color: "rgba(255,255,255,0.84)",
-                            }}
-                          >
-                            Lighting
-                          </label>
-                          <select
-                            value={lighting}
-                            onChange={(e) => setLighting(e.target.value)}
-                            style={selectStyle}
-                          >
-                            <option>Cinematic</option>
-                            <option>Moody</option>
-                            <option>Soft Daylight</option>
-                            <option>Neon Night</option>
-                            <option>High Contrast</option>
-                          </select>
-                        </div>
-
-                        <div>
-                          <label
-                            style={{
-                              display: "block",
-                              fontSize: "14px",
-                              marginBottom: "8px",
-                              color: "rgba(255,255,255,0.84)",
-                            }}
-                          >
-                            Mood
-                          </label>
-                          <select
-                            value={mood}
-                            onChange={(e) => setMood(e.target.value)}
-                            style={selectStyle}
-                          >
-                            <option>Epic</option>
-                            <option>Dark</option>
-                            <option>Dreamlike</option>
-                            <option>Tense</option>
-                            <option>Emotional</option>
-                          </select>
-                        </div>
-
-                        <div>
-                          <label
-                            style={{
-                              display: "block",
-                              fontSize: "14px",
-                              marginBottom: "8px",
-                              color: "rgba(255,255,255,0.84)",
-                            }}
-                          >
-                            Aspect Ratio
-                          </label>
-                          <select
-                            value={ratio}
-                            onChange={(e) => setRatio(e.target.value)}
-                            style={selectStyle}
-                          >
-                            <option>16:9</option>
-                            <option>21:9</option>
-                            <option>4:5</option>
-                            <option>1:1</option>
-                            <option>9:16</option>
-                          </select>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div
-                      style={{
-                        ...softCard,
-                        padding: "14px",
-                        display: "grid",
-                        gridTemplateRows: "auto auto auto",
-                        alignContent: "start",
-                        gap: "14px",
-                      }}
-                    >
-                      <div
-                        style={{
-                          display: "inline-flex",
-                          alignItems: "center",
-                          gap: "8px",
-                          ...chipStyle,
-                          width: "fit-content",
-                        }}
-                      >
-                        <Layers3 size={14} />
-                        Selected Setup
-                      </div>
-
-                      <div
-                        style={{
-                          ...softCard,
-                          padding: "12px",
-                        }}
-                      >
-                        <div
-                          style={{
-                            display: "grid",
-                            gridTemplateColumns: "1fr 1fr",
-                            gap: "12px",
-                            alignItems: "start",
-                          }}
-                        >
-                          {/* LEFT — LENS */}
-                          <div>
-                            <div
-                              style={{
-                                fontSize: "12px",
-                                color: "rgba(255,255,255,0.58)",
-                                marginBottom: "8px",
-                                fontWeight: 600,
-                                letterSpacing: "0.02em",
-                              }}
-                            >
-                              Lens
-                            </div>
-
-                            <div
-  ref={lensScrollRef}
-  className="hide-scrollbar"
-  style={{
-    display: "grid",
-    gap: "10px",
-    maxHeight: "260px",
-    overflowY: "auto",
-    overflowX: "hidden",
-    paddingRight: "2px",
-    scrollbarWidth: "none",
-    msOverflowStyle: "none",
-    scrollSnapType: "y mandatory",
-    scrollBehavior: "smooth",
-  }}
->
-                              {lenses.map((lens) => {
-                                const active = selectedLens === lens.id;
-
-                                return (
-                                  <button
-                                    key={lens.id}
-                                    onClick={() => setSelectedLens(lens.id)}
-                                    style={{
-  ...thumbCard(active),
-  scrollSnapAlign: "center",
-  minHeight: `${CARD_HEIGHT - 10}px`,
-}}
-                                  >
-                                    <div
-                                      style={{
-                                        height: "82px",
-                                        borderRadius: "12px",
-                                        overflow: "hidden",
-                                        position: "relative",
-                                        background: "rgba(255,255,255,0.03)",
-                                        border: "1px solid rgba(255,255,255,0.06)",
-                                        marginBottom: "8px",
-                                      }}
-                                    >
-                                      <Image
-                                        src={lens.image}
-                                        alt={lens.name}
-                                        fill
-                                        style={{ objectFit: "contain", padding: "10px" }}
-                                      />
-                                    </div>
-
-                                    <div
-                                      style={{
-                                        fontSize: "13px",
-                                        fontWeight: 700,
-                                        display: "flex",
-                                        justifyContent: "space-between",
-                                        gap: "8px",
-                                        alignItems: "center",
-                                      }}
-                                    >
-                                      <span>{lens.name}</span>
-                                      {active && <Check size={14} />}
-                                    </div>
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          </div>
-
-                          {/* RIGHT — CAMERA */}
-                          <div>
-                            <div
-                              style={{
-                                fontSize: "12px",
-                                color: "rgba(255,255,255,0.58)",
-                                marginBottom: "8px",
-                                fontWeight: 600,
-                                letterSpacing: "0.02em",
-                              }}
-                            >
-                              Camera
-                            </div>
-
-                            <div
-  ref={cameraScrollRef}
-  className="hide-scrollbar"
-  style={{
-    display: "grid",
-    gap: "10px",
-    maxHeight: "260px",
-    overflowY: "auto",
-    overflowX: "hidden",
-    paddingRight: "2px",
-    scrollbarWidth: "none",
-    msOverflowStyle: "none",
-    scrollSnapType: "y mandatory",
-    scrollBehavior: "smooth",
-  }}
->
-                              {cameras.map((camera) => {
-                                const active = selectedCamera === camera.id;
-
-                                return (
-                                  <button
-                                    key={camera.id}
-                                    onClick={() => setSelectedCamera(camera.id)}
-                                    style={{
-  ...thumbCard(active),
-  scrollSnapAlign: "center",
-  minHeight: `${CARD_HEIGHT - 10}px`,
-}}
-                                  >
-                                    <div
-                                      style={{
-                                        height: "82px",
-                                        borderRadius: "12px",
-                                        overflow: "hidden",
-                                        position: "relative",
-                                        background: "rgba(255,255,255,0.03)",
-                                        border: "1px solid rgba(255,255,255,0.06)",
-                                        marginBottom: "8px",
-                                      }}
-                                    >
-                                      <Image
-                                        src={camera.image}
-                                        alt={camera.name}
-                                        fill
-                                        style={{ objectFit: "contain", padding: "10px" }}
-                                      />
-                                    </div>
-
-                                    <div
-                                      style={{
-                                        fontSize: "13px",
-                                        fontWeight: 700,
-                                        display: "flex",
-                                        justifyContent: "space-between",
-                                        gap: "8px",
-                                        alignItems: "center",
-                                      }}
-                                    >
-                                      <span>{camera.name}</span>
-                                      {active && <Check size={14} />}
-                                    </div>
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div>
-                        <h4 style={{ margin: "0 0 8px 0", fontSize: "18px" }}>
-                          {currentCamera.name}
-                        </h4>
-                        <p
-                          style={{
-                            margin: "0 0 14px 0",
-                            color: "rgba(255,255,255,0.62)",
-                            lineHeight: 1.6,
-                            fontSize: "14px",
-                          }}
-                        >
-                          {currentLens.name} • {shotType} • {lighting} • {mood} • {ratio}
-                        </p>
-
+                  {/* Ratio */}
+                  <div className="mb-5">
+                    <div className="mb-2 text-xs text-white/55">Ratio</div>
+                    <div className="grid grid-cols-5 gap-2">
+                      {ratios.map((item) => (
                         <button
-                          style={{
-                            width: "100%",
-                            padding: "16px 20px",
-                            borderRadius: "16px",
-                            border: "none",
-                            background: "linear-gradient(135deg, #4f46e5, #7c3aed)",
-                            color: "white",
-                            cursor: "pointer",
-                            fontSize: "16px",
-                            fontWeight: 700,
-                            boxShadow: "0 14px 30px rgba(124,58,237,0.20)",
-                            display: "inline-flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            gap: "10px",
-                          }}
+                          key={item}
+                          onClick={() => setRatio(item)}
+                          className={`flex h-12 flex-col items-center justify-center rounded-xl border text-xs transition ${
+                            ratio === item
+                              ? "border-white/20 bg-white/10 text-white"
+                              : "border-white/8 bg-white/[0.03] text-white/55 hover:border-white/15 hover:bg-white/[0.06] hover:text-white"
+                          }`}
                         >
-                          <Wand2 size={18} />
-                          Generate Image
-                          <ChevronRight size={18} />
+                          {item}
                         </button>
-                      </div>
+                      ))}
                     </div>
                   </div>
-                </div>
 
+                  {/* Output */}
+                  <div>
+                    <div className="mb-2 text-xs text-white/55">Output</div>
+                    <div className="grid grid-cols-9 gap-2">
+                      {outputs.map((item) => (
+                        <button
+                          key={item}
+                          onClick={() => setOutputCount(item)}
+                          className={`h-10 rounded-xl text-sm font-medium transition ${
+                            outputCount === item
+                              ? "bg-white/14 text-white"
+                              : "bg-white/[0.03] text-white/55 hover:bg-white/[0.06] hover:text-white"
+                          }`}
+                        >
+                          {item}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            <div className="flex items-center justify-between gap-3">
+              <button
+                onClick={() => setSettingsOpen((prev) => !prev)}
+                className="flex h-12 items-center gap-2 rounded-xl border border-white/10 bg-[#111318] px-4 text-sm text-white/85 transition hover:border-white/20 hover:bg-[#171a20]"
+              >
+                <Settings2 className="h-4 w-4 text-white/65" />
+                <span>
+                  {mode} · {ratio} · {outputCount}
+                </span>
+                <ChevronDown
+                  className={`h-4 w-4 text-white/55 transition-transform duration-200 ${
+                    settingsOpen ? "rotate-180" : ""
+                  }`}
+                />
+              </button>
+
+              <button className="h-12 min-w-[150px] rounded-xl bg-lime-400 px-6 text-sm font-semibold text-black transition hover:scale-[1.015] hover:bg-lime-300 active:scale-[0.985]">
+                Generate
+              </button>
+            </div>
+          </div>
+        </section>
+
+        {/* RIGHT PREVIEW / ASSETS */}
+        <section className="flex-1 bg-black">
+          {/* top notice */}
+          <div className="flex h-[52px] items-center justify-between border-b border-white/10 bg-[#17191e] px-6 text-sm">
+            <div className="flex items-center gap-2 text-white/85">
+              <Bell className="h-4 w-4 text-white/55" />
+              <span>Turn on notifications for generation update.</span>
+              <button className="font-medium text-lime-400 hover:text-lime-300">
+                Allow
+              </button>
+            </div>
+            <button className="text-white/45 hover:text-white">✕</button>
+          </div>
+
+          {/* content top filters */}
+          <div className="flex items-center justify-between px-5 py-3">
+            <div className="flex items-center gap-2">
+              {["All", "Images", "Videos", "Audio"].map((item, i) => (
+                <button
+                  key={item}
+                  className={`rounded-lg px-4 py-1.5 text-sm transition ${
+                    i === 0
+                      ? "bg-white/10 text-white"
+                      : "text-white/65 hover:bg-white/[0.05] hover:text-white"
+                  }`}
+                >
+                  {item}
+                </button>
+              ))}
+
+              <label className="ml-2 flex items-center gap-2 text-sm text-white/85">
+                <input type="checkbox" className="accent-white" />
+                Favorites
+              </label>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/[0.03] text-white/75 hover:bg-white/[0.06]">
+                <Grid3X3 className="h-4 w-4" />
+              </button>
+              <button className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/[0.03] text-white/75 hover:bg-white/[0.06]">
+                <List className="h-4 w-4" />
+              </button>
+              <button className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-2 text-sm text-white/85 hover:bg-white/[0.06]">
+                Assets
+              </button>
+            </div>
+          </div>
+
+          {/* empty state */}
+          <div className="flex h-[calc(100vh-106px)] items-center justify-center">
+            <div className="text-center">
+              <div className="mx-auto mb-5 flex h-20 w-20 items-center justify-center rounded-full border border-white/10 bg-white/[0.03]">
+                <ImageIcon className="h-9 w-9 text-white/25" />
               </div>
+              <p className="text-base text-white/45">
+                Release your creative potential. Experience the magic of Kylor AI.
+              </p>
             </div>
           </div>
         </section>
