@@ -170,8 +170,7 @@ export default function ImagePage() {
   };
 
   const thumbCard = (active) => ({
-    minWidth: "150px",
-    flexShrink: 0,
+    width: "100%",
     padding: "10px",
     borderRadius: "16px",
     border: active
@@ -675,77 +674,156 @@ export default function ImagePage() {
                           padding: "12px",
                         }}
                       >
-                        <div style={{ display: "grid", gap: "12px" }}>
-                          <div style={{ display: "flex", gap: "10px", overflowX: "auto", paddingBottom: "2px" }}>
-                            {cameras.map((camera) => {
-                              const active = selectedCamera === camera.id;
-                              return (
-                                <button
-                                  key={camera.id}
-                                  onClick={() => setSelectedCamera(camera.id)}
-                                  style={thumbCard(active)}
-                                >
-                                  <div
-                                    style={{
-                                      height: "78px",
-                                      borderRadius: "12px",
-                                      overflow: "hidden",
-                                      position: "relative",
-                                      background: "rgba(255,255,255,0.03)",
-                                      border: "1px solid rgba(255,255,255,0.06)",
-                                      marginBottom: "8px",
-                                    }}
+                        <div
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns: "1fr 1fr",
+                            gap: "12px",
+                            alignItems: "start",
+                          }}
+                        >
+                          {/* LEFT — LENS */}
+                          <div>
+                            <div
+                              style={{
+                                fontSize: "12px",
+                                color: "rgba(255,255,255,0.58)",
+                                marginBottom: "8px",
+                                fontWeight: 600,
+                                letterSpacing: "0.02em",
+                              }}
+                            >
+                              Lens
+                            </div>
+
+                            <div
+                              style={{
+                                display: "grid",
+                                gap: "10px",
+                                maxHeight: "260px",
+                                overflowY: "auto",
+                                overflowX: "hidden",
+                                paddingRight: "4px",
+                                scrollbarWidth: "thin",
+                              }}
+                            >
+                              {lenses.map((lens) => {
+                                const active = selectedLens === lens.id;
+
+                                return (
+                                  <button
+                                    key={lens.id}
+                                    onClick={() => setSelectedLens(lens.id)}
+                                    style={thumbCard(active)}
                                   >
-                                    <Image
-                                      src={camera.image}
-                                      alt={camera.name}
-                                      fill
-                                      style={{ objectFit: "contain", padding: "10px" }}
-                                    />
-                                  </div>
-                                  <div style={{ fontSize: "13px", fontWeight: 700, display: "flex", justifyContent: "space-between", gap: "8px" }}>
-                                    <span>{camera.name}</span>
-                                    {active && <Check size={14} />}
-                                  </div>
-                                </button>
-                              );
-                            })}
+                                    <div
+                                      style={{
+                                        height: "82px",
+                                        borderRadius: "12px",
+                                        overflow: "hidden",
+                                        position: "relative",
+                                        background: "rgba(255,255,255,0.03)",
+                                        border: "1px solid rgba(255,255,255,0.06)",
+                                        marginBottom: "8px",
+                                      }}
+                                    >
+                                      <Image
+                                        src={lens.image}
+                                        alt={lens.name}
+                                        fill
+                                        style={{ objectFit: "contain", padding: "10px" }}
+                                      />
+                                    </div>
+
+                                    <div
+                                      style={{
+                                        fontSize: "13px",
+                                        fontWeight: 700,
+                                        display: "flex",
+                                        justifyContent: "space-between",
+                                        gap: "8px",
+                                        alignItems: "center",
+                                      }}
+                                    >
+                                      <span>{lens.name}</span>
+                                      {active && <Check size={14} />}
+                                    </div>
+                                  </button>
+                                );
+                              })}
+                            </div>
                           </div>
 
-                          <div style={{ display: "flex", gap: "10px", overflowX: "auto", paddingBottom: "2px" }}>
-                            {lenses.map((lens) => {
-                              const active = selectedLens === lens.id;
-                              return (
-                                <button
-                                  key={lens.id}
-                                  onClick={() => setSelectedLens(lens.id)}
-                                  style={thumbCard(active)}
-                                >
-                                  <div
-                                    style={{
-                                      height: "78px",
-                                      borderRadius: "12px",
-                                      overflow: "hidden",
-                                      position: "relative",
-                                      background: "rgba(255,255,255,0.03)",
-                                      border: "1px solid rgba(255,255,255,0.06)",
-                                      marginBottom: "8px",
-                                    }}
+                          {/* RIGHT — CAMERA */}
+                          <div>
+                            <div
+                              style={{
+                                fontSize: "12px",
+                                color: "rgba(255,255,255,0.58)",
+                                marginBottom: "8px",
+                                fontWeight: 600,
+                                letterSpacing: "0.02em",
+                              }}
+                            >
+                              Camera
+                            </div>
+
+                            <div
+                              style={{
+                                display: "grid",
+                                gap: "10px",
+                                maxHeight: "260px",
+                                overflowY: "auto",
+                                overflowX: "hidden",
+                                paddingRight: "4px",
+                                scrollbarWidth: "thin",
+                              }}
+                            >
+                              {cameras.map((camera) => {
+                                const active = selectedCamera === camera.id;
+
+                                return (
+                                  <button
+                                    key={camera.id}
+                                    onClick={() => setSelectedCamera(camera.id)}
+                                    style={thumbCard(active)}
                                   >
-                                    <Image
-                                      src={lens.image}
-                                      alt={lens.name}
-                                      fill
-                                      style={{ objectFit: "contain", padding: "10px" }}
-                                    />
-                                  </div>
-                                  <div style={{ fontSize: "13px", fontWeight: 700, display: "flex", justifyContent: "space-between", gap: "8px" }}>
-                                    <span>{lens.name}</span>
-                                    {active && <Check size={14} />}
-                                  </div>
-                                </button>
-                              );
-                            })}
+                                    <div
+                                      style={{
+                                        height: "82px",
+                                        borderRadius: "12px",
+                                        overflow: "hidden",
+                                        position: "relative",
+                                        background: "rgba(255,255,255,0.03)",
+                                        border: "1px solid rgba(255,255,255,0.06)",
+                                        marginBottom: "8px",
+                                      }}
+                                    >
+                                      <Image
+                                        src={camera.image}
+                                        alt={camera.name}
+                                        fill
+                                        style={{ objectFit: "contain", padding: "10px" }}
+                                      />
+                                    </div>
+
+                                    <div
+                                      style={{
+                                        fontSize: "13px",
+                                        fontWeight: 700,
+                                        display: "flex",
+                                        justifyContent: "space-between",
+                                        gap: "8px",
+                                        alignItems: "center",
+                                      }}
+                                    >
+                                      <span>{camera.name}</span>
+                                      {active && <Check size={14} />}
+                                    </div>
+                                  </button>
+                                );
+                              })}
+                            </div>
                           </div>
                         </div>
                       </div>
