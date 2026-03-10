@@ -43,7 +43,7 @@ export default function Home() {
     { label: "Home", icon: Compass, active: true, href: "/" },
     { label: "Explore", icon: Compass, href: "/explore" },
     { label: "Story", icon: Clapperboard, href: "/story" },
-    { label: "Image", icon: ImageIcon, href: "#" },
+    { label: "Image", icon: ImageIcon, href: "/image" },
     { label: "Video", icon: Video, href: "#" },
     { label: "Consistency", icon: UserCircle2, href: "#" },
     { label: "Motion", icon: Orbit, href: "#" },
