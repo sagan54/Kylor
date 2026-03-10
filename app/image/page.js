@@ -279,7 +279,7 @@ export default function ImagePage() {
             }}
           >
             <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
-              <div style={chipStyle}>Kylor Image Engine</div>
+              <div style={chipStyle}>Image Engine</div>
               <div style={chipStyle}>Cinema Studio</div>
             </div>
 
