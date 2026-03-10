@@ -341,9 +341,9 @@ export default function ImagePage() {
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "1.15fr 0.85fr",
-                  gap: "22px",
-                  alignItems: "start",
+gridTemplateColumns: "1fr 1fr",
+gap: "22px",
+alignItems: "start",
                 }}
               >
                 <div style={{ ...panelStyle, padding: "22px" }}>
@@ -541,7 +541,8 @@ export default function ImagePage() {
 
                   <div
                     style={{
-                      height: "460px",
+                      minHeight: "520px",
+padding: "16px",
                       borderRadius: "20px",
                       border: "1px solid rgba(255,255,255,0.08)",
                       background:
@@ -551,22 +552,33 @@ export default function ImagePage() {
                       overflow: "hidden",
                     }}
                   >
-                    <div style={{ textAlign: "center", padding: "20px" }}>
-                      <div
-                        style={{
-                          width: "74px",
-                          height: "74px",
-                          margin: "0 auto 16px",
-                          borderRadius: "22px",
-                          display: "grid",
-                          placeItems: "center",
-                          background:
-                            "linear-gradient(135deg, rgba(79,70,229,0.22), rgba(124,58,237,0.18))",
-                          border: "1px solid rgba(255,255,255,0.08)",
-                        }}
-                      >
-                        <ImageIcon size={28} />
-                      </div>
+                   <div
+  style={{
+    display: "grid",
+    gridTemplateColumns: "1fr 1fr",
+    gridTemplateRows: "1fr 1fr",
+    gap: "12px",
+    width: "100%",
+    height: "100%",
+  }}
+>
+  {[1, 2, 3, 4].map((i) => (
+    <div
+      key={i}
+      style={{
+        borderRadius: "14px",
+        border: "1px solid rgba(255,255,255,0.08)",
+        background:
+          "linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.02))",
+        minHeight: "220px",
+        display: "grid",
+        placeItems: "center",
+      }}
+    >
+      <ImageIcon size={24} style={{ opacity: 0.7 }} />
+    </div>
+  ))}
+
 
                       <h4 style={{ margin: "0 0 8px 0", fontSize: "22px" }}>
                         Image Output Area
