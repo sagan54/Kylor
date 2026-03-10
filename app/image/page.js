@@ -283,7 +283,14 @@ export default function ImagePage() {
               height: "100%",
             }}
           >
-            <div style={{ width: "100%", height: "100%", display: "grid", gridTemplateRows: "auto 1fr" }}>
+            <div
+              style={{
+                width: "100%",
+                height: "100%",
+                display: "grid",
+                gridTemplateRows: "auto 1fr",
+              }}
+            >
               <div style={{ marginBottom: "16px" }}>
                 <div
                   style={{
@@ -315,25 +322,12 @@ export default function ImagePage() {
                   style={{
                     fontSize: "56px",
                     lineHeight: 1,
-                    margin: "0 0 10px 0",
+                    margin: 0,
                     letterSpacing: "-1.4px",
                   }}
                 >
                   Kylor Image Engine
                 </h1>
-
-                <p
-                  style={{
-                    maxWidth: "920px",
-                    color: "rgba(255,255,255,0.68)",
-                    fontSize: "20px",
-                    lineHeight: 1.45,
-                    margin: 0,
-                  }}
-                >
-                  Generate cinematic stills and concept frames with a clean,
-                  filmmaker-friendly workflow.
-                </p>
               </div>
 
               <div style={{ ...panelStyle, padding: "12px", minHeight: 0 }}>
@@ -479,11 +473,21 @@ export default function ImagePage() {
                       >
                         <span>
                           Image Reference{" "}
-                          <span style={{ color: "rgba(255,255,255,0.38)", fontWeight: 500 }}>
+                          <span
+                            style={{
+                              color: "rgba(255,255,255,0.38)",
+                              fontWeight: 500,
+                            }}
+                          >
                             (Optional)
                           </span>
                         </span>
-                        <span style={{ color: "rgba(255,255,255,0.46)", fontSize: "13px" }}>
+                        <span
+                          style={{
+                            color: "rgba(255,255,255,0.46)",
+                            fontSize: "13px",
+                          }}
+                        >
                           0/10
                         </span>
                       </div>
@@ -528,9 +532,9 @@ export default function ImagePage() {
                         <button
                           style={{
                             borderRadius: "12px",
-                            border: "1px solid rgba(132,204,22,0.28)",
-                            background: "rgba(132,204,22,0.10)",
-                            color: "#a3e635",
+                            border: "1px solid rgba(124,58,237,0.35)",
+                            background: "rgba(124,58,237,0.15)",
+                            color: "#a78bfa",
                             padding: "8px 12px",
                             fontSize: "12px",
                             fontWeight: 700,
@@ -720,12 +724,12 @@ export default function ImagePage() {
                             height: "48px",
                             borderRadius: "14px",
                             border: "none",
-                            background: "linear-gradient(135deg, #84cc16, #a3e635)",
-                            color: "black",
+                            background: "linear-gradient(135deg, #4f46e5, #7c3aed)",
+                            color: "white",
                             cursor: "pointer",
                             fontSize: "15px",
                             fontWeight: 800,
-                            boxShadow: "0 14px 30px rgba(132,204,22,0.18)",
+                            boxShadow: "0 14px 30px rgba(124,58,237,0.25)",
                             display: "inline-flex",
                             alignItems: "center",
                             justifyContent: "center",
@@ -776,7 +780,7 @@ export default function ImagePage() {
                           style={{
                             border: "none",
                             background: "transparent",
-                            color: "#a3e635",
+                            color: "#a78bfa",
                             cursor: "pointer",
                             fontWeight: 700,
                             fontSize: "14px",
