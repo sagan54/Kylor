@@ -20,7 +20,6 @@ import {
   Layers3,
   ChevronRight,
   Check,
-  Monitor,
 } from "lucide-react";
 import { useState } from "react";
 
@@ -119,7 +118,7 @@ export default function ImagePage() {
 
   const inputStyle = {
     width: "100%",
-    padding: "16px 18px",
+    padding: "14px 16px",
     fontSize: "15px",
     borderRadius: "16px",
     border: "1px solid rgba(255,255,255,0.08)",
@@ -377,248 +376,95 @@ export default function ImagePage() {
               </div>
 
               <div style={{ display: "grid", gap: "22px" }}>
+                {/* TOP — BIG PREVIEW */}
                 <div style={{ ...panelStyle, padding: "22px" }}>
                   <div
                     style={{
-                      display: "grid",
-                      gridTemplateColumns: "1fr 420px",
-                      gap: "22px",
-                      alignItems: "stretch",
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      gap: "12px",
+                      flexWrap: "wrap",
+                      marginBottom: "14px",
                     }}
                   >
-                    <div style={{ display: "grid", gap: "16px" }}>
-                      <div>
-                        <h3 style={sectionTitle}>Image Composer</h3>
-                        <p
-                          style={{
-                            margin: 0,
-                            color: "rgba(255,255,255,0.60)",
-                            fontSize: "14px",
-                          }}
-                        >
-                          Write your scene, choose the visual feel, and generate.
-                        </p>
-                      </div>
+                    <h3 style={{ margin: 0, fontSize: "24px" }}>Render Preview</h3>
+                    <div style={chipStyle}>4 Variations</div>
+                  </div>
 
-                      <div>
-                        <label
-                          style={{
-                            display: "block",
-                            fontSize: "14px",
-                            marginBottom: "8px",
-                            color: "rgba(255,255,255,0.84)",
-                          }}
-                        >
-                          Scene Prompt
-                        </label>
-                        <textarea
-                          value={prompt}
-                          onChange={(e) => setPrompt(e.target.value)}
-                          rows={6}
-                          placeholder="A lone astronaut walking through a red alien desert, massive planets in the sky, cinematic dust atmosphere, dramatic rim lighting..."
-                          style={{
-                            ...inputStyle,
-                            resize: "vertical",
-                            lineHeight: "1.7",
-                          }}
-                        />
-                      </div>
-
-                      <div
-                        style={{
-                          display: "grid",
-                          gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
-                          gap: "14px",
-                        }}
-                      >
-                        <div>
-                          <label
-                            style={{
-                              display: "block",
-                              fontSize: "14px",
-                              marginBottom: "8px",
-                              color: "rgba(255,255,255,0.84)",
-                            }}
-                          >
-                            Shot Type
-                          </label>
-                          <select
-                            value={shotType}
-                            onChange={(e) => setShotType(e.target.value)}
-                            style={selectStyle}
-                          >
-                            <option>Wide Shot</option>
-                            <option>Medium Shot</option>
-                            <option>Close Up</option>
-                            <option>Overhead Shot</option>
-                            <option>Tracking Frame</option>
-                          </select>
-                        </div>
-
-                        <div>
-                          <label
-                            style={{
-                              display: "block",
-                              fontSize: "14px",
-                              marginBottom: "8px",
-                              color: "rgba(255,255,255,0.84)",
-                            }}
-                          >
-                            Lighting
-                          </label>
-                          <select
-                            value={lighting}
-                            onChange={(e) => setLighting(e.target.value)}
-                            style={selectStyle}
-                          >
-                            <option>Cinematic</option>
-                            <option>Moody</option>
-                            <option>Soft Daylight</option>
-                            <option>Neon Night</option>
-                            <option>High Contrast</option>
-                          </select>
-                        </div>
-
-                        <div>
-                          <label
-                            style={{
-                              display: "block",
-                              fontSize: "14px",
-                              marginBottom: "8px",
-                              color: "rgba(255,255,255,0.84)",
-                            }}
-                          >
-                            Mood
-                          </label>
-                          <select
-                            value={mood}
-                            onChange={(e) => setMood(e.target.value)}
-                            style={selectStyle}
-                          >
-                            <option>Epic</option>
-                            <option>Dark</option>
-                            <option>Dreamlike</option>
-                            <option>Tense</option>
-                            <option>Emotional</option>
-                          </select>
-                        </div>
-
-                        <div>
-                          <label
-                            style={{
-                              display: "block",
-                              fontSize: "14px",
-                              marginBottom: "8px",
-                              color: "rgba(255,255,255,0.84)",
-                            }}
-                          >
-                            Aspect Ratio
-                          </label>
-                          <select
-                            value={ratio}
-                            onChange={(e) => setRatio(e.target.value)}
-                            style={selectStyle}
-                          >
-                            <option>16:9</option>
-                            <option>21:9</option>
-                            <option>4:5</option>
-                            <option>1:1</option>
-                            <option>9:16</option>
-                          </select>
-                        </div>
-                      </div>
-                    </div>
-
+                  <div
+                    style={{
+                      minHeight: "620px",
+                      padding: "28px",
+                      borderRadius: "22px",
+                      border: "1px solid rgba(255,255,255,0.08)",
+                      background:
+                        "radial-gradient(circle at top, rgba(79,70,229,0.22), transparent 36%), linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.015))",
+                      overflow: "hidden",
+                      boxShadow: "0 0 60px rgba(79,70,229,0.15)",
+                    }}
+                  >
                     <div
                       style={{
-                        ...softCard,
-                        padding: "18px",
                         display: "grid",
-                        alignContent: "space-between",
+                        gridTemplateColumns: "repeat(4, 1fr)",
+                        gridTemplateRows: "1fr",
+                        gap: "18px",
+                        width: "100%",
+                        minHeight: "100%",
                       }}
                     >
-                      <div>
+                      {[1, 2, 3, 4].map((i) => (
                         <div
+                          key={i}
                           style={{
-                            display: "inline-flex",
-                            alignItems: "center",
-                            gap: "8px",
-                            marginBottom: "10px",
-                            ...chipStyle,
-                          }}
-                        >
-                          <Layers3 size={14} />
-                          Selected Setup
-                        </div>
-
-                        <h4 style={{ margin: "0 0 8px 0", fontSize: "22px" }}>
-                          {selectedCamera}
-                        </h4>
-
-                        <p
-                          style={{
-                            margin: "0 0 16px 0",
-                            color: "rgba(255,255,255,0.62)",
-                            lineHeight: 1.6,
-                            fontSize: "14px",
-                          }}
-                        >
-                          {selectedLens} • {shotType} • {lighting} • {mood} • {ratio}
-                        </p>
-
-                        <div
-                          style={{
-                            height: "180px",
                             borderRadius: "18px",
                             border: "1px solid rgba(255,255,255,0.08)",
                             background:
-                              "radial-gradient(circle at top, rgba(79,70,229,0.22), transparent 34%), linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.015))",
+                              "radial-gradient(circle at top, rgba(124,58,237,0.14), transparent 32%), linear-gradient(180deg, rgba(255,255,255,0.035), rgba(255,255,255,0.018))",
+                            aspectRatio: "16 / 9",
                             display: "grid",
                             placeItems: "center",
+                            position: "relative",
+                            overflow: "hidden",
                           }}
                         >
-                          <div style={{ textAlign: "center" }}>
-                            <Camera size={28} style={{ opacity: 0.9, marginBottom: "10px" }} />
-                            <div style={{ fontWeight: 700 }}>{selectedCamera}</div>
+                          <div style={{ textAlign: "center", padding: "20px" }}>
                             <div
                               style={{
-                                fontSize: "13px",
-                                color: "rgba(255,255,255,0.6)",
-                                marginTop: "6px",
+                                width: "66px",
+                                height: "66px",
+                                margin: "0 auto 12px",
+                                borderRadius: "20px",
+                                display: "grid",
+                                placeItems: "center",
+                                background:
+                                  "linear-gradient(135deg, rgba(79,70,229,0.22), rgba(124,58,237,0.18))",
+                                border: "1px solid rgba(255,255,255,0.08)",
                               }}
                             >
-                              Premium cinema configuration
+                              <ImageIcon size={24} />
+                            </div>
+                            <div style={{ fontSize: "16px", fontWeight: 700 }}>
+                              Variation {i}
+                            </div>
+                            <div
+                              style={{
+                                marginTop: "6px",
+                                fontSize: "13px",
+                                color: "rgba(255,255,255,0.62)",
+                              }}
+                            >
+                              Ready for image output
                             </div>
                           </div>
                         </div>
-                      </div>
-
-                      <button
-                        style={{
-                          padding: "18px 22px",
-                          borderRadius: "16px",
-                          border: "none",
-                          background: "linear-gradient(135deg, #4f46e5, #7c3aed)",
-                          color: "white",
-                          cursor: "pointer",
-                          fontSize: "16px",
-                          fontWeight: 700,
-                          boxShadow: "0 14px 30px rgba(124,58,237,0.20)",
-                          display: "inline-flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          gap: "10px",
-                          marginTop: "18px",
-                        }}
-                      >
-                        <Wand2 size={18} />
-                        Generate Image
-                        <ChevronRight size={18} />
-                      </button>
+                      ))}
                     </div>
                   </div>
                 </div>
 
+                {/* MIDDLE — CAMERA & LENS */}
                 <div style={{ ...panelStyle, padding: "22px" }}>
                   <div
                     style={{
@@ -815,88 +661,218 @@ export default function ImagePage() {
                   </div>
                 </div>
 
-                <div style={{ ...panelStyle, padding: "22px" }}>
+                {/* BOTTOM — SMALL COMPOSER */}
+                <div style={{ ...panelStyle, padding: "16px" }}>
                   <div
                     style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      gap: "12px",
-                      flexWrap: "wrap",
-                      marginBottom: "14px",
+                      display: "grid",
+                      gridTemplateColumns: "1fr 360px",
+                      gap: "18px",
+                      alignItems: "stretch",
                     }}
                   >
-                    <h3 style={{ margin: 0, fontSize: "24px" }}>Render Preview</h3>
-                    <div style={chipStyle}>4 Variations</div>
-                  </div>
-
-                  <div
-                    style={{
-                      minHeight: "760px",
-                      padding: "16px",
-                      borderRadius: "22px",
-                      border: "1px solid rgba(255,255,255,0.08)",
-                      background:
-                        "radial-gradient(circle at top, rgba(79,70,229,0.22), transparent 36%), linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.015))",
-                      overflow: "hidden",
-                    }}
-                  >
-                    <div
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns: "1fr 1fr",
-                        gridTemplateRows: "1fr 1fr",
-                        gap: "14px",
-                        width: "100%",
-                        height: "100%",
-                      }}
-                    >
-                      {[1, 2, 3, 4].map((i) => (
-                        <div
-                          key={i}
+                    <div style={{ display: "grid", gap: "14px" }}>
+                      <div>
+                        <h3 style={sectionTitle}>Image Composer</h3>
+                        <p
                           style={{
-                            borderRadius: "18px",
-                            border: "1px solid rgba(255,255,255,0.08)",
-                            background:
-                              "radial-gradient(circle at top, rgba(124,58,237,0.14), transparent 32%), linear-gradient(180deg, rgba(255,255,255,0.035), rgba(255,255,255,0.018))",
-                            minHeight: "340px",
-                            display: "grid",
-                            placeItems: "center",
-                            position: "relative",
-                            overflow: "hidden",
+                            margin: 0,
+                            color: "rgba(255,255,255,0.60)",
+                            fontSize: "14px",
                           }}
                         >
-                          <div style={{ textAlign: "center", padding: "20px" }}>
-                            <div
-                              style={{
-                                width: "66px",
-                                height: "66px",
-                                margin: "0 auto 12px",
-                                borderRadius: "20px",
-                                display: "grid",
-                                placeItems: "center",
-                                background:
-                                  "linear-gradient(135deg, rgba(79,70,229,0.22), rgba(124,58,237,0.18))",
-                                border: "1px solid rgba(255,255,255,0.08)",
-                              }}
-                            >
-                              <ImageIcon size={24} />
-                            </div>
-                            <div style={{ fontSize: "16px", fontWeight: 700 }}>
-                              Variation {i}
-                            </div>
-                            <div
-                              style={{
-                                marginTop: "6px",
-                                fontSize: "13px",
-                                color: "rgba(255,255,255,0.62)",
-                              }}
-                            >
-                              Ready for image output
-                            </div>
-                          </div>
+                          Write your scene, choose the visual feel, and generate.
+                        </p>
+                      </div>
+
+                      <div>
+                        <label
+                          style={{
+                            display: "block",
+                            fontSize: "14px",
+                            marginBottom: "8px",
+                            color: "rgba(255,255,255,0.84)",
+                          }}
+                        >
+                          Scene Prompt
+                        </label>
+                        <textarea
+                          value={prompt}
+                          onChange={(e) => setPrompt(e.target.value)}
+                          rows={3}
+                          placeholder="A lone astronaut walking through a red alien desert, massive planets in the sky, cinematic dust atmosphere..."
+                          style={{
+                            ...inputStyle,
+                            resize: "vertical",
+                            lineHeight: "1.7",
+                          }}
+                        />
+                      </div>
+
+                      <div
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+                          gap: "14px",
+                        }}
+                      >
+                        <div>
+                          <label
+                            style={{
+                              display: "block",
+                              fontSize: "14px",
+                              marginBottom: "8px",
+                              color: "rgba(255,255,255,0.84)",
+                            }}
+                          >
+                            Shot Type
+                          </label>
+                          <select
+                            value={shotType}
+                            onChange={(e) => setShotType(e.target.value)}
+                            style={selectStyle}
+                          >
+                            <option>Wide Shot</option>
+                            <option>Medium Shot</option>
+                            <option>Close Up</option>
+                            <option>Overhead Shot</option>
+                            <option>Tracking Frame</option>
+                          </select>
                         </div>
-                      ))}
+
+                        <div>
+                          <label
+                            style={{
+                              display: "block",
+                              fontSize: "14px",
+                              marginBottom: "8px",
+                              color: "rgba(255,255,255,0.84)",
+                            }}
+                          >
+                            Lighting
+                          </label>
+                          <select
+                            value={lighting}
+                            onChange={(e) => setLighting(e.target.value)}
+                            style={selectStyle}
+                          >
+                            <option>Cinematic</option>
+                            <option>Moody</option>
+                            <option>Soft Daylight</option>
+                            <option>Neon Night</option>
+                            <option>High Contrast</option>
+                          </select>
+                        </div>
+
+                        <div>
+                          <label
+                            style={{
+                              display: "block",
+                              fontSize: "14px",
+                              marginBottom: "8px",
+                              color: "rgba(255,255,255,0.84)",
+                            }}
+                          >
+                            Mood
+                          </label>
+                          <select
+                            value={mood}
+                            onChange={(e) => setMood(e.target.value)}
+                            style={selectStyle}
+                          >
+                            <option>Epic</option>
+                            <option>Dark</option>
+                            <option>Dreamlike</option>
+                            <option>Tense</option>
+                            <option>Emotional</option>
+                          </select>
+                        </div>
+
+                        <div>
+                          <label
+                            style={{
+                              display: "block",
+                              fontSize: "14px",
+                              marginBottom: "8px",
+                              color: "rgba(255,255,255,0.84)",
+                            }}
+                          >
+                            Aspect Ratio
+                          </label>
+                          <select
+                            value={ratio}
+                            onChange={(e) => setRatio(e.target.value)}
+                            style={selectStyle}
+                          >
+                            <option>16:9</option>
+                            <option>21:9</option>
+                            <option>4:5</option>
+                            <option>1:1</option>
+                            <option>9:16</option>
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div
+                      style={{
+                        ...softCard,
+                        padding: "16px",
+                        display: "grid",
+                        alignContent: "space-between",
+                      }}
+                    >
+                      <div>
+                        <div
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "8px",
+                            marginBottom: "10px",
+                            ...chipStyle,
+                          }}
+                        >
+                          <Layers3 size={14} />
+                          Selected Setup
+                        </div>
+
+                        <h4 style={{ margin: "0 0 8px 0", fontSize: "22px" }}>
+                          {selectedCamera}
+                        </h4>
+
+                        <p
+                          style={{
+                            margin: "0 0 12px 0",
+                            color: "rgba(255,255,255,0.62)",
+                            lineHeight: 1.6,
+                            fontSize: "14px",
+                          }}
+                        >
+                          {selectedLens} • {shotType} • {lighting} • {mood} • {ratio}
+                        </p>
+                      </div>
+
+                      <button
+                        style={{
+                          padding: "16px 20px",
+                          borderRadius: "16px",
+                          border: "none",
+                          background: "linear-gradient(135deg, #4f46e5, #7c3aed)",
+                          color: "white",
+                          cursor: "pointer",
+                          fontSize: "16px",
+                          fontWeight: 700,
+                          boxShadow: "0 14px 30px rgba(124,58,237,0.20)",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          gap: "10px",
+                        }}
+                      >
+                        <Wand2 size={18} />
+                        Generate Image
+                        <ChevronRight size={18} />
+                      </button>
                     </div>
                   </div>
                 </div>
