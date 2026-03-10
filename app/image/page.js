@@ -285,7 +285,7 @@ export default function ImagePage() {
           </div>
 
           <div style={{ padding: "28px", overflow: "auto" }}>
-            <div style={{ maxWidth: "1420px", margin: "0 auto" }}>
+  <div style={{ width: "100%" }}>
               <div style={{ marginBottom: "24px" }}>
                 <div
                   style={{
