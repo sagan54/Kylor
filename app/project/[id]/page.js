@@ -165,6 +165,10 @@ export default function ProjectPage({ params }) {
   const [editTone, setEditTone] = useState("Cinematic");
   const [editIdea, setEditIdea] = useState("");
 
+  const [imagePrompt, setImagePrompt] = useState("");
+  const [imageLoading, setImageLoading] = useState(false);
+  const [generatedImage, setGeneratedImage] = useState(null);
+
   useEffect(() => {
     async function fetchProject() {
       const {
@@ -205,6 +209,43 @@ export default function ProjectPage({ params }) {
       fetchProject();
     }
   }, [projectId, router]);
+
+  async function generateImage() {
+    if (!imagePrompt.trim()) {
+      alert("Please enter an image prompt first.");
+      return;
+    }
+
+    setImageLoading(true);
+
+    try {
+      const res = await fetch("/api/generate-image", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          prompt: imagePrompt,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok || data.error) {
+        console.error("Generate image error:", data.error);
+        alert(data.error || "Failed to generate image.");
+        setImageLoading(false);
+        return;
+      }
+
+      setGeneratedImage(data.image);
+    } catch (error) {
+      console.error("Generate image failed:", error);
+      alert("Something went wrong while generating the image.");
+    }
+
+    setImageLoading(false);
+  }
 
   async function handleGenerateCharacterBios() {
     const characters = project?.structured_result?.characters || [];
@@ -1329,11 +1370,75 @@ export default function ProjectPage({ params }) {
 
             {activeTab === "Storyboard" && (
               <section style={panelStyle}>
-                <h3 style={{ marginTop: 0 }}>Storyboard</h3>
-                <p style={{ margin: 0, color: "rgba(255,255,255,0.60)" }}>
-                  This section is reserved for future storyboard generation, shot prompts,
-                  and visual planning.
-                </p>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    gap: "12px",
+                    flexWrap: "wrap",
+                    marginBottom: "18px",
+                  }}
+                >
+                  <div>
+                    <h3 style={{ margin: "0 0 6px 0" }}>Storyboard</h3>
+                    <p style={{ margin: 0, color: "rgba(255,255,255,0.60)" }}>
+                      Generate visual frames for your project.
+                    </p>
+                  </div>
+                </div>
+
+                <div style={{ display: "grid", gap: "16px" }}>
+                  <textarea
+                    value={imagePrompt}
+                    onChange={(e) => setImagePrompt(e.target.value)}
+                    rows={5}
+                    placeholder="Describe the cinematic scene you want to generate..."
+                    style={{
+                      ...inputStyle,
+                      resize: "vertical",
+                      lineHeight: "1.7",
+                    }}
+                  />
+
+                  <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+                    <button
+                      onClick={generateImage}
+                      disabled={imageLoading}
+                      style={{
+                        ...actionButton,
+                        background: imageLoading
+                          ? "rgba(255,255,255,0.10)"
+                          : "linear-gradient(135deg, #4f46e5, #7c3aed)",
+                        border: "none",
+                      }}
+                    >
+                      {imageLoading ? "Generating..." : "Generate Image"}
+                    </button>
+                  </div>
+
+                  {generatedImage && (
+                    <div
+                      style={{
+                        border: "1px solid rgba(255,255,255,0.08)",
+                        borderRadius: "16px",
+                        padding: "14px",
+                        background: "rgba(255,255,255,0.03)",
+                      }}
+                    >
+                      <img
+                        src={generatedImage}
+                        alt="Generated storyboard frame"
+                        style={{
+                          width: "100%",
+                          maxWidth: "720px",
+                          display: "block",
+                          borderRadius: "14px",
+                        }}
+                      />
+                    </div>
+                  )}
+                </div>
               </section>
             )}
 

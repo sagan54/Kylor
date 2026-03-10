@@ -12,6 +12,7 @@
     "framer-motion": "^12.35.1",
     "lucide-react": "^0.577.0",
     "next": "latest",
+    "openai": "^6.27.0",
     "react": "latest",
     "react-dom": "latest"
   }
