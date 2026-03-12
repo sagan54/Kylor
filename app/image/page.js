@@ -311,7 +311,7 @@ export default function ImagePage() {
 
   const [refImages, setRefImages] = useState([]);
 
-  const [ratio, setRatio] = useState("3:4");
+  const [ratio, setRatio] = useState("16:9");
   const [mode, setMode] = useState("2K HD");
   const [outputCount, setOutputCount] = useState(4);
   const [settingsOpen, setSettingsOpen] = useState(false);
