@@ -386,9 +386,6 @@ export default function ImagePage() {
                           }}
                         />
                       </div>
-                      <div style={{ color: "rgba(255,255,255,0.60)" }}>Video Generation</div>
-                      <div style={{ color: "rgba(255,255,255,0.60)" }}>Motion Control</div>
-                      <div style={{ color: "rgba(255,255,255,0.60)" }}>Avatar</div>
                     </div>
 
                     <button
