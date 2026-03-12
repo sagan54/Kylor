@@ -406,23 +406,22 @@ export default function ImagePage() {
                         fontFamily: "inherit",
                       }}
                     >
-                      <div
-                        style={{
-                          width: "44px",
-                          height: "44px",
-                          borderRadius: "14px",
-                          display: "grid",
-                          placeItems: "center",
-                          background:
-                            "linear-gradient(135deg, rgba(79,70,229,0.96), rgba(124,58,237,0.86))",
-                          color: "white",
-                          fontWeight: 800,
-                          fontSize: "18px",
-                          flexShrink: 0,
-                        }}
-                      >
-                        V1
-                      </div>
+               <div
+  style={{
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    background: "#6D5CFF",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontWeight: 700,
+    fontSize: "13px",
+    color: "#fff",
+  }}
+>
+  V1
+</div>
 
                       <div style={{ flex: 1, minWidth: 0, textAlign: "left" }}>
                         <div
