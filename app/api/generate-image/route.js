@@ -6,19 +6,50 @@ const client = new OpenAI({
 
 export async function POST(req) {
   try {
-    const { prompt } = await req.json();
+    const {
+      prompt,
+      size = "1024x1024",
+      quality = "medium",
+      n = 1,
+    } = await req.json();
+
+    if (!prompt || !prompt.trim()) {
+      return Response.json({ error: "Prompt is required" }, { status: 400 });
+    }
 
     const result = await client.images.generate({
       model: "gpt-image-1",
-      prompt: prompt,
-      size: "1024x1024"
+      prompt,
+      size,
+      quality,
+      output_format: "png",
+      n: Math.min(Number(n) || 1, 4),
     });
+
+    const images =
+      result?.data
+        ?.map((item) =>
+          item?.b64_json ? `data:image/png;base64,${item.b64_json}` : null
+        )
+        .filter(Boolean) || [];
+
+    if (!images.length) {
+      return Response.json(
+        { error: "No image returned from OpenAI" },
+        { status: 500 }
+      );
+    }
 
     return Response.json({
-      image: result.data[0].url
+      image: images[0],
+      images,
     });
-
   } catch (error) {
-    return Response.json({ error: error.message });
+    console.error("Image generation error:", error);
+
+    return Response.json(
+      { error: error.message || "Failed to generate image" },
+      { status: 500 }
+    );
   }
 }
