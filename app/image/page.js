@@ -62,11 +62,11 @@ export default function ImagePage() {
 
   const panelStyle = {
     border: "1px solid rgba(255,255,255,0.08)",
-    borderRadius: "24px",
+    borderRadius: "22px",
     background:
-      "linear-gradient(180deg, rgba(255,255,255,0.035), rgba(255,255,255,0.018))",
+      "linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.015))",
     backdropFilter: "blur(10px)",
-    boxShadow: "0 20px 60px rgba(0,0,0,0.24)",
+    boxShadow: "0 18px 48px rgba(0,0,0,0.22)",
   };
 
   const chipStyle = {
@@ -80,9 +80,9 @@ export default function ImagePage() {
 
   const inputStyle = {
     width: "100%",
-    padding: "14px 16px",
-    fontSize: "15px",
-    borderRadius: "16px",
+    padding: "12px 14px",
+    fontSize: "14px",
+    borderRadius: "14px",
     border: "1px solid rgba(255,255,255,0.08)",
     background: "rgba(255,255,255,0.03)",
     color: "white",
@@ -278,7 +278,7 @@ export default function ImagePage() {
 
           <div
             style={{
-              padding: "18px 22px 16px",
+              padding: "16px 18px 14px",
               overflow: "hidden",
               height: "100%",
             }}
@@ -291,7 +291,7 @@ export default function ImagePage() {
                 gridTemplateRows: "auto 1fr",
               }}
             >
-              <div style={{ marginBottom: "16px" }}>
+              <div style={{ marginBottom: "12px" }}>
                 <div
                   style={{
                     display: "inline-flex",
@@ -303,7 +303,7 @@ export default function ImagePage() {
                     background: "rgba(255,255,255,0.03)",
                     fontSize: "13px",
                     color: "rgba(255,255,255,0.82)",
-                    marginBottom: "12px",
+                    marginBottom: "10px",
                   }}
                 >
                   <span
@@ -319,39 +319,40 @@ export default function ImagePage() {
                 </div>
 
                 <h1
-  style={{
-    fontSize: "58px",
-    fontWeight: 800,
-    lineHeight: 1,
-    margin: 0,
-    color: "white",
-    letterSpacing: "-0.03em",
-  }}
->
-  Image Engine
-</h1>
+                  style={{
+                    fontSize: "54px",
+                    fontWeight: 800,
+                    lineHeight: 1,
+                    margin: 0,
+                    color: "white",
+                    letterSpacing: "-0.03em",
+                  }}
+                >
+                  Image Engine
+                </h1>
               </div>
 
-              <div style={{ ...panelStyle, padding: "12px", minHeight: 0 }}>
+              <div style={{ ...panelStyle, padding: "10px", minHeight: 0 }}>
                 <div
-  style={{
-    display: "grid",
-    gridTemplateColumns: "400px 1fr",
-    gap: "0px",
-    minHeight: "650px",
-    borderRadius: "22px",
-    border: "1px solid rgba(255,255,255,0.08)",
-    overflow: "hidden",
-    background: "rgba(8,10,20,0.72)",
-  }}
->
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "390px 1fr",
+                    gap: "0px",
+                    minHeight: "640px",
+                    height: "100%",
+                    borderRadius: "20px",
+                    border: "1px solid rgba(255,255,255,0.08)",
+                    overflow: "hidden",
+                    background: "rgba(8,10,20,0.72)",
+                  }}
+                >
                   {/* LEFT PANEL */}
                   <div
                     style={{
                       borderRight: "1px solid rgba(255,255,255,0.08)",
                       background:
                         "linear-gradient(180deg, rgba(8,10,16,0.96), rgba(10,12,18,0.96))",
-                      padding: "16px",
+                      padding: "14px",
                       position: "relative",
                       display: "grid",
                       gridTemplateRows: "auto auto auto 1fr auto",
@@ -396,7 +397,7 @@ export default function ImagePage() {
                       style={{
                         width: "100%",
                         padding: "12px 14px",
-                        borderRadius: "18px",
+                        borderRadius: "16px",
                         border: "1px solid rgba(255,255,255,0.08)",
                         background: "rgba(255,255,255,0.03)",
                         color: "white",
@@ -407,22 +408,22 @@ export default function ImagePage() {
                         fontFamily: "inherit",
                       }}
                     >
-               <div
-  style={{
-    width: 36,
-    height: 36,
-    borderRadius: 12,
-    background: "#6D5CFF",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontWeight: 700,
-    fontSize: "13px",
-    color: "#fff",
-  }}
->
-  V1
-</div>
+                      <div
+                        style={{
+                          width: 36,
+                          height: 36,
+                          borderRadius: 12,
+                          background: "#6D5CFF",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          fontWeight: 700,
+                          fontSize: "13px",
+                          color: "#fff",
+                        }}
+                      >
+                        V1
+                      </div>
 
                       <div style={{ flex: 1, minWidth: 0, textAlign: "left" }}>
                         <div
@@ -452,16 +453,16 @@ export default function ImagePage() {
                       <ChevronDown size={16} color="rgba(255,255,255,0.58)" />
                     </button>
 
-                <div
-  style={{
-    width: "100%",
-    padding: "10px 12px",
-    borderRadius: "14px",
-    border: "1px solid rgba(255,255,255,0.08)",
-    background: "rgba(255,255,255,0.02)",
-    color: "white",
-  }}
->
+                    <div
+                      style={{
+                        width: "100%",
+                        padding: "10px 12px",
+                        borderRadius: "14px",
+                        border: "1px solid rgba(255,255,255,0.08)",
+                        background: "rgba(255,255,255,0.02)",
+                        color: "white",
+                      }}
+                    >
                       <div
                         style={{
                           display: "flex",
@@ -493,17 +494,17 @@ export default function ImagePage() {
                       </div>
                     </div>
 
-                 <div
-  style={{
-    border: "1px solid rgba(255,255,255,0.08)",
-    borderRadius: "16px",
-    background: "rgba(255,255,255,0.02)",
-    padding: "12px",
-    minHeight: 0,
-    display: "grid",
-    gridTemplateRows: "1fr auto",
-  }}
->
+                    <div
+                      style={{
+                        border: "1px solid rgba(255,255,255,0.08)",
+                        borderRadius: "16px",
+                        background: "rgba(255,255,255,0.02)",
+                        padding: "12px",
+                        minHeight: 0,
+                        display: "grid",
+                        gridTemplateRows: "1fr auto",
+                      }}
+                    >
                       <textarea
                         value={prompt}
                         onChange={(e) => setPrompt(e.target.value)}
@@ -516,8 +517,8 @@ export default function ImagePage() {
                           border: "none",
                           background: "transparent",
                           resize: "none",
-                          fontSize: "15px",
-                          lineHeight: 1.7,
+                          fontSize: "14px",
+                          lineHeight: 1.65,
                         }}
                       />
 
@@ -577,7 +578,7 @@ export default function ImagePage() {
                               right: 0,
                               bottom: "60px",
                               zIndex: 10,
-                              borderRadius: "24px",
+                              borderRadius: "20px",
                               border: "1px solid rgba(255,255,255,0.08)",
                               background: "rgba(20,22,31,0.98)",
                               backdropFilter: "blur(14px)",
@@ -916,24 +917,24 @@ export default function ImagePage() {
                       <div style={{ textAlign: "center" }}>
                         <div
                           style={{
-                            width: "78px",
-                            height: "78px",
+                            width: "72px",
+                            height: "72px",
                             borderRadius: "999px",
-                            margin: "0 auto 16px",
+                            margin: "0 auto 14px",
                             display: "grid",
                             placeItems: "center",
                             border: "1px solid rgba(255,255,255,0.08)",
                             background: "rgba(255,255,255,0.03)",
                           }}
                         >
-                          <ImageIcon size={32} color="rgba(255,255,255,0.28)" />
+                          <ImageIcon size={30} color="rgba(255,255,255,0.28)" />
                         </div>
 
                         <p
                           style={{
                             margin: 0,
                             color: "rgba(255,255,255,0.42)",
-                            fontSize: "18px",
+                            fontSize: "16px",
                           }}
                         >
                           Release your creative potential. Experience the magic of Kylor AI.
