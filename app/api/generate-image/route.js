@@ -28,9 +28,7 @@ export async function POST(req) {
 
     const images =
       result?.data
-        ?.map((item) =>
-          item?.b64_json ? `data:image/png;base64,${item.b64_json}` : null
-        )
+        ?.map((item) => (item?.b64_json ? `data:image/png;base64,${item.b64_json}` : null))
         .filter(Boolean) || [];
 
     if (!images.length) {
@@ -46,7 +44,6 @@ export async function POST(req) {
     });
   } catch (error) {
     console.error("Image generation error:", error);
-
     return Response.json(
       { error: error.message || "Failed to generate image" },
       { status: 500 }
