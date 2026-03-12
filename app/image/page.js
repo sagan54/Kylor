@@ -319,28 +319,32 @@ export default function ImagePage() {
                 </div>
 
                 <h1
-                  style={{
-                    fontSize: "56px",
-                    lineHeight: 1,
-                    margin: 0,
-                    letterSpacing: "-1.4px",
-                  }}
-                >
-                  Kylor Image Engine
-                </h1>
+  style={{
+    fontSize: "58px",
+    fontWeight: 800,
+    lineHeight: 1,
+    margin: 0,
+    color: "white",
+    letterSpacing: "-0.03em",
+  }}
+>
+  Image Engine
+</h1>
               </div>
 
               <div style={{ ...panelStyle, padding: "12px", minHeight: 0 }}>
                 <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "500px 1fr",
-                    height: "100%",
-                    minHeight: 0,
-                    overflow: "hidden",
-                    borderRadius: "22px",
-                  }}
-                >
+  style={{
+    display: "grid",
+    gridTemplateColumns: "400px 1fr",
+    gap: "0px",
+    minHeight: "650px",
+    borderRadius: "22px",
+    border: "1px solid rgba(255,255,255,0.08)",
+    overflow: "hidden",
+    background: "rgba(8,10,20,0.72)",
+  }}
+>
                   {/* LEFT PANEL */}
                   <div
                     style={{
@@ -448,22 +452,22 @@ export default function ImagePage() {
                       <ChevronDown size={16} color="rgba(255,255,255,0.58)" />
                     </button>
 
-                    <div
-                      style={{
-                        width: "100%",
-                        padding: "12px 14px",
-                        borderRadius: "16px",
-                        border: "1px solid rgba(255,255,255,0.08)",
-                        background: "rgba(255,255,255,0.02)",
-                        color: "white",
-                      }}
-                    >
+                <div
+  style={{
+    width: "100%",
+    padding: "10px 12px",
+    borderRadius: "14px",
+    border: "1px solid rgba(255,255,255,0.08)",
+    background: "rgba(255,255,255,0.02)",
+    color: "white",
+  }}
+>
                       <div
                         style={{
                           display: "flex",
                           justifyContent: "space-between",
                           alignItems: "center",
-                          fontSize: "14px",
+                          fontSize: "13px",
                           fontWeight: 600,
                         }}
                       >
@@ -489,17 +493,17 @@ export default function ImagePage() {
                       </div>
                     </div>
 
-                    <div
-                      style={{
-                        border: "1px solid rgba(255,255,255,0.08)",
-                        borderRadius: "18px",
-                        background: "rgba(255,255,255,0.02)",
-                        padding: "14px",
-                        minHeight: 0,
-                        display: "grid",
-                        gridTemplateRows: "1fr auto",
-                      }}
-                    >
+                 <div
+  style={{
+    border: "1px solid rgba(255,255,255,0.08)",
+    borderRadius: "16px",
+    background: "rgba(255,255,255,0.02)",
+    padding: "12px",
+    minHeight: 0,
+    display: "grid",
+    gridTemplateRows: "1fr auto",
+  }}
+>
                       <textarea
                         value={prompt}
                         onChange={(e) => setPrompt(e.target.value)}
