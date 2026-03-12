@@ -62,7 +62,7 @@ export default function ImagePage() {
 
   const panelStyle = {
     border: "1px solid rgba(255,255,255,0.08)",
-    borderRadius: "22px",
+    borderRadius: "18px",
     background:
       "linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.015))",
     backdropFilter: "blur(10px)",
@@ -336,20 +336,21 @@ export default function ImagePage() {
                 <div
                   style={{
                     display: "grid",
-                    gridTemplateColumns: "390px 1fr",
-                    gap: "0px",
+                    gridTemplateColumns: "370px minmax(0, 1fr)",
+                    gap: 0,
                     minHeight: "640px",
                     height: "100%",
-                    borderRadius: "20px",
+                    borderRadius: "18px",
                     border: "1px solid rgba(255,255,255,0.08)",
                     overflow: "hidden",
-                    background: "rgba(8,10,20,0.72)",
+                    background:
+                      "linear-gradient(180deg, rgba(10,12,24,0.96) 0%, rgba(7,8,18,0.98) 100%)",
                   }}
                 >
                   {/* LEFT PANEL */}
                   <div
                     style={{
-                      borderRight: "1px solid rgba(255,255,255,0.08)",
+                      borderRight: "1px solid rgba(255,255,255,0.06)",
                       background:
                         "linear-gradient(180deg, rgba(8,10,16,0.96), rgba(10,12,18,0.96))",
                       padding: "14px",
@@ -397,7 +398,7 @@ export default function ImagePage() {
                       style={{
                         width: "100%",
                         padding: "12px 14px",
-                        borderRadius: "16px",
+                        borderRadius: "14px",
                         border: "1px solid rgba(255,255,255,0.08)",
                         background: "rgba(255,255,255,0.03)",
                         color: "white",
@@ -420,6 +421,7 @@ export default function ImagePage() {
                           fontWeight: 700,
                           fontSize: "13px",
                           color: "#fff",
+                          flexShrink: 0,
                         }}
                       >
                         V1
@@ -497,10 +499,11 @@ export default function ImagePage() {
                     <div
                       style={{
                         border: "1px solid rgba(255,255,255,0.08)",
-                        borderRadius: "16px",
+                        borderRadius: "14px",
                         background: "rgba(255,255,255,0.02)",
                         padding: "12px",
                         minHeight: 0,
+                        height: "100%",
                         display: "grid",
                         gridTemplateRows: "1fr auto",
                       }}
@@ -578,7 +581,7 @@ export default function ImagePage() {
                               right: 0,
                               bottom: "60px",
                               zIndex: 10,
-                              borderRadius: "20px",
+                              borderRadius: "18px",
                               border: "1px solid rgba(255,255,255,0.08)",
                               background: "rgba(20,22,31,0.98)",
                               backdropFilter: "blur(14px)",
@@ -685,15 +688,15 @@ export default function ImagePage() {
                       <div
                         style={{
                           display: "grid",
-                          gridTemplateColumns: "170px 1fr",
-                          gap: "12px",
+                          gridTemplateColumns: "155px 1fr",
+                          gap: "10px",
                         }}
                       >
                         <button
                           onClick={() => setSettingsOpen((prev) => !prev)}
                           style={{
-                            height: "48px",
-                            padding: "0 14px",
+                            height: "44px",
+                            padding: "0 12px",
                             borderRadius: "14px",
                             border: "1px solid rgba(255,255,255,0.10)",
                             background: "#111318",
@@ -722,7 +725,7 @@ export default function ImagePage() {
 
                         <button
                           style={{
-                            height: "48px",
+                            height: "44px",
                             borderRadius: "14px",
                             border: "none",
                             background: "linear-gradient(135deg, #4f46e5, #7c3aed)",
