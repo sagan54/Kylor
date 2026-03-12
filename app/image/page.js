@@ -421,7 +421,7 @@ export default function ImagePage() {
                           flexShrink: 0,
                         }}
                       >
-                        3.0
+                        V1
                       </div>
 
                       <div style={{ flex: 1, minWidth: 0, textAlign: "left" }}>
