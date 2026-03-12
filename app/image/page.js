@@ -517,25 +517,7 @@ export default function ImagePage() {
             }}
           >
             <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-              {["Image Engine", "Cinema Studio"].map((label, i) => (
-                <motion.div
-                  key={label}
-                  whileHover={{ background: i === 0 ? C.surfaceHover : "rgba(255,255,255,0.06)" }}
-                  style={{
-                    padding: "6px 14px",
-                    borderRadius: radius.full,
-                    border: `1px solid ${i === 0 ? C.accentBorder : C.border}`,
-                    background: i === 0 ? C.accentSoft : C.surface,
-                    color: i === 0 ? "#c4b5fd" : C.textMuted,
-                    fontSize: "13px",
-                    cursor: "pointer",
-                    transition: "all 0.16s ease",
-                    fontWeight: i === 0 ? 500 : 400,
-                  }}
-                >
-                  {label}
-                </motion.div>
-              ))}
+              
             </div>
 
             <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
