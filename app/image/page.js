@@ -434,7 +434,7 @@ export default function ImagePage() {
                             textOverflow: "ellipsis",
                           }}
                         >
-                          IMAGE 3.0
+                          Kylor V1
                         </div>
                         <div
                           style={{
