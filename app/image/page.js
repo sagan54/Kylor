@@ -68,14 +68,7 @@ const STYLES = [
   { id: "impressionist", label: "Impressionist", desc: "Loose brushstrokes, dappled light, movement", color: "#84cc16" },
 ];
 
-const RECENT_SEED = [
-  { id: 1, prompt: "Cyberpunk city at dusk", ratio: "3:4", starred: true },
-  { id: 2, prompt: "Abstract fluid art", ratio: "1:1", starred: false },
-  { id: 3, prompt: "Serene mountain lake", ratio: "16:9", starred: true },
-  { id: 4, prompt: "Portrait, golden hour", ratio: "2:3", starred: false },
-  { id: 5, prompt: "Neon Tokyo street", ratio: "3:4", starred: false },
-  { id: 6, prompt: "Minimal geometric", ratio: "1:1", starred: true },
-];
+const RECENT_SEED = [];
 
 const SIDEBAR_ITEMS = [
   { label: "Home", icon: Compass, href: "/" },
@@ -304,6 +297,8 @@ export default function ImagePage() {
   const [contentFilter, setContentFilter] = useState("All");
   const [assetView, setAssetView] = useState("grid");
   const [favoritesOnly, setFavoritesOnly] = useState(false);
+  const [lightboxItem, setLightboxItem] = useState(null); // fullscreen preview
+  const [featuredId, setFeaturedId] = useState(null); // which item is the hero
 
   const [prompt, setPrompt] = useState("");
   const charLimit = 500;
@@ -370,14 +365,18 @@ export default function ImagePage() {
       const data = await res.json();
 
       if (data.image) {
-        // Real URL returned
-        setRecentItems((prev) => [{ id: Date.now(), prompt: prompt.trim(), ratio, starred: false, url: data.image }, ...prev]);
+        const newItem = { id: Date.now(), prompt: prompt.trim(), ratio, starred: false, url: data.image };
+        setRecentItems((prev) => [newItem, ...prev]);
+        setFeaturedId(newItem.id);
       } else {
-        // API unavailable — show placeholder card so UI responds
-        setRecentItems((prev) => [{ id: Date.now(), prompt: prompt.trim(), ratio, starred: false, url: null }, ...prev]);
+        const placeholder = { id: Date.now(), prompt: prompt.trim(), ratio, starred: false, url: null };
+        setRecentItems((prev) => [placeholder, ...prev]);
+        setFeaturedId(placeholder.id);
       }
     } catch {
-      setRecentItems((prev) => [{ id: Date.now(), prompt: prompt.trim(), ratio, starred: false, url: null }, ...prev]);
+      const placeholder = { id: Date.now(), prompt: prompt.trim(), ratio, starred: false, url: null };
+      setRecentItems((prev) => [placeholder, ...prev]);
+      setFeaturedId(placeholder.id);
     }
 
     setGenerating(false);
@@ -689,24 +688,33 @@ export default function ImagePage() {
               </div>
             </div>
 
-            {/* Canvas */}
-            <div style={{ flex: 1, overflow: "auto", padding: "20px", minHeight: 0 }}>
+            {/* ── Canvas ─────────────────────────────────────────────── */}
+            <div style={{ flex: 1, overflow: "auto", minHeight: 0, display: "flex", flexDirection: "column" }}>
 
+              {/* Generating spinner — full area */}
               {generating && (
-                <div style={{ height: "100%", display: "grid", placeItems: "center" }}>
+                <div style={{ flex: 1, display: "grid", placeItems: "center" }}>
                   <div style={{ textAlign: "center" }}>
-                    <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 2, ease: "linear" }}
-                      style={{ width: "56px", height: "56px", borderRadius: "999px", margin: "0 auto 16px", border: `2px solid ${C.accent}`, borderTopColor: "transparent" }}
-                    />
-                    <p style={{ margin: "0 0 6px", color: C.text, fontSize: "15px", fontWeight: 600 }}>Generating your images…</p>
-                    <p style={{ margin: 0, color: C.textMuted, fontSize: "13px" }}>{mode} · {ratio} · {outputCount} output{outputCount > 1 ? "s" : ""}</p>
-                    {activeStyle && <p style={{ margin: "6px 0 0", color: "#a78bfa", fontSize: "12px" }}>Style: {activeStyle.label}</p>}
+                    <div style={{ position: "relative", width: "80px", height: "80px", margin: "0 auto 20px" }}>
+                      <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 2, ease: "linear" }}
+                        style={{ position: "absolute", inset: 0, borderRadius: "999px", border: `2px solid ${C.accent}`, borderTopColor: "transparent" }}
+                      />
+                      <motion.div animate={{ rotate: -360 }} transition={{ repeat: Infinity, duration: 3, ease: "linear" }}
+                        style={{ position: "absolute", inset: "8px", borderRadius: "999px", border: `1.5px solid ${C.accentBorder}`, borderBottomColor: "transparent" }}
+                      />
+                      <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center" }}>
+                        <Sparkles size={22} color="#a78bfa" />
+                      </div>
+                    </div>
+                    <p style={{ margin: "0 0 6px", color: C.text, fontSize: "16px", fontWeight: 700 }}>Generating your image…</p>
+                    <p style={{ margin: 0, color: C.textMuted, fontSize: "13px" }}>{mode} · {ratio}{activeStyle ? ` · ${activeStyle.label}` : ""}</p>
                   </div>
                 </div>
               )}
 
+              {/* Videos / Audio empty states */}
               {!generating && contentFilter === "Videos" && (
-                <div style={{ height: "100%", display: "grid", placeItems: "center" }}>
+                <div style={{ flex: 1, display: "grid", placeItems: "center" }}>
                   <div style={{ textAlign: "center" }}>
                     <div style={{ width: "64px", height: "64px", borderRadius: "999px", margin: "0 auto 14px", display: "grid", placeItems: "center", border: `1px solid ${C.border}`, background: C.surface }}><Video size={26} color={C.textDim} /></div>
                     <p style={{ margin: "0 0 4px", color: C.text, fontSize: "15px", fontWeight: 600 }}>Video Generation</p>
@@ -714,9 +722,8 @@ export default function ImagePage() {
                   </div>
                 </div>
               )}
-
               {!generating && contentFilter === "Audio" && (
-                <div style={{ height: "100%", display: "grid", placeItems: "center" }}>
+                <div style={{ flex: 1, display: "grid", placeItems: "center" }}>
                   <div style={{ textAlign: "center" }}>
                     <div style={{ width: "64px", height: "64px", borderRadius: "999px", margin: "0 auto 14px", display: "grid", placeItems: "center", border: `1px solid ${C.border}`, background: C.surface }}><Music size={26} color={C.textDim} /></div>
                     <p style={{ margin: "0 0 4px", color: C.text, fontSize: "15px", fontWeight: 600 }}>Audio Generation</p>
@@ -725,51 +732,140 @@ export default function ImagePage() {
                 </div>
               )}
 
-              {!generating && (contentFilter === "All" || contentFilter === "Images") && (
-                filteredItems.length > 0 ? (
-                  <div>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "14px" }}>
-                      <span style={{ fontSize: "12px", color: C.textMuted, fontWeight: 500 }}>Recent Generations · {filteredItems.length}</span>
-                      <button style={{ border: "none", background: "transparent", color: "#a78bfa", fontSize: "12px", cursor: "pointer", fontFamily: "inherit" }}>See all</button>
+              {/* Images view */}
+              {!generating && (contentFilter === "All" || contentFilter === "Images") && (() => {
+                const items = filteredItems;
+                if (items.length === 0) {
+                  return (
+                    <div style={{ flex: 1, display: "grid", placeItems: "center" }}>
+                      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} style={{ textAlign: "center", maxWidth: "300px" }}>
+                        <div style={{ width: "72px", height: "72px", borderRadius: "999px", margin: "0 auto 18px", display: "grid", placeItems: "center", border: `1px solid ${C.border}`, background: C.surface }}>
+                          <ImageIcon size={30} color={C.textDim} />
+                        </div>
+                        <p style={{ margin: "0 0 8px", color: C.text, fontSize: "16px", fontWeight: 700 }}>Your canvas is empty</p>
+                        <p style={{ margin: "0 0 20px", color: C.textMuted, fontSize: "13px", lineHeight: 1.7 }}>Describe what you want to create and hit Generate — your image will appear here.</p>
+                        <motion.button whileTap={{ scale: 0.96 }} onClick={() => textareaRef.current?.focus()}
+                          style={{ height: "36px", padding: "0 18px", borderRadius: radius.md, border: `1px solid ${C.accentBorder}`, background: C.accentSoft, color: "#c4b5fd", fontSize: "13px", cursor: "pointer", fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: "7px" }}
+                        ><Plus size={13} /> Start with a prompt</motion.button>
+                      </motion.div>
                     </div>
-                    {assetView === "grid" ? (
-                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: "12px" }}>
-                        {filteredItems.map((item, i) => (
-                          <motion.div key={item.id} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}>
-                            <ImageCard item={item} view="grid" onDelete={() => setRecentItems((p) => p.filter((x) => x.id !== item.id))} />
-                          </motion.div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div style={{ display: "grid", gap: "4px" }}>
-                        {filteredItems.map((item, i) => (
-                          <motion.div key={item.id} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.04 }}>
-                            <ImageCard item={item} view="list" onDelete={() => setRecentItems((p) => p.filter((x) => x.id !== item.id))} />
-                          </motion.div>
-                        ))}
+                  );
+                }
+
+                const featured = items.find((x) => x.id === featuredId) || items[0];
+                const history = items.filter((x) => x.id !== featured.id);
+
+                return (
+                  <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+
+                    {/* ── Hero Preview ── */}
+                    <div style={{ flex: 1, minHeight: 0, padding: "20px 20px 12px", display: "flex", alignItems: "center", justifyContent: "center", position: "relative" }}>
+                      <motion.div key={featured.id} initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+                        onClick={() => setLightboxItem(featured)}
+                        style={{ position: "relative", maxWidth: "100%", maxHeight: "100%", borderRadius: radius.xl, overflow: "hidden", border: `1px solid ${C.border}`, cursor: "zoom-in", boxShadow: `0 32px 80px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.03) inset` }}
+                      >
+                        {featured.url ? (
+                          <img src={featured.url} alt={featured.prompt}
+                            style={{ display: "block", maxWidth: "100%", maxHeight: "calc(100vh - 260px)", objectFit: "contain", borderRadius: radius.xl }}
+                          />
+                        ) : (
+                          /* Placeholder when API returns no image */
+                          <div style={{ width: "460px", height: "520px", background: CARD_GRADIENTS[featured.id % CARD_GRADIENTS.length], display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "12px" }}>
+                            <ImageIcon size={40} color="rgba(255,255,255,0.2)" />
+                            <span style={{ fontSize: "13px", color: "rgba(255,255,255,0.35)" }}>{featured.prompt}</span>
+                          </div>
+                        )}
+
+                        {/* Overlay actions */}
+                        <div style={{ position: "absolute", top: "12px", right: "12px", display: "flex", gap: "6px" }}>
+                          {[
+                            { Icon: Download, title: "Download" },
+                            { Icon: Share2, title: "Share" },
+                            { Icon: Star, title: "Favourite", active: featured.starred },
+                          ].map(({ Icon, title, active }) => (
+                            <motion.button key={title} whileTap={{ scale: 0.9 }} title={title}
+                              style={{ width: "36px", height: "36px", borderRadius: "10px", border: `1px solid rgba(255,255,255,0.12)`, background: "rgba(0,0,0,0.55)", backdropFilter: "blur(8px)", color: active ? "#fbbf24" : "white", display: "grid", placeItems: "center", cursor: "pointer" }}
+                            ><Icon size={14} fill={active ? "#fbbf24" : "none"} /></motion.button>
+                          ))}
+                        </div>
+
+                        {/* Bottom prompt label */}
+                        <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, background: "linear-gradient(to top, rgba(0,0,0,0.75), transparent)", padding: "32px 16px 14px", borderRadius: `0 0 ${radius.xl} ${radius.xl}` }}>
+                          <p style={{ margin: 0, fontSize: "13px", color: "rgba(255,255,255,0.85)", fontWeight: 500 }}>{featured.prompt}</p>
+                          <p style={{ margin: "4px 0 0", fontSize: "11px", color: C.textMuted }}>{featured.ratio} · {mode}{activeStyle ? ` · ${activeStyle.label}` : ""}</p>
+                        </div>
+                      </motion.div>
+                    </div>
+
+                    {/* ── History strip ── */}
+                    {history.length > 0 && (
+                      <div style={{ flexShrink: 0, borderTop: `1px solid ${C.border}`, padding: "12px 20px 16px" }}>
+                        <div style={{ fontSize: "11px", fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase", color: C.textMuted, marginBottom: "10px" }}>
+                          History · {history.length}
+                        </div>
+                        <div style={{ display: "flex", gap: "10px", overflowX: "auto", paddingBottom: "4px" }}>
+                          {history.map((item, i) => (
+                            <motion.div key={item.id} initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.05 }}
+                              onClick={() => setFeaturedId(item.id)}
+                              style={{ flexShrink: 0, width: "90px", height: "90px", borderRadius: radius.md, overflow: "hidden", border: `2px solid ${featuredId === item.id ? C.accent : C.border}`, cursor: "pointer", position: "relative", transition: "border-color 0.18s ease", background: CARD_GRADIENTS[item.id % CARD_GRADIENTS.length] }}
+                            >
+                              {item.url && <img src={item.url} alt={item.prompt} style={{ width: "100%", height: "100%", objectFit: "cover" }} />}
+                              <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to top, rgba(0,0,0,0.55), transparent)" }} />
+                              <div style={{ position: "absolute", bottom: "4px", left: "6px", right: "6px", fontSize: "9px", color: "rgba(255,255,255,0.7)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.prompt}</div>
+                            </motion.div>
+                          ))}
+                        </div>
                       </div>
                     )}
                   </div>
-                ) : (
-                  <div style={{ height: "100%", display: "grid", placeItems: "center" }}>
-                    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} style={{ textAlign: "center", maxWidth: "300px" }}>
-                      <div style={{ width: "68px", height: "68px", borderRadius: "999px", margin: "0 auto 16px", display: "grid", placeItems: "center", border: `1px solid ${C.border}`, background: C.surface }}>
-                        <ImageIcon size={28} color={C.textDim} />
-                      </div>
-                      <p style={{ margin: "0 0 6px", color: C.text, fontSize: "15px", fontWeight: 600 }}>Ready to create</p>
-                      <p style={{ margin: "0 0 18px", color: C.textMuted, fontSize: "13px", lineHeight: 1.6 }}>Write a prompt and hit Generate. Your creations will appear here.</p>
-                      <motion.button whileTap={{ scale: 0.96 }} onClick={() => textareaRef.current?.focus()}
-                        style={{ height: "34px", padding: "0 16px", borderRadius: radius.md, border: `1px solid ${C.accentBorder}`, background: C.accentSoft, color: "#c4b5fd", fontSize: "13px", cursor: "pointer", fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: "6px" }}
-                      ><Plus size={13} /> Start with a prompt</motion.button>
-                    </motion.div>
-                  </div>
-                )
-              )}
+                );
+              })()}
             </div>
           </div>
 
         </div>
       </div>
+
+      {/* ── Lightbox ── */}
+      <AnimatePresence>
+        {lightboxItem && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}
+            onClick={() => setLightboxItem(null)}
+            style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,0.92)", backdropFilter: "blur(12px)", display: "flex", alignItems: "center", justifyContent: "center", padding: "24px" }}
+          >
+            <motion.div initial={{ scale: 0.92, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.92, opacity: 0 }} transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
+              onClick={(e) => e.stopPropagation()}
+              style={{ position: "relative", maxWidth: "90vw", maxHeight: "90vh", borderRadius: radius.xl, overflow: "hidden", boxShadow: "0 40px 100px rgba(0,0,0,0.7)" }}
+            >
+              {lightboxItem.url ? (
+                <img src={lightboxItem.url} alt={lightboxItem.prompt} style={{ display: "block", maxWidth: "90vw", maxHeight: "88vh", objectFit: "contain" }} />
+              ) : (
+                <div style={{ width: "600px", height: "700px", background: CARD_GRADIENTS[lightboxItem.id % CARD_GRADIENTS.length], display: "grid", placeItems: "center" }}>
+                  <ImageIcon size={60} color="rgba(255,255,255,0.15)" />
+                </div>
+              )}
+
+              {/* Lightbox controls */}
+              <div style={{ position: "absolute", top: "14px", right: "14px", display: "flex", gap: "8px" }}>
+                {[Download, Share2].map((Icon, i) => (
+                  <motion.button key={i} whileTap={{ scale: 0.9 }}
+                    style={{ width: "40px", height: "40px", borderRadius: "12px", border: `1px solid rgba(255,255,255,0.12)`, background: "rgba(0,0,0,0.6)", backdropFilter: "blur(8px)", color: "white", display: "grid", placeItems: "center", cursor: "pointer" }}
+                  ><Icon size={15} /></motion.button>
+                ))}
+                <motion.button whileTap={{ scale: 0.9 }} onClick={() => setLightboxItem(null)}
+                  style={{ width: "40px", height: "40px", borderRadius: "12px", border: `1px solid rgba(255,255,255,0.12)`, background: "rgba(0,0,0,0.6)", backdropFilter: "blur(8px)", color: "white", display: "grid", placeItems: "center", cursor: "pointer" }}
+                ><X size={15} /></motion.button>
+              </div>
+
+              {/* Lightbox prompt */}
+              <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, background: "linear-gradient(to top, rgba(0,0,0,0.8), transparent)", padding: "40px 20px 18px" }}>
+                <p style={{ margin: "0 0 4px", fontSize: "15px", fontWeight: 600, color: "white" }}>{lightboxItem.prompt}</p>
+                <p style={{ margin: 0, fontSize: "12px", color: C.textMuted }}>{lightboxItem.ratio} · {mode}</p>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </main>
   );
 }
