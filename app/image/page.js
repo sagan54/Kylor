@@ -100,6 +100,50 @@ async function sbClearAll(userId) {
   if (error) console.error("sbClearAll:", error.message);
 }
 
+// ─── Upload image to Supabase Storage → returns permanent public URL ──────────
+// Bucket: "generated-images"  (create it once in Supabase → Storage → New bucket,
+//         set Public = true, leave file size limit at default)
+const STORAGE_BUCKET = "generated-images";
+
+async function uploadImageToStorage(tempUrl, userId, imageId) {
+  try {
+    // Fetch the image blob from the temporary OpenAI URL
+    const res  = await fetch(tempUrl);
+    if (!res.ok) throw new Error(`Fetch failed: ${res.status}`);
+    const blob = await res.blob();
+    const ext  = blob.type === "image/webp" ? "webp" : blob.type === "image/jpeg" ? "jpg" : "png";
+
+    // Path: userId/imageId.ext  — keeps each user's images in their own folder
+    const path = `${userId}/${imageId}.${ext}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from(STORAGE_BUCKET)
+      .upload(path, blob, { contentType: blob.type, upsert: true });
+
+    if (uploadError) throw uploadError;
+
+    // Get the permanent public URL
+    const { data } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(path);
+    return data?.publicUrl ?? null;
+  } catch (err) {
+    console.warn("uploadImageToStorage failed, keeping temp URL:", err.message);
+    return tempUrl; // Fallback: keep the original URL for now
+  }
+}
+
+async function deleteImageFromStorage(userId, imageId) {
+  try {
+    // Try both common extensions
+    await supabase.storage.from(STORAGE_BUCKET).remove([
+      `${userId}/${imageId}.png`,
+      `${userId}/${imageId}.jpg`,
+      `${userId}/${imageId}.webp`,
+    ]);
+  } catch (err) {
+    console.warn("deleteImageFromStorage:", err.message);
+  }
+}
+
 // ─── Tokens ───────────────────────────────────────────────────────────────────
 const C = {
   accent: "#7c3aed", accentSoft: "rgba(124,58,237,0.15)",
@@ -626,9 +670,20 @@ export default function ImagePage() {
 
   // ── Delete single group ────────────────────────────────────────────────────
   async function deleteGroup(groupId) {
+    // Find all image IDs in this group to delete from Storage too
+    const group = groups.find(g => g.id === groupId);
     setGroups(p => p.filter(g => g.id !== groupId));
     if (lightboxItem?.groupId === groupId) setLightboxItem(null);
     await sbDeleteGroup(groupId, userId);
+    // Clean up Storage files (best-effort)
+    if (group && userId) {
+      const count = group.images.length;
+      await Promise.all(
+        Array.from({ length: count }, (_, i) =>
+          deleteImageFromStorage(userId, `${groupId}-${i}`)
+        )
+      );
+    }
   }
 
   // ── Toggle favourite ──────────────────────────────────────────────────────
@@ -679,15 +734,16 @@ export default function ImagePage() {
     setGenerating(true);
     canvasRef.current?.scrollTo({ top: 0, behavior: "smooth" });
 
-    const styleLabel  = activeStyle?.label ?? null;
-    const fullPrompt  = [
+    const styleLabel = activeStyle?.label ?? null;
+    const fullPrompt = [
       prompt.trim(),
-      styleLabel         ? `Style: ${styleLabel}` : null,
+      styleLabel            ? `Style: ${styleLabel}` : null,
       negativePrompt.trim() ? `Negative: ${negativePrompt.trim()}` : null,
       "No text, no captions, no subtitles, no watermark.",
     ].filter(Boolean).join(". ");
 
-    const n = Math.min(outputCount, 4);
+    const n       = Math.min(outputCount, 4);
+    const groupId = Date.now();
 
     try {
       const requests = Array.from({ length: n }, () =>
@@ -703,13 +759,24 @@ export default function ImagePage() {
         }).then(r => r.json()).catch(() => ({}))
       );
 
-      const results = await Promise.all(requests);
-      const images  = results
-        .flatMap(d => Array.isArray(d?.images) ? d.images : d?.image ? [d.image] : [])
-        .map(url => ({ url, starred: false }));
+      const results   = await Promise.all(requests);
+      const tempUrls  = results.flatMap(d =>
+        Array.isArray(d?.images) ? d.images : d?.image ? [d.image] : []
+      );
+
+      // Upload each image to Supabase Storage to get a permanent URL
+      const permanentUrls = await Promise.all(
+        tempUrls.map((url, i) =>
+          userId
+            ? uploadImageToStorage(url, userId, `${groupId}-${i}`)
+            : Promise.resolve(url)
+        )
+      );
+
+      const images = permanentUrls.map(url => ({ url, starred: false }));
 
       const newGroup = {
-        id:             Date.now(),
+        id:             groupId,
         prompt:         prompt.trim(),
         negativePrompt: negativePrompt.trim(),
         ratio,
@@ -728,7 +795,7 @@ export default function ImagePage() {
     } catch (err) {
       console.error("Generation failed:", err);
       const placeholder = {
-        id:             Date.now(),
+        id:             groupId,
         prompt:         prompt.trim(),
         negativePrompt: negativePrompt.trim(),
         ratio, mode, style: styleLabel,
@@ -756,25 +823,32 @@ export default function ImagePage() {
       "No text, no captions, no subtitles, no watermark.",
     ].filter(Boolean).join(". ");
 
+    const varGroupId = Date.now();
+
     try {
-      const res  = await fetch("/api/generate-image", {
+      const res      = await fetch("/api/generate-image", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ prompt: variationPrompt, size: getApiSize(group.ratio), quality: getApiQuality(group.mode), n: 1 }),
       });
       const data     = await res.json();
-      const imageUrl = Array.isArray(data?.images) ? data.images[0] : data?.image;
+      const tempUrl  = Array.isArray(data?.images) ? data.images[0] : data?.image;
 
-      if (imageUrl) {
+      if (tempUrl) {
+        // Upload to Storage for permanent URL
+        const permanentUrl = userId
+          ? await uploadImageToStorage(tempUrl, userId, `${varGroupId}-0`)
+          : tempUrl;
+
         const newGroup = {
-          id:             Date.now(),
+          id:             varGroupId,
           prompt:         group.prompt,
           negativePrompt: group.negativePrompt,
           ratio:          group.ratio,
           mode:           group.mode,
           style:          group.style,
           createdAt:      new Date().toISOString(),
-          images:         [{ url: imageUrl, starred: false }],
+          images:         [{ url: permanentUrl, starred: false }],
         };
         setGroups(p => [newGroup, ...p]);
         await persistGroup(newGroup);
