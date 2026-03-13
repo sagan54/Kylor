@@ -410,12 +410,6 @@ function GenerationCard({ group, isLatest, onDelete, onToggleFavorite, onDownloa
               Latest
             </div>
           )}
-          {/* Saved indicator */}
-          <div style={{ display: "flex", alignItems: "center", gap: 4, padding: "2px 8px",
-            borderRadius: radius.full, background: "rgba(34,197,94,0.08)",
-            border: "1px solid rgba(34,197,94,0.18)", fontSize: 10.5, color: "#86efac" }}>
-            <CloudUpload size={9} /> Synced
-          </div>
         </div>
         <div style={{ display: "flex", gap: 6 }}>
           {[
@@ -609,7 +603,6 @@ export default function ImagePage() {
   const [groups,         setGroups]         = useState([]);
   const [dbLoaded,       setDbLoaded]       = useState(false);
   const [generating,     setGenerating]     = useState(false);
-  const [saveStatus,     setSaveStatus]     = useState(null); // "saving"|"saved"|"error"
 
   // Lightbox
   const [lightboxItem,   setLightboxItem]   = useState(null);
@@ -649,13 +642,6 @@ export default function ImagePage() {
     document.addEventListener("mousedown", handleOutside);
     return () => document.removeEventListener("mousedown", handleOutside);
   }, []);
-
-  // ── Auto-dismiss save status pill ─────────────────────────────────────────
-  useEffect(() => {
-    if (!saveStatus) return;
-    const t = setTimeout(() => setSaveStatus(null), 2200);
-    return () => clearTimeout(t);
-  }, [saveStatus]);
 
   const activeStyle = STYLES.find(s => s.id === selectedStyle);
 
@@ -717,17 +703,6 @@ export default function ImagePage() {
     await sbClearAll(userId);
   }
 
-  // ── Persist helper ────────────────────────────────────────────────────────
-  async function persistGroup(group) {
-    setSaveStatus("saving");
-    try {
-      await sbSaveGroup(group, userId);
-      setSaveStatus("saved");
-    } catch {
-      setSaveStatus("error");
-    }
-  }
-
   // ── Generate ──────────────────────────────────────────────────────────────
   async function handleGenerate() {
     if (!prompt.trim() || generating) return;
@@ -759,35 +734,43 @@ export default function ImagePage() {
         }).then(r => r.json()).catch(() => ({}))
       );
 
-      const results   = await Promise.all(requests);
-      const tempUrls  = results.flatMap(d =>
+      const results  = await Promise.all(requests);
+      const tempUrls = results.flatMap(d =>
         Array.isArray(d?.images) ? d.images : d?.image ? [d.image] : []
       );
 
-      // Upload each image to Supabase Storage to get a permanent URL
-      const permanentUrls = await Promise.all(
-        tempUrls.map((url, i) =>
-          userId
-            ? uploadImageToStorage(url, userId, `${groupId}-${i}`)
-            : Promise.resolve(url)
-        )
-      );
-
-      const images = permanentUrls.map(url => ({ url, starred: false }));
-
+      // ── Step 1: Show image immediately with temp URL (zero extra wait) ──
       const newGroup = {
         id:             groupId,
         prompt:         prompt.trim(),
         negativePrompt: negativePrompt.trim(),
-        ratio,
-        mode,
+        ratio, mode,
         style:          styleLabel,
         createdAt:      new Date().toISOString(),
-        images:         images.length > 0 ? images : [{ url: null, starred: false }],
+        images:         tempUrls.length > 0
+          ? tempUrls.map(url => ({ url, starred: false }))
+          : [{ url: null, starred: false }],
       };
-
       setGroups(p => [newGroup, ...p]);
-      await persistGroup(newGroup);
+      setGenerating(false); // ← unblock UI now, don't wait for upload
+
+      // ── Step 2: Upload to Supabase Storage in background ──
+      // First save with temp URLs so it's in DB immediately
+      await sbSaveGroup(newGroup, userId);
+
+      if (userId && tempUrls.length > 0) {
+        const permanentUrls = await Promise.all(
+          tempUrls.map((url, i) => uploadImageToStorage(url, userId, `${groupId}-${i}`))
+        );
+
+        // Swap temp URLs → permanent URLs in state
+        const updatedImages = permanentUrls.map(url => ({ url, starred: false }));
+        const updatedGroup  = { ...newGroup, images: updatedImages };
+
+        setGroups(p => p.map(g => g.id === groupId ? updatedGroup : g));
+        // Update DB with permanent URLs
+        await sbSaveGroup(updatedGroup, userId);
+      }
 
       if (notifState === "granted" && "Notification" in window) {
         new Notification("Kylor", { body: "Your image generation is complete." });
@@ -795,16 +778,12 @@ export default function ImagePage() {
     } catch (err) {
       console.error("Generation failed:", err);
       const placeholder = {
-        id:             groupId,
-        prompt:         prompt.trim(),
-        negativePrompt: negativePrompt.trim(),
-        ratio, mode, style: styleLabel,
-        createdAt:      new Date().toISOString(),
-        images:         [{ url: null, starred: false }],
+        id: groupId, prompt: prompt.trim(), negativePrompt: negativePrompt.trim(),
+        ratio, mode, style: styleLabel, createdAt: new Date().toISOString(),
+        images: [{ url: null, starred: false }],
       };
       setGroups(p => [placeholder, ...p]);
-      await persistGroup(placeholder);
-    } finally {
+      await sbSaveGroup(placeholder, userId);
       setGenerating(false);
     }
   }
@@ -826,38 +805,46 @@ export default function ImagePage() {
     const varGroupId = Date.now();
 
     try {
-      const res      = await fetch("/api/generate-image", {
+      const res     = await fetch("/api/generate-image", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ prompt: variationPrompt, size: getApiSize(group.ratio), quality: getApiQuality(group.mode), n: 1 }),
       });
-      const data     = await res.json();
-      const tempUrl  = Array.isArray(data?.images) ? data.images[0] : data?.image;
+      const data    = await res.json();
+      const tempUrl = Array.isArray(data?.images) ? data.images[0] : data?.image;
 
       if (tempUrl) {
-        // Upload to Storage for permanent URL
-        const permanentUrl = userId
-          ? await uploadImageToStorage(tempUrl, userId, `${varGroupId}-0`)
-          : tempUrl;
-
+        // Show immediately with temp URL
         const newGroup = {
-          id:             varGroupId,
-          prompt:         group.prompt,
-          negativePrompt: group.negativePrompt,
-          ratio:          group.ratio,
-          mode:           group.mode,
-          style:          group.style,
-          createdAt:      new Date().toISOString(),
-          images:         [{ url: permanentUrl, starred: false }],
+          id: varGroupId, prompt: group.prompt, negativePrompt: group.negativePrompt,
+          ratio: group.ratio, mode: group.mode, style: group.style,
+          createdAt: new Date().toISOString(),
+          images: [{ url: tempUrl, starred: false }],
         };
         setGroups(p => [newGroup, ...p]);
-        await persistGroup(newGroup);
+        setGenerating(false); // unblock UI immediately
+
+        // Save temp URL to DB right away
+        await sbSaveGroup(newGroup, userId);
+
+        // Upload to Storage in background, swap URL silently
+        if (userId) {
+          const permanentUrl = await uploadImageToStorage(tempUrl, userId, `${varGroupId}-0`);
+          const updatedGroup = { ...newGroup, images: [{ url: permanentUrl, starred: false }] };
+          setGroups(p => p.map(g => g.id === varGroupId ? updatedGroup : g));
+          await sbSaveGroup(updatedGroup, userId);
+        }
+
         if (notifState === "granted" && "Notification" in window) {
           new Notification("Kylor", { body: `Variation V${variationIndex + 1} is ready.` });
         }
+      } else {
+        setGenerating(false);
       }
-    } catch (err) { console.error("Variation failed:", err); }
-    finally { setGenerating(false); }
+    } catch (err) {
+      console.error("Variation failed:", err);
+      setGenerating(false);
+    }
   }
 
   // ── Filtered view ─────────────────────────────────────────────────────────
@@ -909,24 +896,6 @@ export default function ImagePage() {
             ))}
           </div>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            {/* Save status pill */}
-            <AnimatePresence>
-              {saveStatus && (
-                <motion.div initial={{ opacity: 0, scale: 0.9, x: 10 }} animate={{ opacity: 1, scale: 1, x: 0 }}
-                  exit={{ opacity: 0, scale: 0.9, x: 10 }} transition={{ duration: 0.2 }}
-                  style={{ padding: "4px 10px", borderRadius: radius.full, fontSize: 11.5, fontWeight: 600,
-                    display: "inline-flex", alignItems: "center", gap: 5,
-                    border: `1px solid ${saveStatus === "saved" ? "rgba(34,197,94,0.3)" : saveStatus === "error" ? "rgba(248,113,113,0.3)" : C.accentBorder}`,
-                    background: saveStatus === "saved" ? "rgba(34,197,94,0.1)" : saveStatus === "error" ? "rgba(248,113,113,0.1)" : C.accentSoft,
-                    color: saveStatus === "saved" ? "#86efac" : saveStatus === "error" ? "#fca5a5" : "#c4b5fd" }}>
-                  {saveStatus === "saving" && <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: "linear" }}><Zap size={11} /></motion.div>}
-                  {saveStatus === "saved"  && <Check size={11} />}
-                  {saveStatus === "error"  && <X size={11} />}
-                  {saveStatus === "saving" ? "Saving to Supabase…" : saveStatus === "saved" ? "Saved to Supabase" : "Save failed"}
-                </motion.div>
-              )}
-            </AnimatePresence>
-
             {[{icon:Grid3X3,val:"grid"},{icon:List,val:"list"}].map(({icon:Icon,val}) => (
               <motion.button key={val} whileTap={{ scale: 0.94 }} onClick={() => setAssetView(val)}
                 style={{ width: 34, height: 34, borderRadius: radius.sm, border: `1px solid ${C.border}`,
@@ -1232,13 +1201,6 @@ export default function ImagePage() {
                 </label>
               </div>
               <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                {/* Generation count */}
-                {dbLoaded && groups.length > 0 && (
-                  <div style={{ fontSize: 11.5, color: C.textMuted, display: "flex", alignItems: "center", gap: 4 }}>
-                    <CloudUpload size={11} />
-                    {groups.length} synced
-                  </div>
-                )}
                 {groups.length > 0 && (
                   <motion.button whileTap={{ scale: 0.95 }} onClick={clearAll}
                     style={{ height: 28, padding: "0 10px", borderRadius: 8,
