@@ -237,7 +237,10 @@ function StylesPicker({ value, onChange, onClose }) {
 }
 
 // ─── Generation Feed Card ─────────────────────────────────────────────────────
-function GenerationCard({ group, isLatest, onDelete, onToggleFavorite, onDownload, onShare, onOpenLightbox }) {
+function GenerationCard({
+  group, isLatest, onDelete, onToggleFavorite, onDownload, onShare, onOpenLightbox,
+  onVariation, generating
+}) {
   const [copiedPrompt, setCopiedPrompt] = useState(false);
   const [featuredIdx, setFeaturedIdx] = useState(0);
 
@@ -389,6 +392,31 @@ function GenerationCard({ group, isLatest, onDelete, onToggleFavorite, onDownloa
               <p style={{ margin: 0, color: "rgba(255,255,255,0.65)", fontSize: 12, lineHeight: 1.6 }}>{group.negativePrompt}</p>
             </div>
           )}
+
+          {/* Variation buttons */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6 }}>
+            {[1, 2, 3, 4].map((v, i) => (
+              <button
+                key={v}
+                onClick={() => onVariation?.(group, i)}
+                disabled={generating}
+                style={{
+                  height: 34,
+                  borderRadius: radius.sm,
+                  border: `1px solid ${C.border}`,
+                  background: generating ? "rgba(255,255,255,0.04)" : C.surface,
+                  color: generating ? C.textDim : C.text,
+                  cursor: generating ? "default" : "pointer",
+                  fontSize: 12,
+                  fontWeight: 600,
+                  fontFamily: "inherit",
+                  transition: "all 0.15s ease",
+                }}
+              >
+                V{v}
+              </button>
+            ))}
+          </div>
 
           {/* Download CTA */}
           <button onClick={() => onDownload?.(featured)}
@@ -552,6 +580,61 @@ export default function ImagePage() {
         ratio, mode, style: styleLabel, createdAt: new Date().toISOString(),
         images: [{ url: null, starred: false }],
       }, ...p]);
+    } finally {
+      setGenerating(false);
+    }
+  }
+
+  // ── Variations ────────────────────────────────────────────────────────────
+  async function handleVariation(group, variationIndex) {
+    if (!group?.prompt || generating) return;
+    setGenerating(true);
+
+    canvasRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+
+    const variationPrompt = [
+      group.prompt,
+      group.style ? `Style: ${group.style}` : null,
+      group.negativePrompt ? `Negative: ${group.negativePrompt}` : null,
+      `Variation ${variationIndex + 1}, slightly different composition, same subject and style.`,
+      "No text, no captions, no subtitles, no watermark.",
+    ].filter(Boolean).join(". ");
+
+    try {
+      const res = await fetch("/api/generate-image", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt: variationPrompt,
+          size: getApiSize(group.ratio),
+          quality: getApiQuality(group.mode),
+          n: 1,
+        }),
+      });
+
+      const data = await res.json();
+      const imageUrl = Array.isArray(data?.images) ? data.images[0] : data?.image;
+
+      if (imageUrl) {
+        const newGroup = {
+          id: Date.now(),
+          prompt: group.prompt,
+          negativePrompt: group.negativePrompt,
+          ratio: group.ratio,
+          mode: group.mode,
+          style: group.style,
+          createdAt: new Date().toISOString(),
+          images: [{ url: imageUrl, starred: false }],
+        };
+
+        setGroups(prev => [newGroup, ...prev]);
+
+        if (notifState === "granted" && "Notification" in window) {
+          new Notification("Kylor", { body: `Variation V${variationIndex + 1} is ready.` });
+        }
+      }
+    } catch (err) {
+      console.error("Variation generation failed:", err);
     } finally {
       setGenerating(false);
     }
@@ -1033,6 +1116,8 @@ export default function ImagePage() {
                       onToggleFavorite={toggleFavorite}
                       onDownload={handleDownload}
                       onShare={handleShare}
+                      onVariation={handleVariation}
+                      generating={generating}
                       onOpenLightbox={(img, prompt) => setLightboxItem({ ...img, promptText: prompt })} />
                   ))}
                 </div>
