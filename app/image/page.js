@@ -30,6 +30,7 @@ import {
   Plus,
   Music,
   Check,
+  Copy,
 } from "lucide-react";
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 
@@ -814,6 +815,7 @@ export default function ImagePage() {
   const [recentItems, setRecentItems] = useState(RECENT_SEED);
   const [featuredId, setFeaturedId] = useState(null);
   const [viewerMessage, setViewerMessage] = useState("");
+  const [copiedPrompt, setCopiedPrompt] = useState(false);
 
   const panelRef = useRef(null);
   const stylesRef = useRef(null);
@@ -845,6 +847,12 @@ export default function ImagePage() {
     const t = setTimeout(() => setViewerMessage(""), 1800);
     return () => clearTimeout(t);
   }, [viewerMessage]);
+
+  useEffect(() => {
+    if (!copiedPrompt) return;
+    const t = setTimeout(() => setCopiedPrompt(false), 1800);
+    return () => clearTimeout(t);
+  }, [copiedPrompt]);
 
   const activeStyle = STYLES.find((s) => s.id === selectedStyle);
 
@@ -908,6 +916,18 @@ export default function ImagePage() {
       text: item.prompt,
     });
     setViewerMessage(shared ? "Shared" : "Share failed");
+  }
+
+  async function handleCopyPrompt() {
+    const textToCopy = featured?.prompt?.trim();
+    if (!textToCopy) return;
+
+    try {
+      await navigator.clipboard.writeText(textToCopy);
+      setCopiedPrompt(true);
+    } catch (error) {
+      console.error("Copy prompt failed:", error);
+    }
   }
 
   function openFeatured(item) {
@@ -2131,7 +2151,7 @@ export default function ImagePage() {
                         </button>
 
                         <button
-                          onClick={() => toggleFavorite(featured.id)}
+                          onClick={() => featured?.id && toggleFavorite(featured.id)}
                           style={{
                             width: "42px",
                             height: "42px",
@@ -2149,7 +2169,7 @@ export default function ImagePage() {
                         </button>
 
                         <button
-                          onClick={() => deleteItem(featured.id)}
+                          onClick={() => featured?.id && deleteItem(featured.id)}
                           style={{
                             width: "42px",
                             height: "42px",
@@ -2234,7 +2254,7 @@ export default function ImagePage() {
                         </div>
 
                         <button
-                          onClick={() => toggleFavorite(featured.id)}
+                          onClick={() => featured?.id && toggleFavorite(featured.id)}
                           style={{
                             width: "30px",
                             height: "30px",
@@ -2284,16 +2304,51 @@ export default function ImagePage() {
                       >
                         <div
                           style={{
-                            fontSize: "11px",
-                            color: C.textMuted,
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            gap: "10px",
                             marginBottom: "8px",
-                            fontWeight: 600,
-                            letterSpacing: "0.08em",
-                            textTransform: "uppercase",
                           }}
                         >
-                          Prompt
+                          <div
+                            style={{
+                              fontSize: "11px",
+                              color: C.textMuted,
+                              fontWeight: 600,
+                              letterSpacing: "0.08em",
+                              textTransform: "uppercase",
+                            }}
+                          >
+                            Prompt
+                          </div>
+
+                          <button
+                            onClick={handleCopyPrompt}
+                            disabled={!featured?.prompt}
+                            style={{
+                              height: "28px",
+                              padding: "0 10px",
+                              borderRadius: "9px",
+                              border: `1px solid ${copiedPrompt ? C.accentBorder : C.border}`,
+                              background: copiedPrompt ? C.accentSoft : C.surface,
+                              color: copiedPrompt ? "#c4b5fd" : C.textMuted,
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: "6px",
+                              cursor: featured?.prompt ? "pointer" : "default",
+                              fontSize: "11.5px",
+                              fontWeight: 600,
+                              fontFamily: "inherit",
+                              transition: "all 0.16s ease",
+                              flexShrink: 0,
+                            }}
+                          >
+                            {copiedPrompt ? <Check size={12} /> : <Copy size={12} />}
+                            {copiedPrompt ? "Copied" : "Copy"}
+                          </button>
                         </div>
+
                         <p
                           style={{
                             margin: 0,
