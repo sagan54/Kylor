@@ -6,9 +6,99 @@ import {
   Sparkles, Compass, Clapperboard, Image as ImageIcon, Video, UserCircle2,
   Orbit, FolderKanban, Settings, Grid3X3, List, Wand2, ChevronRight,
   Bell, BellOff, X, ChevronDown, Folder, Upload, Zap, Star, Download,
-  Share2, Trash2, Plus, Music, Check, Copy, Database,
+  Share2, Trash2, Plus, Music, Check, Copy, CloudUpload,
 } from "lucide-react";
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
+import { createClient } from "@supabase/supabase-js";
+
+// ─── Supabase client ──────────────────────────────────────────────────────────
+// Uses your existing env vars — same client as the rest of the app
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+);
+
+// ─── Supabase helpers ─────────────────────────────────────────────────────────
+// Table: image_generations
+// Columns: id (int8/bigint), user_id (uuid), prompt (text), negative_prompt (text),
+//          ratio (text), mode (text), style (text), images (jsonb),
+//          created_at (timestamptz, default now())
+//
+// Run this once in your Supabase SQL editor:
+// ─────────────────────────────────────────────────────────────────────────────
+// create table if not exists image_generations (
+//   id            bigint primary key,
+//   user_id       uuid references auth.users(id) on delete cascade,
+//   prompt        text,
+//   negative_prompt text,
+//   ratio         text,
+//   mode          text,
+//   style         text,
+//   images        jsonb default '[]'::jsonb,
+//   created_at    timestamptz default now()
+// );
+// alter table image_generations enable row level security;
+// create policy "Users manage own generations" on image_generations
+//   using (auth.uid() = user_id) with check (auth.uid() = user_id);
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function sbLoadAll(userId) {
+  if (!userId) return [];
+  const { data, error } = await supabase
+    .from("image_generations")
+    .select("*")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false });
+  if (error) { console.error("sbLoadAll:", error.message); return []; }
+  // Map snake_case DB cols → camelCase app shape
+  return (data || []).map(row => ({
+    id:             row.id,
+    prompt:         row.prompt,
+    negativePrompt: row.negative_prompt,
+    ratio:          row.ratio,
+    mode:           row.mode,
+    style:          row.style,
+    createdAt:      row.created_at,
+    images:         row.images || [],
+  }));
+}
+
+async function sbSaveGroup(group, userId) {
+  if (!userId) return;
+  const { error } = await supabase
+    .from("image_generations")
+    .upsert({
+      id:              group.id,
+      user_id:         userId,
+      prompt:          group.prompt,
+      negative_prompt: group.negativePrompt,
+      ratio:           group.ratio,
+      mode:            group.mode,
+      style:           group.style,
+      images:          group.images,
+      created_at:      group.createdAt,
+    });
+  if (error) console.error("sbSaveGroup:", error.message);
+}
+
+async function sbDeleteGroup(id, userId) {
+  if (!userId) return;
+  const { error } = await supabase
+    .from("image_generations")
+    .delete()
+    .eq("id", id)
+    .eq("user_id", userId);
+  if (error) console.error("sbDeleteGroup:", error.message);
+}
+
+async function sbClearAll(userId) {
+  if (!userId) return;
+  const { error } = await supabase
+    .from("image_generations")
+    .delete()
+    .eq("user_id", userId);
+  if (error) console.error("sbClearAll:", error.message);
+}
 
 // ─── Tokens ───────────────────────────────────────────────────────────────────
 const C = {
@@ -63,93 +153,7 @@ const CARD_GRADIENTS = [
   "linear-gradient(135deg, rgba(109,92,255,0.45), rgba(49,46,129,0.55))",
 ];
 
-// ─── IndexedDB helpers ────────────────────────────────────────────────────────
-const DB_NAME    = "kylor_image_db";
-const DB_VERSION = 1;
-const STORE_NAME = "generations";
 
-function openDB() {
-  return new Promise((resolve, reject) => {
-    if (typeof indexedDB === "undefined") return reject(new Error("IndexedDB not available"));
-    const req = indexedDB.open(DB_NAME, DB_VERSION);
-    req.onupgradeneeded = e => {
-      const db = e.target.result;
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        const store = db.createObjectStore(STORE_NAME, { keyPath: "id" });
-        store.createIndex("createdAt", "createdAt", { unique: false });
-      }
-    };
-    req.onsuccess = e => resolve(e.target.result);
-    req.onerror   = e => reject(e.target.error);
-  });
-}
-
-async function dbSaveGroup(group) {
-  try {
-    const db = await openDB();
-    return new Promise((resolve, reject) => {
-      const tx    = db.transaction(STORE_NAME, "readwrite");
-      const store = tx.objectStore(STORE_NAME);
-      const req   = store.put(group);
-      req.onsuccess = () => resolve();
-      req.onerror   = e => reject(e.target.error);
-    });
-  } catch (err) {
-    console.warn("dbSaveGroup failed:", err);
-  }
-}
-
-async function dbDeleteGroup(id) {
-  try {
-    const db = await openDB();
-    return new Promise((resolve, reject) => {
-      const tx    = db.transaction(STORE_NAME, "readwrite");
-      const store = tx.objectStore(STORE_NAME);
-      const req   = store.delete(id);
-      req.onsuccess = () => resolve();
-      req.onerror   = e => reject(e.target.error);
-    });
-  } catch (err) {
-    console.warn("dbDeleteGroup failed:", err);
-  }
-}
-
-async function dbClearAll() {
-  try {
-    const db = await openDB();
-    return new Promise((resolve, reject) => {
-      const tx    = db.transaction(STORE_NAME, "readwrite");
-      const store = tx.objectStore(STORE_NAME);
-      const req   = store.clear();
-      req.onsuccess = () => resolve();
-      req.onerror   = e => reject(e.target.error);
-    });
-  } catch (err) {
-    console.warn("dbClearAll failed:", err);
-  }
-}
-
-async function dbLoadAll() {
-  try {
-    const db = await openDB();
-    return new Promise((resolve, reject) => {
-      const tx      = db.transaction(STORE_NAME, "readonly");
-      const store   = tx.objectStore(STORE_NAME);
-      const req     = store.index("createdAt").getAll();
-      req.onsuccess = e => {
-        // Newest first
-        const sorted = (e.target.result || []).sort(
-          (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
-        );
-        resolve(sorted);
-      };
-      req.onerror = e => reject(e.target.error);
-    });
-  } catch (err) {
-    console.warn("dbLoadAll failed:", err);
-    return [];
-  }
-}
 
 // ─── Misc helpers ─────────────────────────────────────────────────────────────
 function getApiSize(r) {
@@ -366,7 +370,7 @@ function GenerationCard({ group, isLatest, onDelete, onToggleFavorite, onDownloa
           <div style={{ display: "flex", alignItems: "center", gap: 4, padding: "2px 8px",
             borderRadius: radius.full, background: "rgba(34,197,94,0.08)",
             border: "1px solid rgba(34,197,94,0.18)", fontSize: 10.5, color: "#86efac" }}>
-            <Database size={9} /> Saved
+            <CloudUpload size={9} /> Synced
           </div>
         </div>
         <div style={{ display: "flex", gap: 6 }}>
@@ -554,11 +558,14 @@ export default function ImagePage() {
   // Notifications
   const [notifState,     setNotifState]     = useState("idle");
 
-  // Generations (persisted via IndexedDB)
+  // Auth
+  const [userId,         setUserId]         = useState(null);
+
+  // Generations (persisted via Supabase)
   const [groups,         setGroups]         = useState([]);
-  const [dbLoaded,       setDbLoaded]       = useState(false);  // true once we've loaded from DB
+  const [dbLoaded,       setDbLoaded]       = useState(false);
   const [generating,     setGenerating]     = useState(false);
-  const [saveStatus,     setSaveStatus]     = useState(null);   // "saving" | "saved" | "error"
+  const [saveStatus,     setSaveStatus]     = useState(null); // "saving"|"saved"|"error"
 
   // Lightbox
   const [lightboxItem,   setLightboxItem]   = useState(null);
@@ -568,13 +575,25 @@ export default function ImagePage() {
   const textareaRef = useRef(null);
   const canvasRef   = useRef(null);
 
-  // ── Load all groups from IndexedDB on mount ────────────────────────────────
+  // ── Auth + initial Supabase load ───────────────────────────────────────────
   useEffect(() => {
     (async () => {
-      const saved = await dbLoadAll();
+      const { data: { session } } = await supabase.auth.getSession();
+      const uid = session?.user?.id ?? null;
+      setUserId(uid);
+      const saved = await sbLoadAll(uid);
       setGroups(saved);
       setDbLoaded(true);
     })();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      const uid = session?.user?.id ?? null;
+      setUserId(uid);
+      const saved = await sbLoadAll(uid);
+      setGroups(saved);
+      setDbLoaded(true);
+    });
+    return () => subscription.unsubscribe();
   }, []);
 
   // ── Close popovers on outside click ───────────────────────────────────────
@@ -609,7 +628,7 @@ export default function ImagePage() {
   async function deleteGroup(groupId) {
     setGroups(p => p.filter(g => g.id !== groupId));
     if (lightboxItem?.groupId === groupId) setLightboxItem(null);
-    await dbDeleteGroup(groupId);
+    await sbDeleteGroup(groupId, userId);
   }
 
   // ── Toggle favourite ──────────────────────────────────────────────────────
@@ -622,7 +641,7 @@ export default function ImagePage() {
       updated = next.find(g => g.id === groupId);
       return next;
     });
-    if (updated) await dbSaveGroup(updated);
+    if (updated) await sbSaveGroup(updated, userId);
   }
 
   // ── Download / share ──────────────────────────────────────────────────────
@@ -640,14 +659,14 @@ export default function ImagePage() {
     if (!confirm("Delete all saved generations? This cannot be undone.")) return;
     setGroups([]);
     setLightboxItem(null);
-    await dbClearAll();
+    await sbClearAll(userId);
   }
 
-  // ── Save a group ─────────────────────────────────────────────────────────
+  // ── Persist helper ────────────────────────────────────────────────────────
   async function persistGroup(group) {
     setSaveStatus("saving");
     try {
-      await dbSaveGroup(group);
+      await sbSaveGroup(group, userId);
       setSaveStatus("saved");
     } catch {
       setSaveStatus("error");
@@ -829,7 +848,7 @@ export default function ImagePage() {
                   {saveStatus === "saving" && <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: "linear" }}><Zap size={11} /></motion.div>}
                   {saveStatus === "saved"  && <Check size={11} />}
                   {saveStatus === "error"  && <X size={11} />}
-                  {saveStatus === "saving" ? "Saving…" : saveStatus === "saved" ? "Saved to device" : "Save failed"}
+                  {saveStatus === "saving" ? "Saving to Supabase…" : saveStatus === "saved" ? "Saved to Supabase" : "Save failed"}
                 </motion.div>
               )}
             </AnimatePresence>
@@ -1142,8 +1161,8 @@ export default function ImagePage() {
                 {/* Generation count */}
                 {dbLoaded && groups.length > 0 && (
                   <div style={{ fontSize: 11.5, color: C.textMuted, display: "flex", alignItems: "center", gap: 4 }}>
-                    <Database size={11} />
-                    {groups.length} saved
+                    <CloudUpload size={11} />
+                    {groups.length} synced
                   </div>
                 )}
                 {groups.length > 0 && (
