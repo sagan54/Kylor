@@ -6,7 +6,7 @@ import {
   Sparkles, Compass, Clapperboard, Image as ImageIcon, Video, UserCircle2,
   Orbit, FolderKanban, Settings, Grid3X3, List, Wand2, ChevronRight,
   Bell, BellOff, X, ChevronDown, Folder, Upload, Zap, Star, Download,
-  Share2, Trash2, Plus, Music, Check, Copy,
+  Share2, Trash2, Plus, Music, Check, Copy, Database,
 } from "lucide-react";
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 
@@ -24,18 +24,18 @@ const radius = { sm: "10px", md: "14px", lg: "18px", xl: "22px", full: "999px" }
 
 // ─── Style presets ────────────────────────────────────────────────────────────
 const STYLES = [
-  { id: "cinematic",      label: "Cinematic",      desc: "Film-grade, anamorphic lens, deep color grade", color: "#6366f1" },
-  { id: "neon_noir",      label: "Neon Noir",       desc: "Dark city, glowing neon reflections, rain-slick", color: "#a855f7" },
-  { id: "anime",          label: "Anime",           desc: "Japanese animation, vibrant, bold outlines", color: "#ec4899" },
-  { id: "photorealistic", label: "Photorealistic",  desc: "Hyper-detailed, DSLR quality, natural light", color: "#14b8a6" },
-  { id: "oil_painting",   label: "Oil Painting",    desc: "Classical brushwork, rich texture, canvas feel", color: "#f59e0b" },
-  { id: "concept_art",    label: "Concept Art",     desc: "Studio-quality game/film concept, dramatic", color: "#3b82f6" },
-  { id: "low_poly",       label: "Low Poly",        desc: "Geometric, faceted shapes, minimal palette", color: "#10b981" },
-  { id: "watercolor",     label: "Watercolor",      desc: "Soft washes, painterly, delicate paper texture", color: "#06b6d4" },
-  { id: "retro_scifi",    label: "Retro Sci-Fi",    desc: "70s pulp art, retrofuturism, gritty print", color: "#f97316" },
-  { id: "dark_fantasy",   label: "Dark Fantasy",    desc: "Moody, mythic, smoke and shadow", color: "#8b5cf6" },
-  { id: "studio_photo",   label: "Studio Photo",    desc: "Clean professional shot, neutral backdrop", color: "#64748b" },
-  { id: "impressionist",  label: "Impressionist",   desc: "Loose brushstrokes, dappled light, movement", color: "#84cc16" },
+  { id: "cinematic",      label: "Cinematic",     desc: "Film-grade, anamorphic lens, deep color grade",  color: "#6366f1" },
+  { id: "neon_noir",      label: "Neon Noir",      desc: "Dark city, glowing neon reflections, rain-slick", color: "#a855f7" },
+  { id: "anime",          label: "Anime",          desc: "Japanese animation, vibrant, bold outlines",      color: "#ec4899" },
+  { id: "photorealistic", label: "Photorealistic", desc: "Hyper-detailed, DSLR quality, natural light",     color: "#14b8a6" },
+  { id: "oil_painting",   label: "Oil Painting",   desc: "Classical brushwork, rich texture, canvas feel",  color: "#f59e0b" },
+  { id: "concept_art",    label: "Concept Art",    desc: "Studio-quality game/film concept, dramatic",      color: "#3b82f6" },
+  { id: "low_poly",       label: "Low Poly",       desc: "Geometric, faceted shapes, minimal palette",      color: "#10b981" },
+  { id: "watercolor",     label: "Watercolor",     desc: "Soft washes, painterly, delicate paper texture",  color: "#06b6d4" },
+  { id: "retro_scifi",    label: "Retro Sci-Fi",   desc: "70s pulp art, retrofuturism, gritty print",       color: "#f97316" },
+  { id: "dark_fantasy",   label: "Dark Fantasy",   desc: "Moody, mythic, smoke and shadow",                 color: "#8b5cf6" },
+  { id: "studio_photo",   label: "Studio Photo",   desc: "Clean professional shot, neutral backdrop",       color: "#64748b" },
+  { id: "impressionist",  label: "Impressionist",  desc: "Loose brushstrokes, dappled light, movement",     color: "#84cc16" },
 ];
 
 const SIDEBAR_ITEMS = [
@@ -54,17 +54,104 @@ const MODES   = ["1K SD", "2K HD", "4K"];
 const RATIOS  = ["Auto", "9:16", "2:3", "3:4", "1:1", "4:3", "3:2", "16:9", "21:9"];
 const OUTPUTS = [1, 2, 3, 4];
 const CONTENT_TABS = ["All", "Images", "Videos", "Audio"];
-
 const CARD_GRADIENTS = [
   "linear-gradient(135deg, rgba(79,70,229,0.55), rgba(124,58,237,0.35))",
-  "linear-gradient(135deg, rgba(124,58,237,0.5), rgba(17,17,34,0.9))",
-  "linear-gradient(135deg, rgba(49,46,129,0.65), rgba(79,70,229,0.4))",
-  "linear-gradient(135deg, rgba(91,33,182,0.55), rgba(55,48,163,0.45))",
-  "linear-gradient(135deg, rgba(67,56,202,0.6), rgba(124,58,237,0.35))",
+  "linear-gradient(135deg, rgba(124,58,237,0.5),  rgba(17,17,34,0.9))",
+  "linear-gradient(135deg, rgba(49,46,129,0.65),  rgba(79,70,229,0.4))",
+  "linear-gradient(135deg, rgba(91,33,182,0.55),  rgba(55,48,163,0.45))",
+  "linear-gradient(135deg, rgba(67,56,202,0.6),   rgba(124,58,237,0.35))",
   "linear-gradient(135deg, rgba(109,92,255,0.45), rgba(49,46,129,0.55))",
 ];
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// ─── IndexedDB helpers ────────────────────────────────────────────────────────
+const DB_NAME    = "kylor_image_db";
+const DB_VERSION = 1;
+const STORE_NAME = "generations";
+
+function openDB() {
+  return new Promise((resolve, reject) => {
+    if (typeof indexedDB === "undefined") return reject(new Error("IndexedDB not available"));
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    req.onupgradeneeded = e => {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains(STORE_NAME)) {
+        const store = db.createObjectStore(STORE_NAME, { keyPath: "id" });
+        store.createIndex("createdAt", "createdAt", { unique: false });
+      }
+    };
+    req.onsuccess = e => resolve(e.target.result);
+    req.onerror   = e => reject(e.target.error);
+  });
+}
+
+async function dbSaveGroup(group) {
+  try {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const tx    = db.transaction(STORE_NAME, "readwrite");
+      const store = tx.objectStore(STORE_NAME);
+      const req   = store.put(group);
+      req.onsuccess = () => resolve();
+      req.onerror   = e => reject(e.target.error);
+    });
+  } catch (err) {
+    console.warn("dbSaveGroup failed:", err);
+  }
+}
+
+async function dbDeleteGroup(id) {
+  try {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const tx    = db.transaction(STORE_NAME, "readwrite");
+      const store = tx.objectStore(STORE_NAME);
+      const req   = store.delete(id);
+      req.onsuccess = () => resolve();
+      req.onerror   = e => reject(e.target.error);
+    });
+  } catch (err) {
+    console.warn("dbDeleteGroup failed:", err);
+  }
+}
+
+async function dbClearAll() {
+  try {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const tx    = db.transaction(STORE_NAME, "readwrite");
+      const store = tx.objectStore(STORE_NAME);
+      const req   = store.clear();
+      req.onsuccess = () => resolve();
+      req.onerror   = e => reject(e.target.error);
+    });
+  } catch (err) {
+    console.warn("dbClearAll failed:", err);
+  }
+}
+
+async function dbLoadAll() {
+  try {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const tx      = db.transaction(STORE_NAME, "readonly");
+      const store   = tx.objectStore(STORE_NAME);
+      const req     = store.index("createdAt").getAll();
+      req.onsuccess = e => {
+        // Newest first
+        const sorted = (e.target.result || []).sort(
+          (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
+        );
+        resolve(sorted);
+      };
+      req.onerror = e => reject(e.target.error);
+    });
+  } catch (err) {
+    console.warn("dbLoadAll failed:", err);
+    return [];
+  }
+}
+
+// ─── Misc helpers ─────────────────────────────────────────────────────────────
 function getApiSize(r) {
   if (["9:16","2:3","3:4"].includes(r)) return "1024x1536";
   if (["16:9","21:9","4:3","3:2"].includes(r)) return "1536x1024";
@@ -72,14 +159,14 @@ function getApiSize(r) {
 }
 function getApiQuality(m) {
   if (m === "1K SD") return "low";
-  if (m === "4K") return "high";
+  if (m === "4K")    return "high";
   return "medium";
 }
 async function downloadImage(url, filename = "kylor-output.png") {
   try {
-    const res = await fetch(url);
+    const res  = await fetch(url);
     const blob = await res.blob();
-    const a = Object.assign(document.createElement("a"), {
+    const a    = Object.assign(document.createElement("a"), {
       href: URL.createObjectURL(blob), download: filename,
     });
     document.body.appendChild(a); a.click(); a.remove();
@@ -105,10 +192,9 @@ function SidebarItem({ item }) {
     <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
       style={{ display: "grid", justifyItems: "center", gap: "6px", padding: "10px 6px",
         borderRadius: radius.lg,
-        background: item.active ? "linear-gradient(160deg, rgba(79,70,229,0.22), rgba(124,58,237,0.14))" : "transparent",
+        background: item.active ? "linear-gradient(160deg,rgba(79,70,229,0.22),rgba(124,58,237,0.14))" : "transparent",
         border: `1px solid ${item.active ? C.border : "transparent"}`,
-        color: item.active ? C.text : C.textMuted, cursor: "pointer", transition: "all 0.18s ease" }}
-    >
+        color: item.active ? C.text : C.textMuted, cursor: "pointer", transition: "all 0.18s ease" }}>
       <div style={{ width: 36, height: 36, borderRadius: 12, display: "grid", placeItems: "center",
         background: item.active ? "rgba(255,255,255,0.07)" : "rgba(255,255,255,0.02)" }}>
         <Icon size={17} />
@@ -161,7 +247,7 @@ function DropZone({ files, onFiles }) {
         style={{ borderRadius: radius.md, border: "1.5px dashed rgba(255,255,255,0.08)",
           padding: "12px 14px", cursor: "pointer", display: "flex", alignItems: "center", gap: 12 }}>
         <input ref={inputRef} type="file" accept="image/*" multiple style={{ display: "none" }}
-          onChange={e => { onFiles(p => [...p, ...Array.from(e.target.files).filter(f => f.type.startsWith("image/"))].slice(0,10)); e.target.value=""; }} />
+          onChange={e => { onFiles(p => [...p, ...Array.from(e.target.files).filter(f => f.type.startsWith("image/"))].slice(0,10)); e.target.value = ""; }} />
         <div style={{ width: 34, height: 34, borderRadius: radius.sm, flexShrink: 0,
           background: C.accentSoft, border: `1px solid ${C.accentBorder}`, display: "grid", placeItems: "center" }}>
           <Upload size={14} color="#a78bfa" />
@@ -180,10 +266,10 @@ function DropZone({ files, onFiles }) {
             <div key={i} style={{ position: "relative", width: 44, height: 44, borderRadius: 8,
               overflow: "hidden", border: `1px solid ${C.accentBorder}` }}>
               <img src={URL.createObjectURL(file)} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-              <button onClick={e => { e.stopPropagation(); onFiles(p => p.filter((_,j) => j !== i)); }}
+              <button onClick={e => { e.stopPropagation(); onFiles(p => p.filter((_, j) => j !== i)); }}
                 style={{ position: "absolute", top: 2, right: 2, width: 16, height: 16, borderRadius: 999,
-                  background: "rgba(0,0,0,0.75)", border: "none", color: "white", display: "grid",
-                  placeItems: "center", cursor: "pointer" }}>
+                  background: "rgba(0,0,0,0.75)", border: "none", color: "white",
+                  display: "grid", placeItems: "center", cursor: "pointer" }}>
                 <X size={9} />
               </button>
             </div>
@@ -203,8 +289,12 @@ function StylesPicker({ value, onChange, onClose }) {
         borderRadius: radius.lg, border: `1px solid ${C.border}`, background: "rgba(12,14,22,0.99)",
         backdropFilter: "blur(18px)", boxShadow: "0 32px 80px rgba(0,0,0,0.6)", padding: 14 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-        <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: C.textMuted }}>Choose Style</div>
-        <button onClick={onClose} style={{ border: "none", background: "transparent", color: C.textMuted, cursor: "pointer", display: "grid", placeItems: "center" }}><X size={14} /></button>
+        <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: C.textMuted }}>
+          Choose Style
+        </div>
+        <button onClick={onClose} style={{ border: "none", background: "transparent", color: C.textMuted, cursor: "pointer", display: "grid", placeItems: "center" }}>
+          <X size={14} />
+        </button>
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, maxHeight: 260, overflowY: "auto" }}>
         {STYLES.map(s => {
@@ -237,13 +327,9 @@ function StylesPicker({ value, onChange, onClose }) {
 }
 
 // ─── Generation Feed Card ─────────────────────────────────────────────────────
-function GenerationCard({
-  group, isLatest, onDelete, onToggleFavorite, onDownload, onShare, onOpenLightbox,
-  onVariation, generating
-}) {
+function GenerationCard({ group, isLatest, onDelete, onToggleFavorite, onDownload, onShare, onOpenLightbox, onVariation, generating }) {
   const [copiedPrompt, setCopiedPrompt] = useState(false);
-  const [featuredIdx, setFeaturedIdx] = useState(0);
-
+  const [featuredIdx, setFeaturedIdx]   = useState(0);
   const featured = group.images[featuredIdx];
 
   async function copyPrompt() {
@@ -253,93 +339,102 @@ function GenerationCard({
 
   return (
     <motion.div initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, ease: [0.22,1,0.36,1] }}
-      style={{ borderRadius: 20, border: `1px solid ${isLatest ? C.accentBorder : C.border}`,
+      style={{ borderRadius: 20,
+        border: `1px solid ${isLatest ? C.accentBorder : C.border}`,
         background: isLatest ? "rgba(124,58,237,0.04)" : "rgba(255,255,255,0.015)",
-        overflow: "hidden", boxShadow: isLatest ? "0 0 0 1px rgba(124,58,237,0.08) inset" : "none" }}>
+        overflow: "hidden",
+        boxShadow: isLatest ? "0 0 0 1px rgba(124,58,237,0.08) inset, 0 8px 32px rgba(0,0,0,0.3)" : "none" }}>
 
-      {/* Card header */}
-      <div style={{ padding: "12px 16px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+      {/* Header */}
+      <div style={{ padding: "12px 16px", borderBottom: `1px solid ${C.border}`,
+        display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={{ width: 28, height: 28, borderRadius: 9, background: "linear-gradient(135deg,#6D5CFF,#9d4edd)",
-            display: "grid", placeItems: "center", fontWeight: 800, fontSize: 11, color: "#fff", flexShrink: 0 }}>V1</div>
+          <div style={{ width: 28, height: 28, borderRadius: 9, flexShrink: 0,
+            background: "linear-gradient(135deg,#6D5CFF,#9d4edd)",
+            display: "grid", placeItems: "center", fontWeight: 800, fontSize: 11, color: "#fff" }}>V1</div>
           <div>
             <div style={{ fontSize: 12, fontWeight: 700, color: C.text }}>Kylor V1</div>
             <div style={{ fontSize: 11, color: C.textMuted }}>{fmtDate(group.createdAt)}</div>
           </div>
           {isLatest && (
             <div style={{ padding: "2px 8px", borderRadius: radius.full, background: C.accentSoft,
-              border: `1px solid ${C.accentBorder}`, fontSize: 10.5, color: "#c4b5fd", fontWeight: 700 }}>Latest</div>
+              border: `1px solid ${C.accentBorder}`, fontSize: 10.5, color: "#c4b5fd", fontWeight: 700 }}>
+              Latest
+            </div>
           )}
+          {/* Saved indicator */}
+          <div style={{ display: "flex", alignItems: "center", gap: 4, padding: "2px 8px",
+            borderRadius: radius.full, background: "rgba(34,197,94,0.08)",
+            border: "1px solid rgba(34,197,94,0.18)", fontSize: 10.5, color: "#86efac" }}>
+            <Database size={9} /> Saved
+          </div>
         </div>
         <div style={{ display: "flex", gap: 6 }}>
-          <button onClick={() => onToggleFavorite?.(group.id, featuredIdx)}
-            style={{ width: 30, height: 30, borderRadius: 9, border: `1px solid ${C.border}`, background: C.surface,
-              color: featured?.starred ? "#fbbf24" : C.textMuted, display: "grid", placeItems: "center", cursor: "pointer" }}>
-            <Star size={13} fill={featured?.starred ? "#fbbf24" : "none"} />
-          </button>
-          <button onClick={() => onDownload?.(featured)}
-            style={{ width: 30, height: 30, borderRadius: 9, border: `1px solid ${C.border}`, background: C.surface,
-              color: C.textMuted, display: "grid", placeItems: "center", cursor: "pointer" }}>
-            <Download size={13} />
-          </button>
-          <button onClick={() => onShare?.(featured)}
-            style={{ width: 30, height: 30, borderRadius: 9, border: `1px solid ${C.border}`, background: C.surface,
-              color: C.textMuted, display: "grid", placeItems: "center", cursor: "pointer" }}>
-            <Share2 size={13} />
-          </button>
-          <button onClick={() => onDelete?.(group.id)}
-            style={{ width: 30, height: 30, borderRadius: 9, border: `1px solid rgba(248,113,113,0.25)`,
-              background: "rgba(248,113,113,0.07)", color: "#f87171", display: "grid", placeItems: "center", cursor: "pointer" }}>
-            <Trash2 size={13} />
-          </button>
+          {[
+            { icon: Star, action: () => onToggleFavorite?.(group.id, featuredIdx), active: featured?.starred, activeColor: "#fbbf24", activeFill: "#fbbf24" },
+            { icon: Download, action: () => onDownload?.(featured) },
+            { icon: Share2,   action: () => onShare?.(featured) },
+            { icon: Trash2,   action: () => onDelete?.(group.id), danger: true },
+          ].map(({ icon: Icon, action, active, activeColor, activeFill, danger }, i) => (
+            <button key={i} onClick={action}
+              style={{ width: 30, height: 30, borderRadius: 9, cursor: "pointer",
+                border: `1px solid ${danger ? "rgba(248,113,113,0.25)" : active ? `${activeColor}40` : C.border}`,
+                background: danger ? "rgba(248,113,113,0.07)" : active ? `${activeColor}12` : C.surface,
+                color: danger ? "#f87171" : active ? activeColor : C.textMuted,
+                display: "grid", placeItems: "center" }}>
+              <Icon size={13} fill={active && activeFill ? activeFill : "none"} />
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* Main content: image left + details right */}
+      {/* Body: image left + details right */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 320px" }}>
 
-        {/* Image preview */}
+        {/* Image area */}
         <div style={{ position: "relative", minHeight: 360, background: "#05070c",
           borderRight: `1px solid ${C.border}`, overflow: "hidden" }}>
           {featured?.url ? (
             <img src={featured.url} alt={group.prompt}
               onClick={() => onOpenLightbox?.(featured, group.prompt)}
               style={{ width: "100%", height: "100%", objectFit: "contain", display: "block",
-                cursor: "zoom-in", maxHeight: 520 }} />
+                cursor: "zoom-in", maxHeight: 560 }} />
           ) : (
             <div style={{ width: "100%", height: "100%", minHeight: 360,
               background: CARD_GRADIENTS[(group.id || 0) % CARD_GRADIENTS.length],
-              display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12 }}>
+              display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 14 }}>
               <ImageIcon size={42} color="rgba(255,255,255,0.18)" />
-              <span style={{ fontSize: 12, color: "rgba(255,255,255,0.3)", maxWidth: 200, textAlign: "center" }}>{group.prompt}</span>
+              <span style={{ fontSize: 12, color: "rgba(255,255,255,0.3)", maxWidth: 220, textAlign: "center", lineHeight: 1.6 }}>
+                {group.prompt}
+              </span>
             </div>
           )}
 
-          {/* Multi-image selector thumbnails */}
+          {/* Multi-image thumbnails */}
           {group.images.length > 1 && (
-            <div style={{ position: "absolute", bottom: 12, left: 12, display: "flex", gap: 6 }}>
+            <div style={{ position: "absolute", bottom: 12, left: 12, display: "flex", gap: 6, flexWrap: "wrap" }}>
               {group.images.map((img, idx) => (
                 <button key={idx} onClick={() => setFeaturedIdx(idx)}
-                  style={{ width: 52, height: 52, borderRadius: 8, overflow: "hidden", padding: 0, cursor: "pointer",
-                    border: `2px solid ${featuredIdx === idx ? C.accent : "rgba(255,255,255,0.2)"}`,
-                    background: CARD_GRADIENTS[idx % CARD_GRADIENTS.length], flexShrink: 0, transition: "border-color 0.15s" }}>
+                  style={{ width: 54, height: 54, borderRadius: 9, overflow: "hidden", padding: 0, cursor: "pointer",
+                    border: `2px solid ${featuredIdx === idx ? C.accent : "rgba(255,255,255,0.18)"}`,
+                    background: CARD_GRADIENTS[idx % CARD_GRADIENTS.length], flexShrink: 0,
+                    transition: "border-color 0.15s ease" }}>
                   {img.url && <img src={img.url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />}
                 </button>
               ))}
             </div>
           )}
 
-          {/* Zoom hint */}
           {featured?.url && (
             <div style={{ position: "absolute", top: 12, right: 12, padding: "4px 10px",
-              borderRadius: radius.full, background: "rgba(0,0,0,0.6)", backdropFilter: "blur(8px)",
-              fontSize: 11, color: "rgba(255,255,255,0.6)", pointerEvents: "none" }}>
+              borderRadius: radius.full, background: "rgba(0,0,0,0.58)", backdropFilter: "blur(8px)",
+              fontSize: 11, color: "rgba(255,255,255,0.55)", pointerEvents: "none" }}>
               Click to zoom
             </div>
           )}
         </div>
 
-        {/* Right panel: details */}
+        {/* Details panel */}
         <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12, overflow: "hidden" }}>
 
           {/* Meta chips */}
@@ -360,24 +455,25 @@ function GenerationCard({
             )}
           </div>
 
-          {/* Prompt box */}
+          {/* Prompt */}
           <div style={{ flex: 1, borderRadius: radius.md, border: `1px solid ${C.border}`,
-            background: "rgba(255,255,255,0.02)", padding: "10px 12px", overflow: "hidden" }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+            background: "rgba(255,255,255,0.02)", padding: "10px 12px", overflow: "hidden",
+            display: "flex", flexDirection: "column", gap: 8 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.08em",
                 textTransform: "uppercase", color: C.textMuted }}>Prompt</div>
               <button onClick={copyPrompt}
-                style={{ height: 24, padding: "0 8px", borderRadius: 7,
+                style={{ height: 24, padding: "0 8px", borderRadius: 7, cursor: "pointer",
                   border: `1px solid ${copiedPrompt ? C.accentBorder : C.border}`,
                   background: copiedPrompt ? C.accentSoft : C.surface,
-                  color: copiedPrompt ? "#c4b5fd" : C.textMuted, display: "inline-flex", alignItems: "center",
-                  gap: 4, cursor: "pointer", fontSize: 11, fontFamily: "inherit", transition: "all 0.16s" }}>
+                  color: copiedPrompt ? "#c4b5fd" : C.textMuted, display: "inline-flex",
+                  alignItems: "center", gap: 4, fontSize: 11, fontFamily: "inherit", transition: "all 0.16s" }}>
                 {copiedPrompt ? <Check size={10} /> : <Copy size={10} />}
                 {copiedPrompt ? "Copied" : "Copy"}
               </button>
             </div>
             <p style={{ margin: 0, color: "rgba(255,255,255,0.82)", fontSize: 12.5, lineHeight: 1.65,
-              wordBreak: "break-word", display: "-webkit-box", WebkitLineClamp: 6,
+              wordBreak: "break-word", display: "-webkit-box", WebkitLineClamp: 7,
               WebkitBoxOrient: "vertical", overflow: "hidden" }}>
               {group.prompt}
             </p>
@@ -385,44 +481,41 @@ function GenerationCard({
 
           {/* Negative prompt */}
           {group.negativePrompt && (
-            <div style={{ borderRadius: radius.sm, border: `1px solid rgba(248,113,113,0.2)`,
+            <div style={{ borderRadius: radius.sm, border: "1px solid rgba(248,113,113,0.2)",
               background: "rgba(248,113,113,0.04)", padding: "8px 12px" }}>
               <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.08em",
                 textTransform: "uppercase", color: "#fca5a5", marginBottom: 4 }}>Negative</div>
-              <p style={{ margin: 0, color: "rgba(255,255,255,0.65)", fontSize: 12, lineHeight: 1.6 }}>{group.negativePrompt}</p>
+              <p style={{ margin: 0, color: "rgba(255,255,255,0.65)", fontSize: 12, lineHeight: 1.6 }}>
+                {group.negativePrompt}
+              </p>
             </div>
           )}
 
           {/* Variation buttons */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6 }}>
-            {[1, 2, 3, 4].map((v, i) => (
-              <button
-                key={v}
-                onClick={() => onVariation?.(group, i)}
-                disabled={generating}
-                style={{
-                  height: 34,
-                  borderRadius: radius.sm,
-                  border: `1px solid ${C.border}`,
-                  background: generating ? "rgba(255,255,255,0.04)" : C.surface,
-                  color: generating ? C.textDim : C.text,
-                  cursor: generating ? "default" : "pointer",
-                  fontSize: 12,
-                  fontWeight: 600,
-                  fontFamily: "inherit",
-                  transition: "all 0.15s ease",
-                }}
-              >
-                V{v}
-              </button>
-            ))}
+          <div>
+            <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.08em",
+              textTransform: "uppercase", color: C.textMuted, marginBottom: 6 }}>Variations</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 6 }}>
+              {[1,2,3,4].map((v, i) => (
+                <motion.button key={v} whileTap={{ scale: 0.95 }}
+                  onClick={() => onVariation?.(group, i)} disabled={generating}
+                  style={{ height: 34, borderRadius: radius.sm, cursor: generating ? "default" : "pointer",
+                    border: `1px solid ${C.border}`,
+                    background: generating ? "rgba(255,255,255,0.02)" : C.surface,
+                    color: generating ? C.textDim : C.textMuted,
+                    fontSize: 12, fontWeight: 600, fontFamily: "inherit", transition: "all 0.15s ease" }}>
+                  V{v}
+                </motion.button>
+              ))}
+            </div>
           </div>
 
           {/* Download CTA */}
           <button onClick={() => onDownload?.(featured)}
-            style={{ height: 38, borderRadius: radius.sm, border: `1px solid ${C.accentBorder}`,
-              background: C.accentSoft, color: "#c4b5fd", display: "flex", alignItems: "center",
-              justifyContent: "center", gap: 7, cursor: "pointer", fontSize: 12.5, fontWeight: 600, fontFamily: "inherit" }}>
+            style={{ height: 40, borderRadius: radius.sm,
+              border: `1px solid ${C.accentBorder}`, background: C.accentSoft, color: "#c4b5fd",
+              display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
+              cursor: "pointer", fontSize: 12.5, fontWeight: 600, fontFamily: "inherit" }}>
             <Download size={13} /> Download image
           </button>
         </div>
@@ -433,55 +526,73 @@ function GenerationCard({
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function ImagePage() {
-  // Nav
-  const [topTab, setTopTab]             = useState("All");
-  const [contentFilter, setContentFilter] = useState("All");
-  const [assetView, setAssetView]       = useState("grid");
-  const [favoritesOnly, setFavoritesOnly] = useState(false);
+  // Nav state
+  const [topTab,         setTopTab]         = useState("All");
+  const [contentFilter,  setContentFilter]  = useState("All");
+  const [assetView,      setAssetView]      = useState("grid");
+  const [favoritesOnly,  setFavoritesOnly]  = useState(false);
 
   // Prompt
-  const [prompt, setPrompt]             = useState("");
+  const [prompt,         setPrompt]         = useState("");
   const charLimit = 500;
-  const [negativeOpen, setNegativeOpen] = useState(false);
+  const [negativeOpen,   setNegativeOpen]   = useState(false);
   const [negativePrompt, setNegativePrompt] = useState("");
 
-  // Styles
-  const [stylesOpen, setStylesOpen]     = useState(false);
-  const [selectedStyle, setSelectedStyle] = useState(null);
+  // Style
+  const [stylesOpen,     setStylesOpen]     = useState(false);
+  const [selectedStyle,  setSelectedStyle]  = useState(null);
 
-  // Refs
-  const [refImages, setRefImages]       = useState([]);
+  // Reference images
+  const [refImages,      setRefImages]      = useState([]);
 
   // Settings
-  const [ratio, setRatio]               = useState("16:9");
-  const [mode, setMode]                 = useState("2K HD");
-  const [outputCount, setOutputCount]   = useState(1);
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [ratio,          setRatio]          = useState("16:9");
+  const [mode,           setMode]           = useState("2K HD");
+  const [outputCount,    setOutputCount]    = useState(1);
+  const [settingsOpen,   setSettingsOpen]   = useState(false);
 
-  // Notif
-  const [notifState, setNotifState]     = useState("idle");
+  // Notifications
+  const [notifState,     setNotifState]     = useState("idle");
 
-  // Generations — stored in memory only (no localStorage quota issues)
-  // Each entry = { id, prompt, negativePrompt, ratio, mode, style, createdAt, images: [{url, starred}] }
-  const [groups, setGroups]             = useState([]);
-  const [generating, setGenerating]     = useState(false);
+  // Generations (persisted via IndexedDB)
+  const [groups,         setGroups]         = useState([]);
+  const [dbLoaded,       setDbLoaded]       = useState(false);  // true once we've loaded from DB
+  const [generating,     setGenerating]     = useState(false);
+  const [saveStatus,     setSaveStatus]     = useState(null);   // "saving" | "saved" | "error"
 
   // Lightbox
-  const [lightboxItem, setLightboxItem] = useState(null);
+  const [lightboxItem,   setLightboxItem]   = useState(null);
 
-  const panelRef   = useRef(null);
-  const stylesRef  = useRef(null);
+  const panelRef    = useRef(null);
+  const stylesRef   = useRef(null);
   const textareaRef = useRef(null);
-  const canvasRef  = useRef(null);
+  const canvasRef   = useRef(null);
 
+  // ── Load all groups from IndexedDB on mount ────────────────────────────────
+  useEffect(() => {
+    (async () => {
+      const saved = await dbLoadAll();
+      setGroups(saved);
+      setDbLoaded(true);
+    })();
+  }, []);
+
+  // ── Close popovers on outside click ───────────────────────────────────────
   useEffect(() => {
     function handleOutside(e) {
-      if (panelRef.current && !panelRef.current.contains(e.target)) setSettingsOpen(false);
+      if (panelRef.current  && !panelRef.current.contains(e.target))  setSettingsOpen(false);
       if (stylesRef.current && !stylesRef.current.contains(e.target)) setStylesOpen(false);
     }
     document.addEventListener("mousedown", handleOutside);
     return () => document.removeEventListener("mousedown", handleOutside);
   }, []);
+
+  // ── Auto-dismiss save status pill ─────────────────────────────────────────
+  useEffect(() => {
+    if (!saveStatus) return;
+    const t = setTimeout(() => setSaveStatus(null), 2200);
+    return () => clearTimeout(t);
+  }, [saveStatus]);
 
   const activeStyle = STYLES.find(s => s.id === selectedStyle);
 
@@ -494,21 +605,27 @@ export default function ImagePage() {
     } catch { setNotifState("dismissed"); }
   }
 
-  // ── Delete group ─────────────────────────────────────────────────────────
-  function deleteGroup(groupId) {
+  // ── Delete single group ────────────────────────────────────────────────────
+  async function deleteGroup(groupId) {
     setGroups(p => p.filter(g => g.id !== groupId));
     if (lightboxItem?.groupId === groupId) setLightboxItem(null);
+    await dbDeleteGroup(groupId);
   }
 
-  // ── Toggle favourite on image inside group ────────────────────────────────
-  function toggleFavorite(groupId, imgIdx) {
-    setGroups(p => p.map(g => g.id !== groupId ? g : {
-      ...g,
-      images: g.images.map((img, i) => i === imgIdx ? { ...img, starred: !img.starred } : img),
-    }));
+  // ── Toggle favourite ──────────────────────────────────────────────────────
+  async function toggleFavorite(groupId, imgIdx) {
+    let updated;
+    setGroups(p => {
+      const next = p.map(g => g.id !== groupId ? g : {
+        ...g, images: g.images.map((img, i) => i === imgIdx ? { ...img, starred: !img.starred } : img),
+      });
+      updated = next.find(g => g.id === groupId);
+      return next;
+    });
+    if (updated) await dbSaveGroup(updated);
   }
 
-  // ── Download / share wrappers ─────────────────────────────────────────────
+  // ── Download / share ──────────────────────────────────────────────────────
   async function handleDownload(img) {
     if (!img?.url) return;
     await downloadImage(img.url, `kylor-${Date.now()}.png`);
@@ -518,18 +635,35 @@ export default function ImagePage() {
     await shareImage({ url: img.url, title: "Kylor image", text: img.prompt || "" });
   }
 
+  // ── Clear all ─────────────────────────────────────────────────────────────
+  async function clearAll() {
+    if (!confirm("Delete all saved generations? This cannot be undone.")) return;
+    setGroups([]);
+    setLightboxItem(null);
+    await dbClearAll();
+  }
+
+  // ── Save a group ─────────────────────────────────────────────────────────
+  async function persistGroup(group) {
+    setSaveStatus("saving");
+    try {
+      await dbSaveGroup(group);
+      setSaveStatus("saved");
+    } catch {
+      setSaveStatus("error");
+    }
+  }
+
   // ── Generate ──────────────────────────────────────────────────────────────
   async function handleGenerate() {
     if (!prompt.trim() || generating) return;
     setGenerating(true);
-
-    // Scroll canvas to top so user sees the spinner
     canvasRef.current?.scrollTo({ top: 0, behavior: "smooth" });
 
-    const styleLabel = activeStyle?.label ?? null;
-    const fullPrompt = [
+    const styleLabel  = activeStyle?.label ?? null;
+    const fullPrompt  = [
       prompt.trim(),
-      styleLabel ? `Style: ${styleLabel}` : null,
+      styleLabel         ? `Style: ${styleLabel}` : null,
       negativePrompt.trim() ? `Negative: ${negativePrompt.trim()}` : null,
       "No text, no captions, no subtitles, no watermark.",
     ].filter(Boolean).join(". ");
@@ -537,14 +671,13 @@ export default function ImagePage() {
     const n = Math.min(outputCount, 4);
 
     try {
-      // Fire n parallel requests (most APIs accept n=1 per request for gpt-image-1)
       const requests = Array.from({ length: n }, () =>
         fetch("/api/generate-image", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            prompt: fullPrompt,
-            size: getApiSize(ratio),
+            prompt:  fullPrompt,
+            size:    getApiSize(ratio),
             quality: getApiQuality(mode),
             n: 1,
           }),
@@ -552,44 +685,48 @@ export default function ImagePage() {
       );
 
       const results = await Promise.all(requests);
-
-      const images = results
+      const images  = results
         .flatMap(d => Array.isArray(d?.images) ? d.images : d?.image ? [d.image] : [])
         .map(url => ({ url, starred: false }));
 
       const newGroup = {
-        id: Date.now(),
-        prompt: prompt.trim(),
+        id:             Date.now(),
+        prompt:         prompt.trim(),
         negativePrompt: negativePrompt.trim(),
         ratio,
         mode,
-        style: styleLabel,
-        createdAt: new Date().toISOString(),
-        images: images.length > 0 ? images : [{ url: null, starred: false }],
+        style:          styleLabel,
+        createdAt:      new Date().toISOString(),
+        images:         images.length > 0 ? images : [{ url: null, starred: false }],
       };
 
       setGroups(p => [newGroup, ...p]);
+      await persistGroup(newGroup);
 
       if (notifState === "granted" && "Notification" in window) {
         new Notification("Kylor", { body: "Your image generation is complete." });
       }
     } catch (err) {
       console.error("Generation failed:", err);
-      setGroups(p => [{
-        id: Date.now(), prompt: prompt.trim(), negativePrompt: negativePrompt.trim(),
-        ratio, mode, style: styleLabel, createdAt: new Date().toISOString(),
-        images: [{ url: null, starred: false }],
-      }, ...p]);
+      const placeholder = {
+        id:             Date.now(),
+        prompt:         prompt.trim(),
+        negativePrompt: negativePrompt.trim(),
+        ratio, mode, style: styleLabel,
+        createdAt:      new Date().toISOString(),
+        images:         [{ url: null, starred: false }],
+      };
+      setGroups(p => [placeholder, ...p]);
+      await persistGroup(placeholder);
     } finally {
       setGenerating(false);
     }
   }
 
-  // ── Variations ────────────────────────────────────────────────────────────
+  // ── Generate variation ────────────────────────────────────────────────────
   async function handleVariation(group, variationIndex) {
     if (!group?.prompt || generating) return;
     setGenerating(true);
-
     canvasRef.current?.scrollTo({ top: 0, behavior: "smooth" });
 
     const variationPrompt = [
@@ -601,56 +738,47 @@ export default function ImagePage() {
     ].filter(Boolean).join(". ");
 
     try {
-      const res = await fetch("/api/generate-image", {
+      const res  = await fetch("/api/generate-image", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          prompt: variationPrompt,
-          size: getApiSize(group.ratio),
-          quality: getApiQuality(group.mode),
-          n: 1,
-        }),
+        body: JSON.stringify({ prompt: variationPrompt, size: getApiSize(group.ratio), quality: getApiQuality(group.mode), n: 1 }),
       });
-
-      const data = await res.json();
+      const data     = await res.json();
       const imageUrl = Array.isArray(data?.images) ? data.images[0] : data?.image;
 
       if (imageUrl) {
         const newGroup = {
-          id: Date.now(),
-          prompt: group.prompt,
+          id:             Date.now(),
+          prompt:         group.prompt,
           negativePrompt: group.negativePrompt,
-          ratio: group.ratio,
-          mode: group.mode,
-          style: group.style,
-          createdAt: new Date().toISOString(),
-          images: [{ url: imageUrl, starred: false }],
+          ratio:          group.ratio,
+          mode:           group.mode,
+          style:          group.style,
+          createdAt:      new Date().toISOString(),
+          images:         [{ url: imageUrl, starred: false }],
         };
-
-        setGroups(prev => [newGroup, ...prev]);
-
+        setGroups(p => [newGroup, ...p]);
+        await persistGroup(newGroup);
         if (notifState === "granted" && "Notification" in window) {
           new Notification("Kylor", { body: `Variation V${variationIndex + 1} is ready.` });
         }
       }
-    } catch (err) {
-      console.error("Variation generation failed:", err);
-    } finally {
-      setGenerating(false);
-    }
+    } catch (err) { console.error("Variation failed:", err); }
+    finally { setGenerating(false); }
   }
 
-  // ── Filter groups ─────────────────────────────────────────────────────────
+  // ── Filtered view ─────────────────────────────────────────────────────────
   const filteredGroups = useMemo(() => {
     if (contentFilter === "Videos" || contentFilter === "Audio") return [];
     if (favoritesOnly) return groups.filter(g => g.images.some(i => i.starred));
     return groups;
   }, [groups, contentFilter, favoritesOnly]);
 
+  // ─────────────────────────────────────────────────────────────────────────
   return (
     <main style={{
       height: "100vh", overflow: "hidden",
-      background: `radial-gradient(ellipse at 8% 12%, rgba(79,70,229,0.13), transparent 28%), radial-gradient(ellipse at 92% 8%, rgba(124,58,237,0.11), transparent 30%), ${C.bg}`,
+      background: `radial-gradient(ellipse at 8% 12%,rgba(79,70,229,0.13),transparent 28%),radial-gradient(ellipse at 92% 8%,rgba(124,58,237,0.11),transparent 30%),${C.bg}`,
       color: C.text, fontFamily: "'Inter','SF Pro Display',sans-serif",
       display: "grid", gridTemplateColumns: "88px 1fr",
     }}>
@@ -688,6 +816,24 @@ export default function ImagePage() {
             ))}
           </div>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            {/* Save status pill */}
+            <AnimatePresence>
+              {saveStatus && (
+                <motion.div initial={{ opacity: 0, scale: 0.9, x: 10 }} animate={{ opacity: 1, scale: 1, x: 0 }}
+                  exit={{ opacity: 0, scale: 0.9, x: 10 }} transition={{ duration: 0.2 }}
+                  style={{ padding: "4px 10px", borderRadius: radius.full, fontSize: 11.5, fontWeight: 600,
+                    display: "inline-flex", alignItems: "center", gap: 5,
+                    border: `1px solid ${saveStatus === "saved" ? "rgba(34,197,94,0.3)" : saveStatus === "error" ? "rgba(248,113,113,0.3)" : C.accentBorder}`,
+                    background: saveStatus === "saved" ? "rgba(34,197,94,0.1)" : saveStatus === "error" ? "rgba(248,113,113,0.1)" : C.accentSoft,
+                    color: saveStatus === "saved" ? "#86efac" : saveStatus === "error" ? "#fca5a5" : "#c4b5fd" }}>
+                  {saveStatus === "saving" && <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: "linear" }}><Zap size={11} /></motion.div>}
+                  {saveStatus === "saved"  && <Check size={11} />}
+                  {saveStatus === "error"  && <X size={11} />}
+                  {saveStatus === "saving" ? "Saving…" : saveStatus === "saved" ? "Saved to device" : "Save failed"}
+                </motion.div>
+              )}
+            </AnimatePresence>
+
             {[{icon:Grid3X3,val:"grid"},{icon:List,val:"list"}].map(({icon:Icon,val}) => (
               <motion.button key={val} whileTap={{ scale: 0.94 }} onClick={() => setAssetView(val)}
                 style={{ width: 34, height: 34, borderRadius: radius.sm, border: `1px solid ${C.border}`,
@@ -715,7 +861,6 @@ export default function ImagePage() {
             height: "100%", overflow: "hidden", display: "flex", flexDirection: "column",
             padding: 16, gap: 12, boxSizing: "border-box" }}>
 
-            {/* Heading */}
             <div style={{ borderBottom: `1px solid ${C.border}`, paddingBottom: 14, flexShrink: 0 }}>
               <div style={{ color: C.text, fontWeight: 700, fontSize: 14, position: "relative",
                 display: "inline-block", paddingBottom: 4 }}>
@@ -725,7 +870,6 @@ export default function ImagePage() {
               </div>
             </div>
 
-            {/* Model selector */}
             <motion.button whileHover={{ borderColor: C.accentBorder }} whileTap={{ scale: 0.99 }}
               style={{ width: "100%", padding: "10px 12px", borderRadius: radius.md, border: `1px solid ${C.border}`,
                 background: C.surface, color: C.text, display: "flex", alignItems: "center", gap: 10,
@@ -746,10 +890,8 @@ export default function ImagePage() {
               </div>
             </motion.button>
 
-            {/* Drop zone */}
             <div style={{ flexShrink: 0 }}><DropZone files={refImages} onFiles={setRefImages} /></div>
 
-            {/* Prompt */}
             <div style={{ flex: 1, minHeight: 0, borderRadius: radius.md, border: `1px solid ${C.border}`,
               background: C.surface, padding: 12, display: "flex", flexDirection: "column" }}>
               <textarea ref={textareaRef} value={prompt}
@@ -759,7 +901,6 @@ export default function ImagePage() {
                   resize: "none", fontFamily: "inherit", fontSize: 13.5, lineHeight: 1.7,
                   outline: "none", minHeight: 0, boxSizing: "border-box" }} />
 
-              {/* Negative */}
               <AnimatePresence>
                 {negativeOpen && (
                   <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }}
@@ -769,7 +910,7 @@ export default function ImagePage() {
                         textTransform: "uppercase", color: "#f87171", marginBottom: 6 }}>Negative Prompt</div>
                       <textarea value={negativePrompt} onChange={e => setNegativePrompt(e.target.value)}
                         placeholder="What to avoid: blurry, distorted, watermark..." rows={3}
-                        style={{ width: "100%", border: `1px solid rgba(248,113,113,0.25)`,
+                        style={{ width: "100%", border: "1px solid rgba(248,113,113,0.25)",
                           background: "rgba(248,113,113,0.04)", color: C.text, borderRadius: radius.sm,
                           padding: "8px 10px", resize: "none", fontFamily: "inherit", fontSize: 12.5,
                           lineHeight: 1.6, outline: "none", boxSizing: "border-box" }} />
@@ -778,7 +919,6 @@ export default function ImagePage() {
                 )}
               </AnimatePresence>
 
-              {/* Toolbar */}
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between",
                 marginTop: 10, paddingTop: 10, borderTop: `1px solid ${C.border}`, flexShrink: 0 }}>
                 <div style={{ display: "flex", gap: 6 }}>
@@ -827,7 +967,8 @@ export default function ImagePage() {
                       exit={{ opacity: 0, y: 10, scale: 0.97 }} transition={{ duration: 0.22, ease: [0.22,1,0.36,1] }}
                       style={{ position: "absolute", left: 0, right: 0, bottom: "calc(100% + 8px)", zIndex: 10,
                         borderRadius: 18, border: `1px solid ${C.border}`, background: "rgba(14,16,26,0.99)",
-                        backdropFilter: "blur(16px)", boxShadow: "0 28px 80px rgba(0,0,0,0.5)", padding: 16, display: "grid", gap: 16 }}>
+                        backdropFilter: "blur(16px)", boxShadow: "0 28px 80px rgba(0,0,0,0.5)",
+                        padding: 16, display: "grid", gap: 16 }}>
                       <div>
                         <div style={{ fontSize: 11, color: C.textMuted, marginBottom: 8, fontWeight: 600,
                           letterSpacing: "0.08em", textTransform: "uppercase" }}>Mode</div>
@@ -947,14 +1088,12 @@ export default function ImagePage() {
               {notifState === "granted" && (
                 <motion.div key="notif-ok" initial={{ height: 0, opacity: 0 }} animate={{ height: 44, opacity: 1 }}
                   exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.2 }}
-                  style={{ borderBottom: `1px solid ${C.border}`, background: "rgba(34,197,94,0.07)",
-                    padding: "0 16px", display: "flex", alignItems: "center", justifyContent: "space-between",
-                    gap: 10, overflow: "hidden", flexShrink: 0 }}>
+                  style={{ borderBottom: `1px solid ${C.border}`, background: "rgba(34,197,94,0.07)", padding: "0 16px",
+                    display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, overflow: "hidden", flexShrink: 0 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#86efac", fontSize: 13 }}>
                     <Check size={13} /> Notifications enabled — you'll be notified when generation completes.
                   </div>
-                  <button onClick={() => setNotifState("dismissed")}
-                    style={{ border: "none", background: "transparent", color: C.textMuted, cursor: "pointer" }}>
+                  <button onClick={() => setNotifState("dismissed")} style={{ border: "none", background: "transparent", color: C.textMuted, cursor: "pointer" }}>
                     <X size={14} />
                   </button>
                 </motion.div>
@@ -962,14 +1101,12 @@ export default function ImagePage() {
               {notifState === "denied" && (
                 <motion.div key="notif-denied" initial={{ height: 0, opacity: 0 }} animate={{ height: 44, opacity: 1 }}
                   exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.2 }}
-                  style={{ borderBottom: `1px solid ${C.border}`, background: "rgba(239,68,68,0.07)",
-                    padding: "0 16px", display: "flex", alignItems: "center", justifyContent: "space-between",
-                    gap: 10, overflow: "hidden", flexShrink: 0 }}>
+                  style={{ borderBottom: `1px solid ${C.border}`, background: "rgba(239,68,68,0.07)", padding: "0 16px",
+                    display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, overflow: "hidden", flexShrink: 0 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#fca5a5", fontSize: 13 }}>
                     <BellOff size={13} /> Notifications blocked — enable them in your browser settings.
                   </div>
-                  <button onClick={() => setNotifState("dismissed")}
-                    style={{ border: "none", background: "transparent", color: C.textMuted, cursor: "pointer" }}>
+                  <button onClick={() => setNotifState("dismissed")} style={{ border: "none", background: "transparent", color: C.textMuted, cursor: "pointer" }}>
                     <X size={14} />
                   </button>
                 </motion.div>
@@ -989,7 +1126,7 @@ export default function ImagePage() {
                       fontSize: 12.5, fontFamily: "inherit", transition: "all 0.14s ease",
                       display: "inline-flex", alignItems: "center", gap: 5 }}>
                     {tab === "Videos" && <Video size={11} />}
-                    {tab === "Audio" && <Music size={11} />}
+                    {tab === "Audio"  && <Music size={11} />}
                     {tab === "Images" && <ImageIcon size={11} />}
                     {tab}
                   </motion.button>
@@ -1002,11 +1139,17 @@ export default function ImagePage() {
                 </label>
               </div>
               <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                {/* Generation count */}
+                {dbLoaded && groups.length > 0 && (
+                  <div style={{ fontSize: 11.5, color: C.textMuted, display: "flex", alignItems: "center", gap: 4 }}>
+                    <Database size={11} />
+                    {groups.length} saved
+                  </div>
+                )}
                 {groups.length > 0 && (
-                  <motion.button whileTap={{ scale: 0.95 }}
-                    onClick={() => { if (confirm("Clear all generations?")) setGroups([]); }}
+                  <motion.button whileTap={{ scale: 0.95 }} onClick={clearAll}
                     style={{ height: 28, padding: "0 10px", borderRadius: 8,
-                      border: `1px solid rgba(248,113,113,0.25)`, background: "rgba(248,113,113,0.07)",
+                      border: "1px solid rgba(248,113,113,0.25)", background: "rgba(248,113,113,0.07)",
                       color: "#fca5a5", fontSize: 11.5, cursor: "pointer", fontFamily: "inherit",
                       display: "inline-flex", alignItems: "center", gap: 5 }}>
                     <Trash2 size={11} /> Clear all
@@ -1024,12 +1167,21 @@ export default function ImagePage() {
             {/* ── Scrollable feed ── */}
             <div ref={canvasRef} style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
 
-              {/* Generating banner — NON-BLOCKING, sits at top of feed */}
+              {/* Loading from DB indicator */}
+              {!dbLoaded && (
+                <div style={{ padding: "28px 16px", display: "flex", alignItems: "center", justifyContent: "center", gap: 10, color: C.textMuted, fontSize: 13 }}>
+                  <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1.2, ease: "linear" }}>
+                    <Zap size={14} color="#a78bfa" />
+                  </motion.div>
+                  Loading saved generations…
+                </div>
+              )}
+
+              {/* Generating banner (non-blocking) */}
               <AnimatePresence>
                 {generating && (
                   <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }}
-                    exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.3 }}
-                    style={{ overflow: "hidden" }}>
+                    exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.3 }} style={{ overflow: "hidden" }}>
                     <div style={{ margin: "16px 16px 0", borderRadius: 16,
                       border: `1px solid ${C.accentBorder}`, background: "rgba(124,58,237,0.06)",
                       padding: "18px 20px", display: "flex", alignItems: "center", gap: 16 }}>
@@ -1057,7 +1209,7 @@ export default function ImagePage() {
                 )}
               </AnimatePresence>
 
-              {/* Empty states for Videos/Audio */}
+              {/* Videos / Audio empty states */}
               {!generating && contentFilter === "Videos" && (
                 <div style={{ height: "80vh", display: "grid", placeItems: "center" }}>
                   <div style={{ textAlign: "center" }}>
@@ -1066,7 +1218,7 @@ export default function ImagePage() {
                       <Video size={26} color={C.textDim} />
                     </div>
                     <p style={{ margin: "0 0 4px", color: C.text, fontSize: 15, fontWeight: 600 }}>Video Generation</p>
-                    <p style={{ margin: 0, color: C.textMuted, fontSize: 13 }}>Coming soon — video outputs will appear here.</p>
+                    <p style={{ margin: 0, color: C.textMuted, fontSize: 13 }}>Coming soon.</p>
                   </div>
                 </div>
               )}
@@ -1078,13 +1230,13 @@ export default function ImagePage() {
                       <Music size={26} color={C.textDim} />
                     </div>
                     <p style={{ margin: "0 0 4px", color: C.text, fontSize: 15, fontWeight: 600 }}>Audio Generation</p>
-                    <p style={{ margin: 0, color: C.textMuted, fontSize: 13 }}>Coming soon — audio outputs will appear here.</p>
+                    <p style={{ margin: 0, color: C.textMuted, fontSize: 13 }}>Coming soon.</p>
                   </div>
                 </div>
               )}
 
-              {/* Empty canvas */}
-              {!generating && (contentFilter === "All" || contentFilter === "Images") && filteredGroups.length === 0 && (
+              {/* Empty state */}
+              {dbLoaded && !generating && (contentFilter === "All" || contentFilter === "Images") && filteredGroups.length === 0 && (
                 <div style={{ height: "80vh", display: "grid", placeItems: "center" }}>
                   <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
                     style={{ textAlign: "center", maxWidth: 300 }}>
@@ -1094,7 +1246,7 @@ export default function ImagePage() {
                     </div>
                     <p style={{ margin: "0 0 8px", color: C.text, fontSize: 16, fontWeight: 700 }}>Your canvas is empty</p>
                     <p style={{ margin: "0 0 20px", color: C.textMuted, fontSize: 13, lineHeight: 1.7 }}>
-                      Describe what you want to create and hit Generate — your images will appear here.
+                      Describe what you want to create and hit Generate — your images will be auto-saved and reappear after refresh.
                     </p>
                     <motion.button whileTap={{ scale: 0.96 }} onClick={() => textareaRef.current?.focus()}
                       style={{ height: 36, padding: "0 18px", borderRadius: radius.md,
@@ -1107,18 +1259,19 @@ export default function ImagePage() {
                 </div>
               )}
 
-              {/* Generation feed */}
+              {/* Feed */}
               {(contentFilter === "All" || contentFilter === "Images") && filteredGroups.length > 0 && (
-                <div style={{ padding: "16px 16px 48px", display: "flex", flexDirection: "column", gap: 16 }}>
+                <div style={{ padding: "16px 16px 64px", display: "flex", flexDirection: "column", gap: 16 }}>
                   {filteredGroups.map((group, idx) => (
-                    <GenerationCard key={group.id} group={group} isLatest={idx === 0 && !generating}
+                    <GenerationCard key={group.id} group={group}
+                      isLatest={idx === 0 && !generating}
+                      generating={generating}
                       onDelete={deleteGroup}
                       onToggleFavorite={toggleFavorite}
                       onDownload={handleDownload}
                       onShare={handleShare}
                       onVariation={handleVariation}
-                      generating={generating}
-                      onOpenLightbox={(img, prompt) => setLightboxItem({ ...img, promptText: prompt })} />
+                      onOpenLightbox={(img, promptText) => setLightboxItem({ ...img, promptText })} />
                   ))}
                 </div>
               )}
@@ -1153,11 +1306,11 @@ export default function ImagePage() {
               <div style={{ position: "absolute", top: 14, right: 14, display: "flex", gap: 8 }}>
                 {[
                   { Icon: Download, action: () => handleDownload(lightboxItem) },
-                  { Icon: Share2, action: () => handleShare(lightboxItem) },
-                  { Icon: X, action: () => setLightboxItem(null) },
+                  { Icon: Share2,   action: () => handleShare(lightboxItem) },
+                  { Icon: X,        action: () => setLightboxItem(null) },
                 ].map(({ Icon, action }, i) => (
                   <motion.button key={i} whileTap={{ scale: 0.9 }} onClick={action}
-                    style={{ width: 40, height: 40, borderRadius: 12, border: `1px solid rgba(255,255,255,0.12)`,
+                    style={{ width: 40, height: 40, borderRadius: 12, border: "1px solid rgba(255,255,255,0.12)",
                       background: "rgba(0,0,0,0.6)", backdropFilter: "blur(8px)", color: "white",
                       display: "grid", placeItems: "center", cursor: "pointer" }}>
                     <Icon size={15} />
