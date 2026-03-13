@@ -612,23 +612,47 @@ export default function ImagePage() {
   const textareaRef = useRef(null);
   const canvasRef   = useRef(null);
 
-  // ── Auth + initial Supabase load ───────────────────────────────────────────
+  // ── Auth + instant cache-first load ───────────────────────────────────────
+  // sessionStorage key per user — clears when tab closes but persists navigation
+  const SESSION_KEY = "kylor_img_cache";
+
   useEffect(() => {
-    (async () => {
+    async function init() {
+      // Step 1: get current user (fast, local)
       const { data: { session } } = await supabase.auth.getSession();
       const uid = session?.user?.id ?? null;
       setUserId(uid);
-      const saved = await sbLoadAll(uid);
-      setGroups(saved);
+
+      // Step 2: show cached data INSTANTLY (zero network wait)
+      try {
+        const raw = sessionStorage.getItem(SESSION_KEY);
+        if (raw) {
+          const cached = JSON.parse(raw);
+          if (Array.isArray(cached) && cached.length > 0) {
+            setGroups(cached);
+            setDbLoaded(true); // show feed right away
+          }
+        }
+      } catch {}
+
+      // Step 3: fetch fresh data from Supabase in background
+      const fresh = await sbLoadAll(uid);
+      setGroups(fresh);
       setDbLoaded(true);
-    })();
+
+      // Step 4: update cache with fresh data
+      try { sessionStorage.setItem(SESSION_KEY, JSON.stringify(fresh)); } catch {}
+    }
+
+    init();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
       const uid = session?.user?.id ?? null;
       setUserId(uid);
-      const saved = await sbLoadAll(uid);
-      setGroups(saved);
+      const fresh = await sbLoadAll(uid);
+      setGroups(fresh);
       setDbLoaded(true);
+      try { sessionStorage.setItem(SESSION_KEY, JSON.stringify(fresh)); } catch {}
     });
     return () => subscription.unsubscribe();
   }, []);
@@ -643,6 +667,11 @@ export default function ImagePage() {
     return () => document.removeEventListener("mousedown", handleOutside);
   }, []);
 
+  // ── Keep sessionStorage cache in sync ─────────────────────────────────────
+  function syncCache(updatedGroups) {
+    try { sessionStorage.setItem(SESSION_KEY, JSON.stringify(updatedGroups)); } catch {}
+  }
+
   const activeStyle = STYLES.find(s => s.id === selectedStyle);
 
   // ── Notifications ─────────────────────────────────────────────────────────
@@ -656,12 +685,12 @@ export default function ImagePage() {
 
   // ── Delete single group ────────────────────────────────────────────────────
   async function deleteGroup(groupId) {
-    // Find all image IDs in this group to delete from Storage too
     const group = groups.find(g => g.id === groupId);
-    setGroups(p => p.filter(g => g.id !== groupId));
+    const next  = groups.filter(g => g.id !== groupId);
+    setGroups(next);
+    syncCache(next);
     if (lightboxItem?.groupId === groupId) setLightboxItem(null);
     await sbDeleteGroup(groupId, userId);
-    // Clean up Storage files (best-effort)
     if (group && userId) {
       const count = group.images.length;
       await Promise.all(
@@ -680,6 +709,7 @@ export default function ImagePage() {
         ...g, images: g.images.map((img, i) => i === imgIdx ? { ...img, starred: !img.starred } : img),
       });
       updated = next.find(g => g.id === groupId);
+      syncCache(next);
       return next;
     });
     if (updated) await sbSaveGroup(updated, userId);
@@ -700,6 +730,7 @@ export default function ImagePage() {
     if (!confirm("Delete all saved generations? This cannot be undone.")) return;
     setGroups([]);
     setLightboxItem(null);
+    syncCache([]);
     await sbClearAll(userId);
   }
 
@@ -751,7 +782,7 @@ export default function ImagePage() {
           ? tempUrls.map(url => ({ url, starred: false }))
           : [{ url: null, starred: false }],
       };
-      setGroups(p => [newGroup, ...p]);
+      setGroups(p => { const next = [newGroup, ...p]; syncCache(next); return next; });
       setGenerating(false); // ← unblock UI now, don't wait for upload
 
       // ── Step 2: Upload to Supabase Storage in background ──
@@ -767,7 +798,7 @@ export default function ImagePage() {
         const updatedImages = permanentUrls.map(url => ({ url, starred: false }));
         const updatedGroup  = { ...newGroup, images: updatedImages };
 
-        setGroups(p => p.map(g => g.id === groupId ? updatedGroup : g));
+        setGroups(p => { const next = p.map(g => g.id === groupId ? updatedGroup : g); syncCache(next); return next; });
         // Update DB with permanent URLs
         await sbSaveGroup(updatedGroup, userId);
       }
@@ -1222,16 +1253,6 @@ export default function ImagePage() {
             {/* ── Scrollable feed ── */}
             <div ref={canvasRef} style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
 
-              {/* Loading from DB indicator */}
-              {!dbLoaded && (
-                <div style={{ padding: "28px 16px", display: "flex", alignItems: "center", justifyContent: "center", gap: 10, color: C.textMuted, fontSize: 13 }}>
-                  <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1.2, ease: "linear" }}>
-                    <Zap size={14} color="#a78bfa" />
-                  </motion.div>
-                  Loading saved generations…
-                </div>
-              )}
-
               {/* Generating banner (non-blocking) */}
               <AnimatePresence>
                 {generating && (
@@ -1291,7 +1312,7 @@ export default function ImagePage() {
               )}
 
               {/* Empty state */}
-              {dbLoaded && !generating && (contentFilter === "All" || contentFilter === "Images") && filteredGroups.length === 0 && (
+              {!generating && (contentFilter === "All" || contentFilter === "Images") && filteredGroups.length === 0 && (
                 <div style={{ height: "80vh", display: "grid", placeItems: "center" }}>
                   <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
                     style={{ textAlign: "center", maxWidth: 300 }}>
