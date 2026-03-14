@@ -78,15 +78,17 @@ const CHARACTER_PACK_VIEWS = [
     shot: "front full-body view, neutral standing pose, facing camera, plain studio background",
   },
   {
-    key: "left",
-    label: "Left Profile Full-Body",
-    shot: "left side full-body profile, neutral standing pose, plain studio background",
-  },
+  key: "left",
+  label: "Left Profile Full-Body",
+  shot: "camera sees the character's left side profile, character facing toward the left edge of the frame, full-body, neutral standing pose, plain studio background",
+},
+
   {
-    key: "right",
-    label: "Right Profile Full-Body",
-    shot: "right side full-body profile, neutral standing pose, plain studio background",
-  },
+  key: "right",
+  label: "Right Profile Full-Body",
+  shot: "camera sees the character's right side profile, character facing toward the right edge of the frame, full-body, neutral standing pose, plain studio background",
+},
+
   {
     key: "back",
     label: "Back Full-Body",
@@ -495,8 +497,12 @@ export default function ConsistencyPage() {
   // ── Load characters from Supabase on mount ────────────────────────────────
   useEffect(() => {
     (async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      const uid = session?.user?.id ?? null;
+      const {
+  data: { user },
+} = await supabase.auth.getUser();
+
+const uid = user?.id ?? null;
+
       setUserId(uid);
       if (!uid) return;
 
@@ -554,117 +560,134 @@ export default function ConsistencyPage() {
 
   // ── Save character ────────────────────────────────────────────────────────
   async function saveCharacter() {
-    if (!charName.trim()) return;
-    setSaving(true);
+  if (!charName.trim()) return;
 
-    let refUrls = [];
+  if (!userId) {
+    alert("Please log in first to save characters.");
+    return;
+  }
 
-    // Upload ref images to Supabase Storage
-    if (refEntries.length > 0 && userId) {
-      const uploads = await Promise.all(
-        refEntries.map(async (entry, i) => {
-          if (!entry.file) return entry.previewUrl;
-          try {
-            const ext  = entry.file.type === "image/webp" ? "webp"
-                       : entry.file.type === "image/jpeg" ? "jpg" : "png";
-            const path = `${userId}/${Date.now()}-ref${i}.${ext}`;
-            const { error } = await supabase.storage
-              .from(CHAR_BUCKET)
-              .upload(path, entry.file, { contentType: entry.file.type, upsert: true });
-            if (error) { console.error("Ref upload:", error.message); return null; }
-            const { data } = supabase.storage.from(CHAR_BUCKET).getPublicUrl(path);
-            return data?.publicUrl ?? null;
-          } catch {
+  setSaving(true);
+
+  let refUrls = [];
+
+  // Upload ref images to Supabase Storage
+  if (refEntries.length > 0) {
+    const uploads = await Promise.all(
+      refEntries.map(async (entry, i) => {
+        if (!entry.file) return entry.previewUrl;
+        try {
+          const ext =
+            entry.file.type === "image/webp"
+              ? "webp"
+              : entry.file.type === "image/jpeg"
+              ? "jpg"
+              : "png";
+
+          const path = `${userId}/${Date.now()}-ref${i}.${ext}`;
+
+          const { error } = await supabase.storage
+            .from(CHAR_BUCKET)
+            .upload(path, entry.file, {
+              contentType: entry.file.type,
+              upsert: true,
+            });
+
+          if (error) {
+            console.error("Ref upload:", error.message);
             return null;
           }
-        })
-      );
-      refUrls = uploads.filter(Boolean);
-    } else {
-      refUrls = refEntries.map(e => e.previewUrl);
-    }
 
-    const promptPayload = buildTraitsPayload({
-      charDesc,
-      gender,
-      ageRange,
-      ethnicity,
-      hairStyle,
-      hairColor,
-      eyeColor,
-      build,
-      charLocked,
-      extraPrompt,
-      lighting,
-    });
+          const { data } = supabase.storage.from(CHAR_BUCKET).getPublicUrl(path);
+          return data?.publicUrl ?? null;
+        } catch {
+          return null;
+        }
+      })
+    );
 
-    let savedId = `local-${Date.now()}`;
-    let createdAt = new Date().toISOString();
-
-    if (userId) {
-      const { data, error } = await supabase
-        .from("characters")
-        .insert({
-          user_id: userId,
-          name: charName.trim(),
-          description: charDesc.trim(),
-          prompt: promptPayload,
-          reference_image: refUrls[0] || null,
-          generated_images: [],
-          cover_image: refUrls[0] || null,
-          style: lighting || null,
-          seed: null,
-        })
-        .select()
-        .single();
-
-      if (error) {
-        console.error("Character save failed:", error.message);
-      } else if (data) {
-        savedId = data.id;
-        createdAt = data.created_at;
-      }
-    }
-
-    const newChar = {
-      id: savedId,
-      name: charName.trim(),
-      desc: charDesc.trim(),
-      gender,
-      ageRange,
-      ethnicity,
-      hairStyle,
-      hairColor,
-      eyeColor,
-      build,
-      refEntries: refUrls.map(url => ({ file: null, previewUrl: url })),
-      locked: charLocked,
-      generations: 0,
-      generatedImages: [],
-      style: lighting || null,
-      extraPrompt: extraPrompt || "",
-      createdAt,
-    };
-
-    setCharacters(p => [newChar, ...p]);
-    setActiveCharId(savedId);
-
-    // Reset form
-    setCharName("");
-    setCharDesc("");
-    setGender("");
-    setAgeRange("");
-    setEthnicity("");
-    setHairStyle("");
-    setHairColor("");
-    setEyeColor("");
-    setBuild("");
-    setRefEntries([]);
-    setCharLocked(false);
-    setFormSection("generate");
-    setActiveView("characters");
-    setSaving(false);
+    refUrls = uploads.filter(Boolean);
+  } else {
+    refUrls = [];
   }
+
+  const promptPayload = buildTraitsPayload({
+    charDesc,
+    gender,
+    ageRange,
+    ethnicity,
+    hairStyle,
+    hairColor,
+    eyeColor,
+    build,
+    charLocked,
+    extraPrompt,
+    lighting,
+  });
+
+  const { data, error } = await supabase
+    .from("characters")
+    .insert({
+      user_id: userId,
+      name: charName.trim(),
+      description: charDesc.trim(),
+      prompt: promptPayload,
+      reference_image: refUrls[0] || null,
+      generated_images: [],
+      cover_image: refUrls[0] || null,
+      style: lighting || null,
+      seed: null,
+    })
+    .select()
+    .single();
+
+  if (error || !data) {
+    console.error("Character save failed:", error?.message);
+    alert("Failed to save character.");
+    setSaving(false);
+    return;
+  }
+
+  const newChar = {
+    id: data.id,
+    name: charName.trim(),
+    desc: charDesc.trim(),
+    gender,
+    ageRange,
+    ethnicity,
+    hairStyle,
+    hairColor,
+    eyeColor,
+    build,
+    refEntries: refUrls.map(url => ({ file: null, previewUrl: url })),
+    locked: charLocked,
+    generations: 0,
+    generatedImages: [],
+    style: lighting || null,
+    extraPrompt: extraPrompt || "",
+    createdAt: data.created_at,
+  };
+
+  setCharacters(p => [newChar, ...p]);
+  setActiveCharId(data.id);
+
+  // Reset form
+  setCharName("");
+  setCharDesc("");
+  setGender("");
+  setAgeRange("");
+  setEthnicity("");
+  setHairStyle("");
+  setHairColor("");
+  setEyeColor("");
+  setBuild("");
+  setRefEntries([]);
+  setCharLocked(false);
+  setFormSection("generate");
+  setActiveView("characters");
+  setSaving(false);
+}
+
 
   // ── Delete character ──────────────────────────────────────────────────────
   async function deleteCharacter(id) {
