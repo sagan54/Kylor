@@ -197,8 +197,6 @@ const CARD_GRADIENTS = [
   "linear-gradient(135deg, rgba(109,92,255,0.45), rgba(49,46,129,0.55))",
 ];
 
-
-
 // ─── Misc helpers ─────────────────────────────────────────────────────────────
 function getApiSize(r) {
   if (["9:16","2:3","3:4"].includes(r)) return "1024x1536";
@@ -231,6 +229,57 @@ function fmtDate(iso) {
   const d = new Date(iso);
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
     + " · " + d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
+}
+
+// ─── Character helpers ────────────────────────────────────────────────────────
+function fileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+function getCharacterThumb(character) {
+  if (!character) return null;
+  if (Array.isArray(character.sheetImages) && character.sheetImages.length > 0) return character.sheetImages[0];
+  if (Array.isArray(character.refUrls) && character.refUrls.length > 0) return character.refUrls[0];
+  return null;
+}
+
+async function loadCharacters(userId) {
+  if (!userId) return [];
+  const { data, error } = await supabase
+    .from("characters")
+    .select("*")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    console.error("loadCharacters:", error.message);
+    return [];
+  }
+
+  return (data || []).map((row) => ({
+    id: row.id,
+    name: row.name,
+    description: row.description || "",
+    gender: row.gender || "",
+    ageRange: row.age_range || "",
+    ethnicity: row.ethnicity || "",
+    hairStyle: row.hair_style || "",
+    hairColor: row.hair_color || "",
+    eyeColor: row.eye_color || "",
+    build: row.build || "",
+    locked: row.locked || false,
+    generations: row.generations || 0,
+    refUrls: row.ref_urls || [],
+    sheetImages: row.sheet_images || [],
+    characterPrompt: row.character_prompt || "",
+    characterSeed: row.character_seed || "",
+    createdAt: row.created_at,
+  }));
 }
 
 // ─── Sidebar Item ─────────────────────────────────────────────────────────────
@@ -587,6 +636,11 @@ export default function ImagePage() {
   // Reference images
   const [refImages,      setRefImages]      = useState([]);
 
+  // Characters
+  const [characters,          setCharacters]          = useState([]);
+  const [selectedCharacterId, setSelectedCharacterId] = useState(null);
+  const [characterPickerOpen, setCharacterPickerOpen] = useState(false);
+
   // Settings
   const [ratio,          setRatio]          = useState("16:9");
   const [mode,           setMode]           = useState("2K HD");
@@ -612,6 +666,11 @@ export default function ImagePage() {
   const textareaRef = useRef(null);
   const canvasRef   = useRef(null);
 
+  const selectedCharacter = useMemo(
+    () => characters.find(c => c.id === selectedCharacterId) || null,
+    [characters, selectedCharacterId]
+  );
+
   // ── Auth + instant cache-first load ───────────────────────────────────────
   // sessionStorage key per user — clears when tab closes but persists navigation
   const SESSION_KEY = "kylor_img_cache";
@@ -636,12 +695,32 @@ export default function ImagePage() {
       } catch {}
 
       // Step 3: fetch fresh data from Supabase in background
-      const fresh = await sbLoadAll(uid);
-      setGroups(fresh);
+      const [freshGroups, freshCharacters] = await Promise.all([
+        sbLoadAll(uid),
+        loadCharacters(uid),
+      ]);
+
+      setGroups(freshGroups);
+      setCharacters(freshCharacters);
       setDbLoaded(true);
 
       // Step 4: update cache with fresh data
-      try { sessionStorage.setItem(SESSION_KEY, JSON.stringify(fresh)); } catch {}
+      try { sessionStorage.setItem(SESSION_KEY, JSON.stringify(freshGroups)); } catch {}
+
+      // Consistency → Image handoff
+      try {
+        const prefillPrompt = sessionStorage.getItem("kylor_prefill_prompt");
+        if (prefillPrompt) {
+          setPrompt(prefillPrompt);
+          sessionStorage.removeItem("kylor_prefill_prompt");
+        }
+
+        const selectedCharId = sessionStorage.getItem("kylor_selected_character_id");
+        if (selectedCharId) {
+          setSelectedCharacterId(Number(selectedCharId));
+          sessionStorage.removeItem("kylor_selected_character_id");
+        }
+      } catch {}
     }
 
     init();
@@ -649,10 +728,17 @@ export default function ImagePage() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
       const uid = session?.user?.id ?? null;
       setUserId(uid);
-      const fresh = await sbLoadAll(uid);
-      setGroups(fresh);
+
+      const [freshGroups, freshCharacters] = await Promise.all([
+        sbLoadAll(uid),
+        loadCharacters(uid),
+      ]);
+
+      setGroups(freshGroups);
+      setCharacters(freshCharacters);
       setDbLoaded(true);
-      try { sessionStorage.setItem(SESSION_KEY, JSON.stringify(fresh)); } catch {}
+
+      try { sessionStorage.setItem(SESSION_KEY, JSON.stringify(freshGroups)); } catch {}
     });
     return () => subscription.unsubscribe();
   }, []);
@@ -741,12 +827,51 @@ export default function ImagePage() {
     canvasRef.current?.scrollTo({ top: 0, behavior: "smooth" });
 
     const styleLabel = activeStyle?.label ?? null;
+
+    const characterTraits = selectedCharacter ? [
+      selectedCharacter.gender,
+      selectedCharacter.ageRange,
+      selectedCharacter.ethnicity,
+      selectedCharacter.hairColor && selectedCharacter.hairStyle
+        ? `${selectedCharacter.hairColor} ${selectedCharacter.hairStyle} hair`
+        : null,
+      selectedCharacter.eyeColor ? `${selectedCharacter.eyeColor} eyes` : null,
+      selectedCharacter.build ? `${selectedCharacter.build} build` : null,
+    ].filter(Boolean).join(", ") : "";
+
+    const lockedCharacterPrompt = selectedCharacter
+      ? (
+          selectedCharacter.characterPrompt ||
+          [
+            `This image must use the same exact character identity: ${selectedCharacter.name}.`,
+            characterTraits ? `Character traits: ${characterTraits}.` : null,
+            selectedCharacter.description ? `Additional features: ${selectedCharacter.description}.` : null,
+            "Preserve the same face, facial structure, skin tone, hairstyle, and identity across scenes.",
+            "Do not change this person into a different person.",
+          ].filter(Boolean).join(" ")
+        )
+      : null;
+
     const fullPrompt = [
+      lockedCharacterPrompt,
       prompt.trim(),
-      styleLabel            ? `Style: ${styleLabel}` : null,
+      styleLabel ? `Style: ${styleLabel}` : null,
       negativePrompt.trim() ? `Negative: ${negativePrompt.trim()}` : null,
       "No text, no captions, no subtitles, no watermark.",
     ].filter(Boolean).join(". ");
+
+    const uploadedRefBase64 = refImages.length > 0
+      ? (await Promise.all(refImages.map(fileToDataUrl))).filter(Boolean)
+      : [];
+
+    const characterRefs = selectedCharacter
+      ? [
+          ...(Array.isArray(selectedCharacter.sheetImages) ? selectedCharacter.sheetImages : []),
+          ...(Array.isArray(selectedCharacter.refUrls) ? selectedCharacter.refUrls : []),
+        ].filter(Boolean)
+      : [];
+
+    const combinedReferenceImages = [...characterRefs, ...uploadedRefBase64].slice(0, 10);
 
     const n       = Math.min(outputCount, 4);
     const groupId = Date.now();
@@ -757,10 +882,12 @@ export default function ImagePage() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            prompt:  fullPrompt,
-            size:    getApiSize(ratio),
+            prompt: fullPrompt,
+            size: getApiSize(ratio),
             quality: getApiQuality(mode),
             n: 1,
+            referenceImages: combinedReferenceImages,
+            characterSeed: selectedCharacter?.characterSeed || null,
           }),
         }).then(r => r.json()).catch(() => ({}))
       );
@@ -839,7 +966,19 @@ export default function ImagePage() {
       const res     = await fetch("/api/generate-image", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: variationPrompt, size: getApiSize(group.ratio), quality: getApiQuality(group.mode), n: 1 }),
+        body: JSON.stringify({
+          prompt: variationPrompt,
+          size: getApiSize(group.ratio),
+          quality: getApiQuality(group.mode),
+          n: 1,
+          referenceImages: selectedCharacter
+            ? [
+                ...(Array.isArray(selectedCharacter.sheetImages) ? selectedCharacter.sheetImages : []),
+                ...(Array.isArray(selectedCharacter.refUrls) ? selectedCharacter.refUrls : []),
+              ].filter(Boolean).slice(0, 10)
+            : [],
+          characterSeed: selectedCharacter?.characterSeed || null,
+        }),
       });
       const data    = await res.json();
       const tempUrl = Array.isArray(data?.images) ? data.images[0] : data?.image;
@@ -983,7 +1122,76 @@ export default function ImagePage() {
               </div>
             </motion.button>
 
+            {/* Use Character */}
+            <motion.button
+              whileHover={{ borderColor: C.accentBorder }}
+              whileTap={{ scale: 0.99 }}
+              onClick={() => setCharacterPickerOpen(true)}
+              style={{ width: "100%", padding: "10px 12px", borderRadius: radius.md, border: `1px solid ${selectedCharacter ? C.accentBorder : C.border}`,
+                background: selectedCharacter ? C.accentSoft : C.surface, color: selectedCharacter ? "#c4b5fd" : C.text,
+                display: "flex", alignItems: "center", gap: 10, cursor: "pointer", fontFamily: "inherit",
+                transition: "all 0.16s ease", flexShrink: 0 }}>
+              <div style={{ width: 34, height: 34, borderRadius: 10, flexShrink: 0,
+                background: selectedCharacter ? "linear-gradient(135deg,#6D5CFF,#9d4edd)" : "rgba(255,255,255,0.05)",
+                display: "grid", placeItems: "center" }}>
+                <UserCircle2 size={15} />
+              </div>
+              <div style={{ flex: 1, minWidth: 0, textAlign: "left" }}>
+                <div style={{ fontSize: 13.5, fontWeight: 700 }}>
+                  {selectedCharacter ? selectedCharacter.name : "Use Character"}
+                </div>
+                <div style={{ fontSize: 11.5, color: selectedCharacter ? "#c4b5fd" : C.textMuted, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                  {selectedCharacter
+                    ? `${(selectedCharacter.sheetImages?.length || 0) + (selectedCharacter.refUrls?.length || 0)} saved refs attached`
+                    : "Select a saved character from Consistency"}
+                </div>
+              </div>
+              <ChevronRight size={14} color={selectedCharacter ? "#c4b5fd" : C.textMuted} />
+            </motion.button>
+
             <div style={{ flexShrink: 0 }}><DropZone files={refImages} onFiles={setRefImages} /></div>
+
+            {selectedCharacter && (
+              <div style={{ flexShrink: 0, borderRadius: radius.md, border: `1px solid ${C.accentBorder}`,
+                background: "rgba(124,58,237,0.08)", padding: "10px 12px", display: "flex", alignItems: "center", gap: 10 }}>
+                <div style={{ width: 42, height: 42, borderRadius: 11, overflow: "hidden", flexShrink: 0,
+                  background: "rgba(255,255,255,0.05)", display: "grid", placeItems: "center" }}>
+                  {getCharacterThumb(selectedCharacter) ? (
+                    <img
+                      src={getCharacterThumb(selectedCharacter)}
+                      alt={selectedCharacter.name}
+                      style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                    />
+                  ) : (
+                    <UserCircle2 size={18} color="#c4b5fd" />
+                  )}
+                </div>
+
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>
+                    Character locked: {selectedCharacter.name}
+                  </div>
+                  <div style={{ fontSize: 11.5, color: "#c4b5fd", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                    Scene generations will use this same character identity
+                  </div>
+                </div>
+
+                <div style={{ display: "flex", gap: 6 }}>
+                  <button
+                    onClick={() => setCharacterPickerOpen(true)}
+                    style={{ height: 28, padding: "0 10px", borderRadius: 8, border: `1px solid ${C.border}`,
+                      background: C.surface, color: C.textMuted, cursor: "pointer", fontSize: 11.5, fontFamily: "inherit" }}>
+                    Change
+                  </button>
+                  <button
+                    onClick={() => setSelectedCharacterId(null)}
+                    style={{ height: 28, padding: "0 10px", borderRadius: 8, border: "1px solid rgba(248,113,113,0.25)",
+                      background: "rgba(248,113,113,0.07)", color: "#fca5a5", cursor: "pointer", fontSize: 11.5, fontFamily: "inherit" }}>
+                    Clear
+                  </button>
+                </div>
+              </div>
+            )}
 
             <div style={{ flex: 1, minHeight: 0, borderRadius: radius.md, border: `1px solid ${C.border}`,
               background: C.surface, padding: 12, display: "flex", flexDirection: "column" }}>
@@ -1355,6 +1563,112 @@ export default function ImagePage() {
           </div>
         </div>
       </div>
+
+      {/* ── Character Picker ── */}
+      <AnimatePresence>
+        {characterPickerOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setCharacterPickerOpen(false)}
+            style={{ position: "fixed", inset: 0, zIndex: 9998, background: "rgba(0,0,0,0.82)",
+              backdropFilter: "blur(10px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
+              style={{ width: "min(760px, 92vw)", maxHeight: "80vh", overflow: "hidden",
+                borderRadius: radius.xl, border: `1px solid ${C.border}`, background: "rgba(12,14,22,0.98)",
+                boxShadow: "0 40px 100px rgba(0,0,0,0.6)", display: "flex", flexDirection: "column" }}
+            >
+              <div style={{ padding: "16px 18px", borderBottom: `1px solid ${C.border}`,
+                display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <div>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: C.text }}>Use Character</div>
+                  <div style={{ fontSize: 12, color: C.textMuted }}>Select a saved character from Consistency</div>
+                </div>
+                <button
+                  onClick={() => setCharacterPickerOpen(false)}
+                  style={{ width: 34, height: 34, borderRadius: 10, border: `1px solid ${C.border}`,
+                    background: C.surface, color: C.textMuted, display: "grid", placeItems: "center", cursor: "pointer" }}
+                >
+                  <X size={14} />
+                </button>
+              </div>
+
+              <div style={{ padding: 16, overflowY: "auto", minHeight: 0 }}>
+                {characters.length === 0 ? (
+                  <div style={{ padding: 28, borderRadius: radius.lg, border: `1px solid ${C.border}`,
+                    background: C.surface, textAlign: "center" }}>
+                    <UserCircle2 size={30} color={C.textDim} style={{ margin: "0 auto 12px" }} />
+                    <div style={{ fontSize: 14, fontWeight: 700, color: C.text, marginBottom: 6 }}>
+                      No saved characters yet
+                    </div>
+                    <div style={{ fontSize: 12.5, color: C.textMuted }}>
+                      Create and save a character in the Consistency section first.
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(220px,1fr))", gap: 12 }}>
+                    {characters.map((char) => {
+                      const thumb = getCharacterThumb(char);
+                      const active = selectedCharacterId === char.id;
+
+                      return (
+                        <motion.button
+                          key={char.id}
+                          whileTap={{ scale: 0.98 }}
+                          onClick={() => {
+                            setSelectedCharacterId(char.id);
+                            setCharacterPickerOpen(false);
+                          }}
+                          style={{ borderRadius: radius.lg, border: `1px solid ${active ? C.accentBorder : C.border}`,
+                            background: active ? "rgba(124,58,237,0.08)" : C.surface, overflow: "hidden",
+                            cursor: "pointer", textAlign: "left", padding: 0, fontFamily: "inherit" }}
+                        >
+                          <div style={{ height: 120, background: "rgba(255,255,255,0.03)", display: "grid", placeItems: "center" }}>
+                            {thumb ? (
+                              <img src={thumb} alt={char.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                            ) : (
+                              <UserCircle2 size={28} color={C.textDim} />
+                            )}
+                          </div>
+
+                          <div style={{ padding: 12 }}>
+                            <div style={{ fontSize: 13.5, fontWeight: 700, color: C.text, marginBottom: 4 }}>
+                              {char.name}
+                            </div>
+                            <div style={{ fontSize: 11.5, color: C.textMuted, lineHeight: 1.6 }}>
+                              {[char.gender, char.ageRange, char.ethnicity].filter(Boolean).join(" · ") || "Saved character"}
+                            </div>
+                            <div style={{ marginTop: 8, display: "flex", gap: 6, flexWrap: "wrap" }}>
+                              {(char.sheetImages?.length > 0) && (
+                                <div style={{ fontSize: 10.5, padding: "2px 7px", borderRadius: radius.full,
+                                  border: `1px solid ${C.accentBorder}`, background: C.accentSoft, color: "#c4b5fd" }}>
+                                  {char.sheetImages.length} sheet
+                                </div>
+                              )}
+                              {(char.refUrls?.length > 0) && (
+                                <div style={{ fontSize: 10.5, padding: "2px 7px", borderRadius: radius.full,
+                                  border: `1px solid ${C.border}`, background: "rgba(255,255,255,0.04)", color: C.textMuted }}>
+                                  {char.refUrls.length} refs
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </motion.button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* ── Lightbox ── */}
       <AnimatePresence>
