@@ -2760,113 +2760,117 @@ export default function ImagePage() {
       </div>
 
       <AnimatePresence>
-        {lightboxItem && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            onClick={() => setLightboxItem(null)}
+  {showCharacterModal && (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      onClick={() => setShowCharacterModal(false)}
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 9998,
+        background: "rgba(0,0,0,0.82)",
+        backdropFilter: "blur(10px)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 24,
+      }}
+    >
+      <motion.div
+        initial={{ opacity: 0, y: 18, scale: 0.98 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: 12, scale: 0.98 }}
+        transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: "100%",
+          maxWidth: 680,
+          borderRadius: 22,
+          border: `1px solid ${C.border}`,
+          background: "linear-gradient(180deg, rgba(10,12,20,0.98), rgba(8,10,18,0.98))",
+          boxShadow: "0 40px 120px rgba(0,0,0,0.6)",
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{
+            padding: "16px 18px",
+            borderBottom: `1px solid ${C.border}`,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+          }}
+        >
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: C.text }}>
+              Use Character
+            </div>
+            <div style={{ fontSize: 12, color: C.textMuted }}>
+              Select a saved character from Consistency
+            </div>
+          </div>
+
+          <button
+            onClick={() => setShowCharacterModal(false)}
             style={{
-              position: "fixed",
-              inset: 0,
-              zIndex: 9999,
-              background: "rgba(0,0,0,0.92)",
-              backdropFilter: "blur(12px)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
+              width: 34,
+              height: 34,
+              borderRadius: 10,
+              border: `1px solid ${C.border}`,
+              background: C.surface,
+              color: C.textMuted,
+              display: "grid",
+              placeItems: "center",
+              cursor: "pointer",
+            }}
+          >
+            <X size={14} />
+          </button>
+        </div>
+
+        <div style={{ padding: 14 }}>
+          <div
+            style={{
+              minHeight: 180,
+              borderRadius: 18,
+              border: `1px solid ${C.border}`,
+              background: "rgba(255,255,255,0.02)",
+              display: "grid",
+              placeItems: "center",
+              textAlign: "center",
               padding: 24,
             }}
           >
-            <motion.div
-              initial={{ scale: 0.92, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.92, opacity: 0 }}
-              transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
-              onClick={(e) => e.stopPropagation()}
-              style={{
-                position: "relative",
-                maxWidth: "90vw",
-                maxHeight: "90vh",
-                borderRadius: radius.xl,
-                overflow: "hidden",
-                boxShadow: "0 40px 100px rgba(0,0,0,0.7)",
-              }}
-            >
-              {lightboxItem.url ? (
-                <img
-                  src={lightboxItem.url}
-                  alt={lightboxItem.promptText}
-                  style={{
-                    display: "block",
-                    maxWidth: "90vw",
-                    maxHeight: "88vh",
-                    objectFit: "contain",
-                  }}
-                />
-              ) : (
-                <div
-                  style={{
-                    width: 600,
-                    height: 700,
-                    background: CARD_GRADIENTS[(lightboxItem.id || 0) % CARD_GRADIENTS.length],
-                    display: "grid",
-                    placeItems: "center",
-                  }}
-                >
-                  <ImageIcon size={60} color="rgba(255,255,255,0.15)" />
-                </div>
-              )}
-
-              <div style={{ position: "absolute", top: 14, right: 14, display: "flex", gap: 8 }}>
-                {[
-                  { Icon: Download, action: () => handleDownload(lightboxItem) },
-                  { Icon: Share2, action: () => handleShare(lightboxItem) },
-                  { Icon: X, action: () => setLightboxItem(null) },
-                ].map(({ Icon, action }, i) => (
-                  <motion.button
-                    key={i}
-                    whileTap={{ scale: 0.9 }}
-                    onClick={action}
-                    style={{
-                      width: 40,
-                      height: 40,
-                      borderRadius: 12,
-                      border: "1px solid rgba(255,255,255,0.12)",
-                      background: "rgba(0,0,0,0.6)",
-                      backdropFilter: "blur(8px)",
-                      color: "white",
-                      display: "grid",
-                      placeItems: "center",
-                      cursor: "pointer",
-                    }}
-                  >
-                    <Icon size={15} />
-                  </motion.button>
-                ))}
+            <div>
+              <div
+                style={{
+                  width: 52,
+                  height: 52,
+                  borderRadius: 999,
+                  margin: "0 auto 12px",
+                  border: `1px solid ${C.border}`,
+                  background: C.surface,
+                  display: "grid",
+                  placeItems: "center",
+                }}
+              >
+                <UserCircle2 size={22} color={C.textDim} />
               </div>
-
-              {lightboxItem.promptText && (
-                <div
-                  style={{
-                    position: "absolute",
-                    bottom: 0,
-                    left: 0,
-                    right: 0,
-                    background: "linear-gradient(to top,rgba(0,0,0,0.8),transparent)",
-                    padding: "40px 20px 18px",
-                  }}
-                >
-                  <p style={{ margin: 0, fontSize: 14, fontWeight: 600, color: "white" }}>
-                    {lightboxItem.promptText}
-                  </p>
-                </div>
-              )}
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+              <div style={{ fontSize: 14, fontWeight: 700, color: C.text, marginBottom: 6 }}>
+                No saved characters yet
+              </div>
+              <div style={{ fontSize: 12.5, color: C.textMuted }}>
+                Create and save a character in the Consistency section first.
+              </div>
+            </div>
+          </div>
+        </div>
+      </motion.div>
+    </motion.div>
+  )}
+</AnimatePresence>
     </main>
   );
 }
