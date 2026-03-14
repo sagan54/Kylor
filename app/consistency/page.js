@@ -1,16 +1,148 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Sparkles, Compass, Clapperboard, Image as ImageIcon, Video, UserCircle2,
-  Orbit, FolderKanban, Settings, Wand2, ChevronRight, X, ChevronDown,
-  Upload, Zap, Star, Download, Share2, Trash2, Plus, Check, Copy,
-  User, Users, Lock, Unlock, Grid3X3, List, Folder, Camera, Sliders,
-  ArrowRight, ExternalLink,
+  Orbit, FolderKanban, Settings, Grid3X3, List, Wand2, ChevronRight,
+  Bell, BellOff, X, ChevronDown, Folder, Upload, Zap, Star, Download,
+  Share2, Trash2, Plus, Music, Check, Copy, CloudUpload,
 } from "lucide-react";
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, useMemo } from "react";
+import { createClient } from "@supabase/supabase-js";
+
+// ─── Supabase client ──────────────────────────────────────────────────────────
+// Uses your existing env vars — same client as the rest of the app
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+);
+
+// ─── Supabase helpers ─────────────────────────────────────────────────────────
+// Table: image_generations
+// Columns: id (int8/bigint), user_id (uuid), prompt (text), negative_prompt (text),
+//          ratio (text), mode (text), style (text), images (jsonb),
+//          created_at (timestamptz, default now())
+//
+// Run this once in your Supabase SQL editor:
+// ─────────────────────────────────────────────────────────────────────────────
+// create table if not exists image_generations (
+//   id            bigint primary key,
+//   user_id       uuid references auth.users(id) on delete cascade,
+//   prompt        text,
+//   negative_prompt text,
+//   ratio         text,
+//   mode          text,
+//   style         text,
+//   images        jsonb default '[]'::jsonb,
+//   created_at    timestamptz default now()
+// );
+// alter table image_generations enable row level security;
+// create policy "Users manage own generations" on image_generations
+//   using (auth.uid() = user_id) with check (auth.uid() = user_id);
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function sbLoadAll(userId) {
+  if (!userId) return [];
+  const { data, error } = await supabase
+    .from("image_generations")
+    .select("*")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false });
+  if (error) { console.error("sbLoadAll:", error.message); return []; }
+  // Map snake_case DB cols → camelCase app shape
+  return (data || []).map(row => ({
+    id:             row.id,
+    prompt:         row.prompt,
+    negativePrompt: row.negative_prompt,
+    ratio:          row.ratio,
+    mode:           row.mode,
+    style:          row.style,
+    createdAt:      row.created_at,
+    images:         row.images || [],
+  }));
+}
+
+async function sbSaveGroup(group, userId) {
+  if (!userId) return;
+  const { error } = await supabase
+    .from("image_generations")
+    .upsert({
+      id:              group.id,
+      user_id:         userId,
+      prompt:          group.prompt,
+      negative_prompt: group.negativePrompt,
+      ratio:           group.ratio,
+      mode:            group.mode,
+      style:           group.style,
+      images:          group.images,
+      created_at:      group.createdAt,
+    });
+  if (error) console.error("sbSaveGroup:", error.message);
+}
+
+async function sbDeleteGroup(id, userId) {
+  if (!userId) return;
+  const { error } = await supabase
+    .from("image_generations")
+    .delete()
+    .eq("id", id)
+    .eq("user_id", userId);
+  if (error) console.error("sbDeleteGroup:", error.message);
+}
+
+async function sbClearAll(userId) {
+  if (!userId) return;
+  const { error } = await supabase
+    .from("image_generations")
+    .delete()
+    .eq("user_id", userId);
+  if (error) console.error("sbClearAll:", error.message);
+}
+
+// ─── Upload image to Supabase Storage → returns permanent public URL ──────────
+// Bucket: "generated-images"  (create it once in Supabase → Storage → New bucket,
+//         set Public = true, leave file size limit at default)
+const STORAGE_BUCKET = "generated-images";
+
+async function uploadImageToStorage(tempUrl, userId, imageId) {
+  try {
+    // Fetch the image blob from the temporary OpenAI URL
+    const res  = await fetch(tempUrl);
+    if (!res.ok) throw new Error(`Fetch failed: ${res.status}`);
+    const blob = await res.blob();
+    const ext  = blob.type === "image/webp" ? "webp" : blob.type === "image/jpeg" ? "jpg" : "png";
+
+    // Path: userId/imageId.ext  — keeps each user's images in their own folder
+    const path = `${userId}/${imageId}.${ext}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from(STORAGE_BUCKET)
+      .upload(path, blob, { contentType: blob.type, upsert: true });
+
+    if (uploadError) throw uploadError;
+
+    // Get the permanent public URL
+    const { data } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(path);
+    return data?.publicUrl ?? null;
+  } catch (err) {
+    console.warn("uploadImageToStorage failed, keeping temp URL:", err.message);
+    return tempUrl; // Fallback: keep the original URL for now
+  }
+}
+
+async function deleteImageFromStorage(userId, imageId) {
+  try {
+    // Try both common extensions
+    await supabase.storage.from(STORAGE_BUCKET).remove([
+      `${userId}/${imageId}.png`,
+      `${userId}/${imageId}.jpg`,
+      `${userId}/${imageId}.webp`,
+    ]);
+  } catch (err) {
+    console.warn("deleteImageFromStorage:", err.message);
+  }
+}
 
 // ─── Tokens ───────────────────────────────────────────────────────────────────
 const C = {
@@ -24,80 +156,81 @@ const C = {
 };
 const radius = { sm: "10px", md: "14px", lg: "18px", xl: "22px", full: "999px" };
 
+// ─── Style presets ────────────────────────────────────────────────────────────
+const STYLES = [
+  { id: "cinematic",      label: "Cinematic",     desc: "Film-grade, anamorphic lens, deep color grade",  color: "#6366f1" },
+  { id: "neon_noir",      label: "Neon Noir",      desc: "Dark city, glowing neon reflections, rain-slick", color: "#a855f7" },
+  { id: "anime",          label: "Anime",          desc: "Japanese animation, vibrant, bold outlines",      color: "#ec4899" },
+  { id: "photorealistic", label: "Photorealistic", desc: "Hyper-detailed, DSLR quality, natural light",     color: "#14b8a6" },
+  { id: "oil_painting",   label: "Oil Painting",   desc: "Classical brushwork, rich texture, canvas feel",  color: "#f59e0b" },
+  { id: "concept_art",    label: "Concept Art",    desc: "Studio-quality game/film concept, dramatic",      color: "#3b82f6" },
+  { id: "low_poly",       label: "Low Poly",       desc: "Geometric, faceted shapes, minimal palette",      color: "#10b981" },
+  { id: "watercolor",     label: "Watercolor",     desc: "Soft washes, painterly, delicate paper texture",  color: "#06b6d4" },
+  { id: "retro_scifi",    label: "Retro Sci-Fi",   desc: "70s pulp art, retrofuturism, gritty print",       color: "#f97316" },
+  { id: "dark_fantasy",   label: "Dark Fantasy",   desc: "Moody, mythic, smoke and shadow",                 color: "#8b5cf6" },
+  { id: "studio_photo",   label: "Studio Photo",   desc: "Clean professional shot, neutral backdrop",       color: "#64748b" },
+  { id: "impressionist",  label: "Impressionist",  desc: "Loose brushstrokes, dappled light, movement",     color: "#84cc16" },
+];
+
 const SIDEBAR_ITEMS = [
-  { label: "Home",        icon: Compass,      href: "/" },
-  { label: "Explore",     icon: Compass,      href: "/explore" },
-  { label: "Story",       icon: Clapperboard, href: "/story" },
-  { label: "Image",       icon: ImageIcon,    href: "/image" },
-  { label: "Video",       icon: Video,        href: "#" },
-  { label: "Consistency", icon: UserCircle2,  href: "/consistency", active: true },
-  { label: "Motion",      icon: Orbit,        href: "#" },
-  { label: "Projects",    icon: FolderKanban, href: "/story" },
-  { label: "Settings",    icon: Settings,     href: "#" },
+  { label: "Home",       icon: Compass,      href: "/" },
+  { label: "Explore",    icon: Compass,      href: "/explore" },
+  { label: "Story",      icon: Clapperboard, href: "/story" },
+  { label: "Image",      icon: ImageIcon,    href: "/image", active: true },
+  { label: "Video",      icon: Video,        href: "#" },
+  { label: "Consistency", icon: UserCircle2,  href: "/consistency" },
+  { label: "Motion",     icon: Orbit,        href: "#" },
+  { label: "Projects",   icon: FolderKanban, href: "/story" },
+  { label: "Settings",   icon: Settings,     href: "#" },
 ];
 
-const GENDERS     = ["Female", "Male", "Non-binary", "Unspecified"];
-const AGE_RANGE   = ["Teen (13–17)", "Young Adult (18–30)", "Adult (30–50)", "Senior (50+)", "Unspecified"];
-const ETHNICITIES = ["Unspecified", "East Asian", "South Asian", "Black / African", "Latino / Hispanic", "Middle Eastern", "White / European", "Mixed"];
-const HAIR_STYLES = ["Short", "Medium", "Long", "Curly", "Wavy", "Braided", "Bald", "Ponytail"];
-const HAIR_COLORS = ["Black", "Brown", "Blonde", "Red", "White", "Silver", "Blue", "Pink", "Green"];
-const EYE_COLORS  = ["Brown", "Blue", "Green", "Hazel", "Grey", "Amber"];
-const BUILD_TYPES = ["Slim", "Athletic", "Average", "Muscular", "Stocky", "Curvy"];
-const SCENE_TYPES = ["Portrait / Close-up", "Upper body", "Full body standing", "Full body action", "Sitting / relaxed", "Walking / moving"];
-const LIGHTING_PRESETS = [
-  { id: "cinematic",   label: "Cinematic",   color: "#6366f1" },
-  { id: "golden_hour", label: "Golden Hour", color: "#f59e0b" },
-  { id: "dramatic",    label: "Dramatic",    color: "#ef4444" },
-  { id: "soft_studio", label: "Soft Studio", color: "#14b8a6" },
-  { id: "neon",        label: "Neon Glow",   color: "#a855f7" },
-  { id: "natural",     label: "Natural",     color: "#84cc16" },
-];
+const MODES   = ["1K SD", "2K HD", "4K"];
+const RATIOS  = ["Auto", "9:16", "2:3", "3:4", "1:1", "4:3", "3:2", "16:9", "21:9"];
+const OUTPUTS = [1, 2, 3, 4];
+const CONTENT_TABS = ["All", "Images", "Videos", "Audio"];
 const CARD_GRADIENTS = [
-  "linear-gradient(135deg, rgba(79,70,229,0.55), rgba(124,58,237,0.3))",
-  "linear-gradient(135deg, rgba(124,58,237,0.5), rgba(17,17,34,0.85))",
-  "linear-gradient(135deg, rgba(49,46,129,0.65), rgba(79,70,229,0.35))",
-  "linear-gradient(135deg, rgba(91,33,182,0.55), rgba(55,48,163,0.4))",
-  "linear-gradient(135deg, rgba(67,56,202,0.6), rgba(124,58,237,0.3))",
+  "linear-gradient(135deg, rgba(79,70,229,0.55), rgba(124,58,237,0.35))",
+  "linear-gradient(135deg, rgba(124,58,237,0.5),  rgba(17,17,34,0.9))",
+  "linear-gradient(135deg, rgba(49,46,129,0.65),  rgba(79,70,229,0.4))",
+  "linear-gradient(135deg, rgba(91,33,182,0.55),  rgba(55,48,163,0.45))",
+  "linear-gradient(135deg, rgba(67,56,202,0.6),   rgba(124,58,237,0.35))",
+  "linear-gradient(135deg, rgba(109,92,255,0.45), rgba(49,46,129,0.55))",
 ];
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-function fileToBase64(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload  = () => resolve(reader.result);
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
+
+
+// ─── Misc helpers ─────────────────────────────────────────────────────────────
+function getApiSize(r) {
+  if (["9:16","2:3","3:4"].includes(r)) return "1024x1536";
+  if (["16:9","21:9","4:3","3:2"].includes(r)) return "1536x1024";
+  return "1024x1024";
 }
-
-// ─── Build a face-locked prompt ───────────────────────────────────────────────
-// FIX 1: Much more specific face-lock instructions so the AI preserves facial identity
-function buildFaceLockedPrompt({ char, scene, lightLabel, extraPrompt, hasRefs }) {
-  const traits = [
-    char.gender, char.ageRange, char.ethnicity,
-    char.hairColor && char.hairStyle ? `${char.hairColor} ${char.hairStyle} hair` : null,
-    char.eyeColor  ? `${char.eyeColor} eyes` : null,
-    char.build     ? `${char.build} build` : null,
-  ].filter(Boolean).join(", ");
-
-  const faceLockInstructions = hasRefs
-    ? [
-        `IMPORTANT: This is a specific real person named ${char.name}.`,
-        `Preserve EXACTLY: their unique facial bone structure, face shape, jawline, nose shape, lip shape, eye shape and color, eyebrow shape, skin tone, and all distinguishing facial features.`,
-        `DO NOT change or idealise their face. The face must be an exact match to the reference photos.`,
-        `Same person, same face, different scene only.`,
-      ].join(" ")
-    : `Character named ${char.name} with consistent appearance throughout all generations.`;
-
-  return [
-    hasRefs ? faceLockInstructions : `Portrait of ${char.name}`,
-    traits ? `Physical traits: ${traits}` : null,
-    char.desc ? `Additional features: ${char.desc}` : null,
-    scene       ? `Scene: ${scene}` : null,
-    lightLabel  ? `Lighting: ${lightLabel}` : null,
-    extraPrompt.trim() || null,
-    "Photorealistic, ultra detailed, cinematic quality, no text, no watermark.",
-  ].filter(Boolean).join(". ");
+function getApiQuality(m) {
+  if (m === "1K SD") return "low";
+  if (m === "4K")    return "high";
+  return "medium";
+}
+async function downloadImage(url, filename = "kylor-output.png") {
+  try {
+    const res  = await fetch(url);
+    const blob = await res.blob();
+    const a    = Object.assign(document.createElement("a"), {
+      href: URL.createObjectURL(blob), download: filename,
+    });
+    document.body.appendChild(a); a.click(); a.remove();
+  } catch { window.open(url, "_blank"); }
+}
+async function shareImage({ url, title, text }) {
+  try {
+    if (navigator.share) { await navigator.share({ title, text, url }); return true; }
+    await navigator.clipboard.writeText(url); return true;
+  } catch { return false; }
+}
+function fmtDate(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+    + " · " + d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
 }
 
 // ─── Sidebar Item ─────────────────────────────────────────────────────────────
@@ -121,127 +254,73 @@ function SidebarItem({ item }) {
     : <Link href={item.href} style={{ textDecoration: "none", color: "inherit" }}>{inner}</Link>;
 }
 
-// ─── Custom Select ────────────────────────────────────────────────────────────
-function Select({ label, options, value, onChange }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef(null);
-  useEffect(() => {
-    function out(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
-    document.addEventListener("mousedown", out);
-    return () => document.removeEventListener("mousedown", out);
-  }, []);
+// ─── Segment Control ──────────────────────────────────────────────────────────
+function SegmentControl({ options, value, onChange }) {
   return (
-    <div ref={ref} style={{ position: "relative" }}>
-      <button onClick={() => setOpen(p => !p)}
-        style={{ width: "100%", height: 36, padding: "0 12px", borderRadius: radius.sm,
-          border: `1px solid ${open ? C.accentBorder : C.border}`, background: open ? C.accentSoft : C.surface,
-          color: value ? C.text : C.textMuted, display: "flex", alignItems: "center",
-          justifyContent: "space-between", cursor: "pointer", fontSize: 12.5, fontFamily: "inherit",
-          transition: "all 0.15s ease" }}>
-        <span>{value || label}</span>
-        <motion.div animate={{ rotate: open ? 180 : 0 }} transition={{ duration: 0.18 }}>
-          <ChevronDown size={13} color={C.textMuted} />
-        </motion.div>
-      </button>
-      <AnimatePresence>
-        {open && (
-          <motion.div initial={{ opacity: 0, y: 6, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 4, scale: 0.97 }} transition={{ duration: 0.16, ease: [0.22,1,0.36,1] }}
-            style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, zIndex: 50,
-              borderRadius: radius.md, border: `1px solid ${C.border}`, background: "rgba(12,14,22,0.99)",
-              backdropFilter: "blur(14px)", boxShadow: "0 16px 40px rgba(0,0,0,0.4)", overflow: "hidden" }}>
-            {options.map((opt, i) => (
-              <button key={opt} onClick={() => { onChange(opt); setOpen(false); }}
-                style={{ width: "100%", padding: "9px 12px", background: value === opt ? "rgba(124,58,237,0.15)" : "transparent",
-                  color: value === opt ? "#c4b5fd" : C.textMuted, border: "none",
-                  borderBottom: i !== options.length - 1 ? `1px solid ${C.border}` : "none",
-                  textAlign: "left", cursor: "pointer", fontSize: 12.5, fontFamily: "inherit",
-                  display: "flex", alignItems: "center", justifyContent: "space-between",
-                  transition: "background 0.12s ease" }}
-                onMouseEnter={e => { if (value !== opt) e.currentTarget.style.background = C.surfaceHover; }}
-                onMouseLeave={e => { if (value !== opt) e.currentTarget.style.background = "transparent"; }}>
-                {opt}
-                {value === opt && <Check size={11} color="#a78bfa" />}
-              </button>
-            ))}
-          </motion.div>
-        )}
-      </AnimatePresence>
+    <div style={{ display: "grid", gridTemplateColumns: `repeat(${options.length},1fr)`, gap: 6,
+      padding: 4, borderRadius: radius.lg, background: "rgba(255,255,255,0.03)", border: `1px solid ${C.border}` }}>
+      {options.map(opt => {
+        const active = opt === value;
+        return (
+          <motion.button key={opt} onClick={() => onChange(opt)} whileTap={{ scale: 0.96 }}
+            style={{ height: 36, borderRadius: radius.sm,
+              border: active ? `1px solid ${C.accentBorder}` : "1px solid transparent",
+              background: active ? "linear-gradient(160deg,rgba(79,70,229,0.18),rgba(124,58,237,0.13))" : "transparent",
+              color: active ? "white" : C.textMuted, fontSize: 13, cursor: "pointer",
+              fontFamily: "inherit", transition: "all 0.16s ease" }}>
+            {opt}
+          </motion.button>
+        );
+      })}
     </div>
   );
 }
 
-// ─── Ref Image Upload ─────────────────────────────────────────────────────────
-function RefUpload({ entries, onEntries, label, hint, max = 5 }) {
-  const [drag, setDrag] = useState(false);
+// ─── Drop Zone ────────────────────────────────────────────────────────────────
+function DropZone({ files, onFiles }) {
+  const [dragging, setDragging] = useState(false);
   const inputRef = useRef(null);
-
-  function addFiles(fileList) {
-    const valid = Array.from(fileList).filter(f => f.type.startsWith("image/"));
-    if (!valid.length) return;
-    onEntries(prev => {
-      const slots = max - prev.length;
-      if (slots <= 0) return prev;
-      return [...prev, ...valid.slice(0, slots).map(file => ({
-        file, previewUrl: URL.createObjectURL(file),
-      }))];
-    });
-  }
-
-  function removeEntry(i) {
-    onEntries(prev => {
-      URL.revokeObjectURL(prev[i].previewUrl);
-      return prev.filter((_, j) => j !== i);
-    });
-  }
-
-  const onDrop = useCallback(e => {
-    e.preventDefault(); setDrag(false);
-    addFiles(e.dataTransfer.files);
-  }, [onEntries, max]);
-
-  const onInputChange = useCallback(e => {
-    const captured = Array.from(e.target.files || []);
-    e.target.value = "";
-    if (captured.length) addFiles(captured);
-  }, [onEntries, max]);
-
+  const handleDrop = useCallback(e => {
+    e.preventDefault(); setDragging(false);
+    const dropped = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith("image/"));
+    if (dropped.length) onFiles(p => [...p, ...dropped].slice(0, 10));
+  }, [onFiles]);
   return (
     <div style={{ display: "grid", gap: 8 }}>
       <motion.div
-        onDragOver={e => { e.preventDefault(); setDrag(true); }}
-        onDragLeave={() => setDrag(false)} onDrop={onDrop}
+        onDragOver={e => { e.preventDefault(); setDragging(true); }}
+        onDragLeave={() => setDragging(false)} onDrop={handleDrop}
         onClick={() => inputRef.current?.click()}
-        animate={{ borderColor: drag ? C.accent : "rgba(255,255,255,0.09)", background: drag ? C.accentSoft : C.surface }}
-        style={{ borderRadius: radius.md, border: "1.5px dashed rgba(255,255,255,0.09)",
-          padding: "14px", cursor: "pointer", display: "flex", alignItems: "center", gap: 12 }}>
-        <input ref={inputRef} type="file" accept="image/*" multiple style={{ display: "none" }} onChange={onInputChange} />
-        <div style={{ width: 36, height: 36, borderRadius: radius.sm, flexShrink: 0,
+        animate={{ borderColor: dragging ? C.accent : "rgba(255,255,255,0.08)", background: dragging ? C.accentSoft : C.surface }}
+        style={{ borderRadius: radius.md, border: "1.5px dashed rgba(255,255,255,0.08)",
+          padding: "12px 14px", cursor: "pointer", display: "flex", alignItems: "center", gap: 12 }}>
+        <input ref={inputRef} type="file" accept="image/*" multiple style={{ display: "none" }}
+          onChange={e => { onFiles(p => [...p, ...Array.from(e.target.files).filter(f => f.type.startsWith("image/"))].slice(0,10)); e.target.value = ""; }} />
+        <div style={{ width: 34, height: 34, borderRadius: radius.sm, flexShrink: 0,
           background: C.accentSoft, border: `1px solid ${C.accentBorder}`, display: "grid", placeItems: "center" }}>
-          <Camera size={14} color="#a78bfa" />
+          <Upload size={14} color="#a78bfa" />
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 12.5, color: C.text, fontWeight: 600 }}>{label}</div>
-          <div style={{ fontSize: 11, color: C.textMuted, marginTop: 2 }}>{hint}</div>
+          <div style={{ fontSize: 13, color: C.text, fontWeight: 500 }}>
+            Drop images or <span style={{ color: "#a78bfa" }}>browse</span>
+          </div>
+          <div style={{ fontSize: 11, color: C.textMuted, marginTop: 2 }}>PNG, JPG, WEBP · max 10 refs</div>
         </div>
-        <div style={{ fontSize: 11.5, color: entries.length > 0 ? "#a78bfa" : C.textDim, fontWeight: 600 }}>
-          {entries.length}/{max}
-        </div>
+        <div style={{ fontSize: 12, color: files.length > 0 ? "#a78bfa" : C.textDim, fontWeight: 600 }}>{files.length}/10</div>
       </motion.div>
-      {entries.length > 0 && (
+      {files.length > 0 && (
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-          {entries.map((entry, i) => (
-            <motion.div key={entry.previewUrl} initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }}
-              style={{ position: "relative", width: 52, height: 52, borderRadius: 9,
-                overflow: "hidden", border: `1.5px solid ${C.accentBorder}`, flexShrink: 0 }}>
-              <img src={entry.previewUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
-              <button onClick={e => { e.stopPropagation(); removeEntry(i); }}
+          {files.map((file, i) => (
+            <div key={i} style={{ position: "relative", width: 44, height: 44, borderRadius: 8,
+              overflow: "hidden", border: `1px solid ${C.accentBorder}` }}>
+              <img src={URL.createObjectURL(file)} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+              <button onClick={e => { e.stopPropagation(); onFiles(p => p.filter((_, j) => j !== i)); }}
                 style={{ position: "absolute", top: 2, right: 2, width: 16, height: 16, borderRadius: 999,
-                  background: "rgba(0,0,0,0.8)", border: "none", color: "white",
+                  background: "rgba(0,0,0,0.75)", border: "none", color: "white",
                   display: "grid", placeItems: "center", cursor: "pointer" }}>
                 <X size={9} />
               </button>
-            </motion.div>
+            </div>
           ))}
         </div>
       )}
@@ -249,263 +328,575 @@ function RefUpload({ entries, onEntries, label, hint, max = 5 }) {
   );
 }
 
-// ─── Character Card ──────────────────────────────────────────────────────────
-function CharacterCard({ char, isActive, onClick, onDelete }) {
-  const [hovered, setHovered] = useState(false);
+// ─── Styles Picker ────────────────────────────────────────────────────────────
+function StylesPicker({ value, onChange, onClose }) {
   return (
-    <motion.div whileHover={{ y: -2 }}
-      onHoverStart={() => setHovered(true)} onHoverEnd={() => setHovered(false)}
-      onClick={onClick}
-      style={{ borderRadius: radius.lg,
-        border: `1px solid ${isActive ? C.accentBorder : hovered ? C.borderHover : C.border}`,
-        background: isActive ? "rgba(124,58,237,0.06)" : C.surface, cursor: "pointer",
-        overflow: "hidden", transition: "all 0.18s ease",
-        boxShadow: isActive ? `0 0 0 1px rgba(124,58,237,0.12) inset` : "none" }}>
-      <div style={{ height: 80, background: CARD_GRADIENTS[char.id % CARD_GRADIENTS.length],
-        position: "relative", overflow: "hidden" }}>
-        <div style={{ position: "absolute", inset: 0, background: "linear-gradient(135deg,rgba(255,255,255,0.05),transparent)" }} />
-        {char.refEntries.length > 0
-          ? <img src={char.refEntries[0].previewUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", opacity: 0.85 }} />
-          : <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center" }}><User size={28} color="rgba(255,255,255,0.25)" /></div>
-        }
-        {isActive && (
-          <div style={{ position: "absolute", top: 8, right: 8, width: 20, height: 20, borderRadius: 999,
-            background: C.accent, display: "grid", placeItems: "center" }}>
-            <Check size={10} color="white" />
-          </div>
-        )}
-      </div>
-      <div style={{ padding: "10px 12px" }}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: C.text, marginBottom: 2,
-          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{char.name || "Unnamed"}</div>
-        <div style={{ fontSize: 11, color: C.textMuted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          {[char.gender, char.ageRange, char.ethnicity].filter(Boolean).join(" · ") || "No traits set"}
+    <motion.div initial={{ opacity: 0, y: 8, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: 4, scale: 0.97 }} transition={{ duration: 0.2, ease: [0.22,1,0.36,1] }}
+      style={{ position: "absolute", left: 0, right: 0, bottom: "calc(100% + 8px)", zIndex: 20,
+        borderRadius: radius.lg, border: `1px solid ${C.border}`, background: "rgba(12,14,22,0.99)",
+        backdropFilter: "blur(18px)", boxShadow: "0 32px 80px rgba(0,0,0,0.6)", padding: 14 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+        <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: C.textMuted }}>
+          Choose Style
         </div>
-        <div style={{ marginTop: 8, display: "flex", gap: 6 }}>
-          <div style={{ fontSize: 10.5, padding: "2px 7px", borderRadius: radius.full,
-            border: `1px solid ${C.border}`, background: "rgba(255,255,255,0.04)", color: C.textMuted }}>
-            {char.generations} images
-          </div>
-          {char.refEntries.length > 0 && (
-            <div style={{ fontSize: 10.5, padding: "2px 7px", borderRadius: radius.full,
-              border: `1px solid ${C.accentBorder}`, background: C.accentSoft, color: "#c4b5fd" }}>
-              {char.refEntries.length} ref{char.refEntries.length > 1 ? "s" : ""}
-            </div>
-          )}
-          {char.locked && (
-            <div style={{ fontSize: 10.5, padding: "2px 7px", borderRadius: radius.full,
-              border: `1px solid rgba(34,197,94,0.25)`, background: "rgba(34,197,94,0.08)", color: "#86efac" }}>
-              Locked
-            </div>
-          )}
-        </div>
+        <button onClick={onClose} style={{ border: "none", background: "transparent", color: C.textMuted, cursor: "pointer", display: "grid", placeItems: "center" }}>
+          <X size={14} />
+        </button>
       </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, maxHeight: 260, overflowY: "auto" }}>
+        {STYLES.map(s => {
+          const active = value === s.id;
+          return (
+            <motion.button key={s.id} whileTap={{ scale: 0.96 }}
+              onClick={() => { onChange(active ? null : s.id); if (!active) onClose(); }}
+              style={{ padding: "10px 12px", borderRadius: radius.sm,
+                border: `1px solid ${active ? s.color + "55" : C.border}`,
+                background: active ? s.color + "18" : C.surface, cursor: "pointer",
+                textAlign: "left", fontFamily: "inherit", transition: "all 0.15s ease", display: "grid", gap: 3 }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <span style={{ fontSize: 12.5, fontWeight: 600, color: active ? C.text : "rgba(255,255,255,0.85)" }}>{s.label}</span>
+                {active && <Check size={11} color={s.color} />}
+              </div>
+              <span style={{ fontSize: 10.5, color: C.textDim, lineHeight: 1.4 }}>{s.desc}</span>
+            </motion.button>
+          );
+        })}
+      </div>
+      {value && (
+        <button onClick={() => onChange(null)} style={{ marginTop: 10, width: "100%", padding: 8,
+          borderRadius: radius.sm, border: `1px solid ${C.border}`, background: "transparent",
+          color: C.textMuted, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
+          Clear style
+        </button>
+      )}
     </motion.div>
   );
 }
 
-// ─── Output Card ──────────────────────────────────────────────────────────────
-function OutputCard({ item, onDelete, onOpen }) {
-  const [hovered, setHovered] = useState(false);
+// ─── Generation Feed Card ─────────────────────────────────────────────────────
+function GenerationCard({ group, isLatest, onDelete, onToggleFavorite, onDownload, onShare, onOpenLightbox, onVariation, generating }) {
+  const [copiedPrompt, setCopiedPrompt] = useState(false);
+  const [featuredIdx, setFeaturedIdx]   = useState(0);
+  const featured = group.images[featuredIdx];
+
+  async function copyPrompt() {
+    if (!group.prompt) return;
+    try { await navigator.clipboard.writeText(group.prompt); setCopiedPrompt(true); setTimeout(() => setCopiedPrompt(false), 1800); } catch {}
+  }
+
   return (
-    <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
-      onHoverStart={() => setHovered(true)} onHoverEnd={() => setHovered(false)}
-      onClick={() => item.url && onOpen?.(item)}
-      style={{ borderRadius: radius.lg, border: `1px solid ${hovered ? C.borderHover : C.border}`,
-        overflow: "hidden", cursor: item.url ? "zoom-in" : "default", position: "relative",
-        background: CARD_GRADIENTS[item.id % CARD_GRADIENTS.length],
-        aspectRatio: "2/3", transition: "border-color 0.16s ease" }}>
-      {item.url
-        ? <img src={item.url} alt={item.scene} style={{ width: "100%", height: "100%", objectFit: "cover", position: "absolute", inset: 0 }} />
-        : <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center" }}>
-            <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 2, ease: "linear" }}
-              style={{ width: 32, height: 32, borderRadius: 999, border: `2px solid ${C.accent}`, borderTopColor: "transparent" }} />
+    <motion.div initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, ease: [0.22,1,0.36,1] }}
+      style={{ borderRadius: 20,
+        border: `1px solid ${isLatest ? C.accentBorder : C.border}`,
+        background: isLatest ? "rgba(124,58,237,0.04)" : "rgba(255,255,255,0.015)",
+        overflow: "hidden",
+        boxShadow: isLatest ? "0 0 0 1px rgba(124,58,237,0.08) inset, 0 8px 32px rgba(0,0,0,0.3)" : "none" }}>
+
+      {/* Header */}
+      <div style={{ padding: "12px 16px", borderBottom: `1px solid ${C.border}`,
+        display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ width: 28, height: 28, borderRadius: 9, flexShrink: 0,
+            background: "linear-gradient(135deg,#6D5CFF,#9d4edd)",
+            display: "grid", placeItems: "center", fontWeight: 800, fontSize: 11, color: "#fff" }}>V1</div>
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: C.text }}>Kylor V1</div>
+            <div style={{ fontSize: 11, color: C.textMuted }}>{fmtDate(group.createdAt)}</div>
           </div>
-      }
-      <div style={{ position: "absolute", inset: 0, background: "linear-gradient(135deg,rgba(255,255,255,0.04),transparent 50%)", pointerEvents: "none" }} />
-      <AnimatePresence>
-        {hovered && item.url && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            style={{ position: "absolute", inset: 0, background: "linear-gradient(to top,rgba(0,0,0,0.75),transparent 55%)",
-              display: "flex", flexDirection: "column", justifyContent: "space-between", padding: 10 }}>
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: 5 }}>
-              {[Download, Share2, Trash2].map((Icon, i) => (
-                <button key={i} onClick={e => { e.stopPropagation(); if (i === 2) onDelete?.(); }}
-                  style={{ width: 28, height: 28, borderRadius: 8, border: `1px solid rgba(255,255,255,0.14)`,
-                    background: "rgba(0,0,0,0.55)", color: i === 2 ? "#f87171" : "white",
-                    display: "grid", placeItems: "center", cursor: "pointer" }}>
-                  <Icon size={12} />
+          {isLatest && (
+            <div style={{ padding: "2px 8px", borderRadius: radius.full, background: C.accentSoft,
+              border: `1px solid ${C.accentBorder}`, fontSize: 10.5, color: "#c4b5fd", fontWeight: 700 }}>
+              Latest
+            </div>
+          )}
+        </div>
+        <div style={{ display: "flex", gap: 6 }}>
+          {[
+            { icon: Star, action: () => onToggleFavorite?.(group.id, featuredIdx), active: featured?.starred, activeColor: "#fbbf24", activeFill: "#fbbf24" },
+            { icon: Download, action: () => onDownload?.(featured) },
+            { icon: Share2,   action: () => onShare?.(featured) },
+            { icon: Trash2,   action: () => onDelete?.(group.id), danger: true },
+          ].map(({ icon: Icon, action, active, activeColor, activeFill, danger }, i) => (
+            <button key={i} onClick={action}
+              style={{ width: 30, height: 30, borderRadius: 9, cursor: "pointer",
+                border: `1px solid ${danger ? "rgba(248,113,113,0.25)" : active ? `${activeColor}40` : C.border}`,
+                background: danger ? "rgba(248,113,113,0.07)" : active ? `${activeColor}12` : C.surface,
+                color: danger ? "#f87171" : active ? activeColor : C.textMuted,
+                display: "grid", placeItems: "center" }}>
+              <Icon size={13} fill={active && activeFill ? activeFill : "none"} />
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Body: image left + details right */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 320px" }}>
+
+        {/* Image area */}
+        <div style={{ position: "relative", minHeight: 360, background: "#05070c",
+          borderRight: `1px solid ${C.border}`, overflow: "hidden" }}>
+          {featured?.url ? (
+            <img src={featured.url} alt={group.prompt}
+              onClick={() => onOpenLightbox?.(featured, group.prompt)}
+              style={{ width: "100%", height: "100%", objectFit: "contain", display: "block",
+                cursor: "zoom-in", maxHeight: 560 }} />
+          ) : (
+            <div style={{ width: "100%", height: "100%", minHeight: 360,
+              background: CARD_GRADIENTS[(group.id || 0) % CARD_GRADIENTS.length],
+              display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 14 }}>
+              <ImageIcon size={42} color="rgba(255,255,255,0.18)" />
+              <span style={{ fontSize: 12, color: "rgba(255,255,255,0.3)", maxWidth: 220, textAlign: "center", lineHeight: 1.6 }}>
+                {group.prompt}
+              </span>
+            </div>
+          )}
+
+          {/* Multi-image thumbnails */}
+          {group.images.length > 1 && (
+            <div style={{ position: "absolute", bottom: 12, left: 12, display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {group.images.map((img, idx) => (
+                <button key={idx} onClick={() => setFeaturedIdx(idx)}
+                  style={{ width: 54, height: 54, borderRadius: 9, overflow: "hidden", padding: 0, cursor: "pointer",
+                    border: `2px solid ${featuredIdx === idx ? C.accent : "rgba(255,255,255,0.18)"}`,
+                    background: CARD_GRADIENTS[idx % CARD_GRADIENTS.length], flexShrink: 0,
+                    transition: "border-color 0.15s ease" }}>
+                  {img.url && <img src={img.url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />}
                 </button>
               ))}
             </div>
-            <p style={{ margin: 0, fontSize: 11, color: "rgba(255,255,255,0.8)", lineHeight: 1.4 }}>{item.scene}</p>
-          </motion.div>
-        )}
-      </AnimatePresence>
+          )}
+
+          {featured?.url && (
+            <div style={{ position: "absolute", top: 12, right: 12, padding: "4px 10px",
+              borderRadius: radius.full, background: "rgba(0,0,0,0.58)", backdropFilter: "blur(8px)",
+              fontSize: 11, color: "rgba(255,255,255,0.55)", pointerEvents: "none" }}>
+              Click to zoom
+            </div>
+          )}
+        </div>
+
+        {/* Details panel */}
+        <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12, overflow: "hidden" }}>
+
+          {/* Meta chips */}
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {[group.ratio, group.mode, group.style].filter(Boolean).map(tag => (
+              <div key={tag} style={{ height: 26, padding: "0 10px", borderRadius: radius.full,
+                border: `1px solid ${C.border}`, background: "rgba(255,255,255,0.04)",
+                color: "rgba(255,255,255,0.75)", fontSize: 11.5, display: "inline-flex", alignItems: "center" }}>
+                {tag}
+              </div>
+            ))}
+            {group.images.length > 1 && (
+              <div style={{ height: 26, padding: "0 10px", borderRadius: radius.full,
+                border: `1px solid ${C.accentBorder}`, background: C.accentSoft,
+                color: "#c4b5fd", fontSize: 11.5, display: "inline-flex", alignItems: "center", gap: 4 }}>
+                <ImageIcon size={10} /> {group.images.length} images
+              </div>
+            )}
+          </div>
+
+          {/* Prompt */}
+          <div style={{ flex: 1, borderRadius: radius.md, border: `1px solid ${C.border}`,
+            background: "rgba(255,255,255,0.02)", padding: "10px 12px", overflow: "hidden",
+            display: "flex", flexDirection: "column", gap: 8 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.08em",
+                textTransform: "uppercase", color: C.textMuted }}>Prompt</div>
+              <button onClick={copyPrompt}
+                style={{ height: 24, padding: "0 8px", borderRadius: 7, cursor: "pointer",
+                  border: `1px solid ${copiedPrompt ? C.accentBorder : C.border}`,
+                  background: copiedPrompt ? C.accentSoft : C.surface,
+                  color: copiedPrompt ? "#c4b5fd" : C.textMuted, display: "inline-flex",
+                  alignItems: "center", gap: 4, fontSize: 11, fontFamily: "inherit", transition: "all 0.16s" }}>
+                {copiedPrompt ? <Check size={10} /> : <Copy size={10} />}
+                {copiedPrompt ? "Copied" : "Copy"}
+              </button>
+            </div>
+            <p style={{ margin: 0, color: "rgba(255,255,255,0.82)", fontSize: 12.5, lineHeight: 1.65,
+              wordBreak: "break-word", display: "-webkit-box", WebkitLineClamp: 7,
+              WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+              {group.prompt}
+            </p>
+          </div>
+
+          {/* Negative prompt */}
+          {group.negativePrompt && (
+            <div style={{ borderRadius: radius.sm, border: "1px solid rgba(248,113,113,0.2)",
+              background: "rgba(248,113,113,0.04)", padding: "8px 12px" }}>
+              <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.08em",
+                textTransform: "uppercase", color: "#fca5a5", marginBottom: 4 }}>Negative</div>
+              <p style={{ margin: 0, color: "rgba(255,255,255,0.65)", fontSize: 12, lineHeight: 1.6 }}>
+                {group.negativePrompt}
+              </p>
+            </div>
+          )}
+
+          {/* Variation buttons */}
+          <div>
+            <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.08em",
+              textTransform: "uppercase", color: C.textMuted, marginBottom: 6 }}>Variations</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 6 }}>
+              {[1,2,3,4].map((v, i) => (
+                <motion.button key={v} whileTap={{ scale: 0.95 }}
+                  onClick={() => onVariation?.(group, i)} disabled={generating}
+                  style={{ height: 34, borderRadius: radius.sm, cursor: generating ? "default" : "pointer",
+                    border: `1px solid ${C.border}`,
+                    background: generating ? "rgba(255,255,255,0.02)" : C.surface,
+                    color: generating ? C.textDim : C.textMuted,
+                    fontSize: 12, fontWeight: 600, fontFamily: "inherit", transition: "all 0.15s ease" }}>
+                  V{v}
+                </motion.button>
+              ))}
+            </div>
+          </div>
+
+          {/* Download CTA */}
+          <button onClick={() => onDownload?.(featured)}
+            style={{ height: 40, borderRadius: radius.sm,
+              border: `1px solid ${C.accentBorder}`, background: C.accentSoft, color: "#c4b5fd",
+              display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
+              cursor: "pointer", fontSize: 12.5, fontWeight: 600, fontFamily: "inherit" }}>
+            <Download size={13} /> Download image
+          </button>
+        </div>
+      </div>
     </motion.div>
   );
 }
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
-export default function ConsistencyPage() {
-  const router = useRouter();
+export default function ImagePage() {
+  // Nav state
+  const [topTab,         setTopTab]         = useState("All");
+  const [contentFilter,  setContentFilter]  = useState("All");
+  const [assetView,      setAssetView]      = useState("grid");
+  const [favoritesOnly,  setFavoritesOnly]  = useState(false);
 
-  const [activeView,   setActiveView]   = useState("generate");
-  const [outputView,   setOutputView]   = useState("grid");
-  const [characters,   setCharacters]   = useState([]);
-  const [activeCharId, setActiveCharId] = useState(null);
+  // Prompt
+  const [prompt,         setPrompt]         = useState("");
+  const charLimit = 500;
+  const [negativeOpen,   setNegativeOpen]   = useState(false);
+  const [negativePrompt, setNegativePrompt] = useState("");
 
-  // Form
-  const [charName,    setCharName]    = useState("");
-  const [charDesc,    setCharDesc]    = useState("");
-  const [gender,      setGender]      = useState("");
-  const [ageRange,    setAgeRange]    = useState("");
-  const [ethnicity,   setEthnicity]   = useState("");
-  const [hairStyle,   setHairStyle]   = useState("");
-  const [hairColor,   setHairColor]   = useState("");
-  const [eyeColor,    setEyeColor]    = useState("");
-  const [build,       setBuild]       = useState("");
-  const [refEntries,  setRefEntries]  = useState([]);
-  const [charLocked,  setCharLocked]  = useState(false);
+  // Style
+  const [stylesOpen,     setStylesOpen]     = useState(false);
+  const [selectedStyle,  setSelectedStyle]  = useState(null);
 
-  // Generation
-  const [scene,       setScene]       = useState("");
-  const [lighting,    setLighting]    = useState(null);
-  const [extraPrompt, setExtraPrompt] = useState("");
-  const charLimit = 300;
+  // Reference images
+  const [refImages,      setRefImages]      = useState([]);
 
-  const [outputs,     setOutputs]     = useState([]);
-  const [generating,  setGenerating]  = useState(false);
-  const [formSection, setFormSection] = useState("traits");
+  // Settings
+  const [ratio,          setRatio]          = useState("16:9");
+  const [mode,           setMode]           = useState("2K HD");
+  const [outputCount,    setOutputCount]    = useState(1);
+  const [settingsOpen,   setSettingsOpen]   = useState(false);
 
-  // FIX 2: Lightbox state
-  const [lightboxItem, setLightboxItem] = useState(null);
+  // Notifications
+  const [notifState,     setNotifState]     = useState("idle");
 
-  const canvasRef = useRef(null);
+  // Auth
+  const [userId,         setUserId]         = useState(null);
 
-  const activeChar  = characters.find(c => c.id === activeCharId) || null;
-  const charOutputs = outputs.filter(o => o.charId === activeCharId);
+  // Generations (persisted via Supabase)
+  const [groups,         setGroups]         = useState([]);
+  const [dbLoaded,       setDbLoaded]       = useState(false);
+  const [generating,     setGenerating]     = useState(false);
 
-  function saveCharacter() {
-    if (!charName.trim()) return;
-    const newChar = {
-      id: Date.now(),
-      name: charName.trim(), desc: charDesc.trim(),
-      gender, ageRange, ethnicity,
-      hairStyle, hairColor, eyeColor, build,
-      refEntries: [...refEntries],
-      locked: charLocked, generations: 0,
-      createdAt: new Date().toISOString(),
-    };
-    setCharacters(p => [newChar, ...p]);
-    setActiveCharId(newChar.id);
-    setCharName(""); setCharDesc(""); setGender(""); setAgeRange(""); setEthnicity("");
-    setHairStyle(""); setHairColor(""); setEyeColor(""); setBuild("");
-    setRefEntries([]); setCharLocked(false);
-    setFormSection("generate");
-  }
+  // Lightbox
+  const [lightboxItem,   setLightboxItem]   = useState(null);
 
-  function deleteCharacter(id) {
-    setCharacters(p => p.filter(c => c.id !== id));
-    if (activeCharId === id) setActiveCharId(characters.find(c => c.id !== id)?.id ?? null);
-    setOutputs(p => p.filter(o => o.charId !== id));
-  }
+  const panelRef    = useRef(null);
+  const stylesRef   = useRef(null);
+  const textareaRef = useRef(null);
+  const canvasRef   = useRef(null);
 
-  function loadCharacterIntoForm(char) {
-    setCharName(char.name); setCharDesc(char.desc);
-    setGender(char.gender); setAgeRange(char.ageRange); setEthnicity(char.ethnicity);
-    setHairStyle(char.hairStyle); setHairColor(char.hairColor);
-    setEyeColor(char.eyeColor); setBuild(char.build);
-    setRefEntries([...char.refEntries]);
-    setCharLocked(char.locked);
-    setActiveCharId(char.id);
-    setFormSection("generate");
-  }
-
-  // FIX 3: Send character to Image Generation page
-  function sendToImageGen() {
-    if (!activeChar) return;
-    // Build a rich prompt and store it so the image page can pick it up
-    const traitDesc = [
-      activeChar.gender, activeChar.ageRange, activeChar.ethnicity,
-      activeChar.hairColor && activeChar.hairStyle ? `${activeChar.hairColor} ${activeChar.hairStyle} hair` : null,
-      activeChar.eyeColor  ? `${activeChar.eyeColor} eyes` : null,
-      activeChar.build     ? `${activeChar.build} build` : null,
-    ].filter(Boolean).join(", ");
-
-    const charPrompt = [
-      `Character portrait of ${activeChar.name}`,
-      traitDesc ? `— ${traitDesc}` : null,
-      activeChar.desc || null,
-      activeChar.refEntries.length > 0
-        ? `Maintain exact facial features, skin tone, and distinguishing characteristics of this specific person.`
-        : null,
-      "Photorealistic, ultra detailed, cinematic quality.",
-    ].filter(Boolean).join(". ");
-
+  // ── Pick up prompt pre-filled from Consistency page ──────────────────────
+  useEffect(() => {
     try {
-      sessionStorage.setItem("kylor_prefill_prompt", charPrompt);
+      const prefill = sessionStorage.getItem("kylor_prefill_prompt");
+      if (prefill) {
+        setPrompt(prefill.slice(0, 500));
+        sessionStorage.removeItem("kylor_prefill_prompt");
+        // Focus the textarea after a short delay
+        setTimeout(() => textareaRef.current?.focus(), 300);
+      }
     } catch {}
+  }, []);
+  // sessionStorage key per user — clears when tab closes but persists navigation
+  const SESSION_KEY = "kylor_img_cache";
 
-    router.push("/image");
+  useEffect(() => {
+    async function init() {
+      // Step 1: get current user (fast, local)
+      const { data: { session } } = await supabase.auth.getSession();
+      const uid = session?.user?.id ?? null;
+      setUserId(uid);
+
+      // Step 2: show cached data INSTANTLY (zero network wait)
+      try {
+        const raw = sessionStorage.getItem(SESSION_KEY);
+        if (raw) {
+          const cached = JSON.parse(raw);
+          if (Array.isArray(cached) && cached.length > 0) {
+            setGroups(cached);
+            setDbLoaded(true); // show feed right away
+          }
+        }
+      } catch {}
+
+      // Step 3: fetch fresh data from Supabase in background
+      const fresh = await sbLoadAll(uid);
+      setGroups(fresh);
+      setDbLoaded(true);
+
+      // Step 4: update cache with fresh data
+      try { sessionStorage.setItem(SESSION_KEY, JSON.stringify(fresh)); } catch {}
+    }
+
+    init();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      const uid = session?.user?.id ?? null;
+      setUserId(uid);
+      const fresh = await sbLoadAll(uid);
+      setGroups(fresh);
+      setDbLoaded(true);
+      try { sessionStorage.setItem(SESSION_KEY, JSON.stringify(fresh)); } catch {}
+    });
+    return () => subscription.unsubscribe();
+  }, []);
+
+  // ── Close popovers on outside click ───────────────────────────────────────
+  useEffect(() => {
+    function handleOutside(e) {
+      if (panelRef.current  && !panelRef.current.contains(e.target))  setSettingsOpen(false);
+      if (stylesRef.current && !stylesRef.current.contains(e.target)) setStylesOpen(false);
+    }
+    document.addEventListener("mousedown", handleOutside);
+    return () => document.removeEventListener("mousedown", handleOutside);
+  }, []);
+
+  // ── Keep sessionStorage cache in sync ─────────────────────────────────────
+  function syncCache(updatedGroups) {
+    try { sessionStorage.setItem(SESSION_KEY, JSON.stringify(updatedGroups)); } catch {}
   }
 
-  // FIX 1: Generate with face-locked prompt + reference images
-  async function handleGenerate() {
-    if (!activeChar || generating) return;
-    setGenerating(true);
+  const activeStyle = STYLES.find(s => s.id === selectedStyle);
 
-    const lightLabel = lighting ? LIGHTING_PRESETS.find(l => l.id === lighting)?.label : null;
-    const hasRefs    = activeChar.refEntries.length > 0;
+  // ── Notifications ─────────────────────────────────────────────────────────
+  async function handleAllowNotifications() {
+    if (!("Notification" in window)) { setNotifState("dismissed"); return; }
+    try {
+      const p = await Notification.requestPermission();
+      setNotifState(p === "granted" ? "granted" : "denied");
+    } catch { setNotifState("dismissed"); }
+  }
 
-    const fullPrompt = buildFaceLockedPrompt({
-      char: activeChar, scene, lightLabel,
-      extraPrompt, hasRefs,
+  // ── Delete single group ────────────────────────────────────────────────────
+  async function deleteGroup(groupId) {
+    const group = groups.find(g => g.id === groupId);
+    const next  = groups.filter(g => g.id !== groupId);
+    setGroups(next);
+    syncCache(next);
+    if (lightboxItem?.groupId === groupId) setLightboxItem(null);
+    await sbDeleteGroup(groupId, userId);
+    if (group && userId) {
+      const count = group.images.length;
+      await Promise.all(
+        Array.from({ length: count }, (_, i) =>
+          deleteImageFromStorage(userId, `${groupId}-${i}`)
+        )
+      );
+    }
+  }
+
+  // ── Toggle favourite ──────────────────────────────────────────────────────
+  async function toggleFavorite(groupId, imgIdx) {
+    let updated;
+    setGroups(p => {
+      const next = p.map(g => g.id !== groupId ? g : {
+        ...g, images: g.images.map((img, i) => i === imgIdx ? { ...img, starred: !img.starred } : img),
+      });
+      updated = next.find(g => g.id === groupId);
+      syncCache(next);
+      return next;
     });
+    if (updated) await sbSaveGroup(updated, userId);
+  }
 
-    const outputId  = Date.now();
-    setOutputs(p => [{
-      id: outputId, charId: activeCharId,
-      prompt: fullPrompt, scene: scene || "Portrait",
-      url: null, createdAt: new Date().toISOString(),
-    }, ...p]);
+  // ── Download / share ──────────────────────────────────────────────────────
+  async function handleDownload(img) {
+    if (!img?.url) return;
+    await downloadImage(img.url, `kylor-${Date.now()}.png`);
+  }
+  async function handleShare(img) {
+    if (!img?.url) return;
+    await shareImage({ url: img.url, title: "Kylor image", text: img.prompt || "" });
+  }
+
+  // ── Clear all ─────────────────────────────────────────────────────────────
+  async function clearAll() {
+    if (!confirm("Delete all saved generations? This cannot be undone.")) return;
+    setGroups([]);
+    setLightboxItem(null);
+    syncCache([]);
+    await sbClearAll(userId);
+  }
+
+  // ── Generate ──────────────────────────────────────────────────────────────
+  async function handleGenerate() {
+    if (!prompt.trim() || generating) return;
+    setGenerating(true);
     canvasRef.current?.scrollTo({ top: 0, behavior: "smooth" });
 
+    const styleLabel = activeStyle?.label ?? null;
+    const fullPrompt = [
+      prompt.trim(),
+      styleLabel            ? `Style: ${styleLabel}` : null,
+      negativePrompt.trim() ? `Negative: ${negativePrompt.trim()}` : null,
+      "No text, no captions, no subtitles, no watermark.",
+    ].filter(Boolean).join(". ");
+
+    const n       = Math.min(outputCount, 4);
+    const groupId = Date.now();
+
     try {
-      // Convert reference images to base64
-      const refBase64 = hasRefs
-        ? await Promise.all(activeChar.refEntries.map(e => fileToBase64(e.file)))
-        : [];
+      const requests = Array.from({ length: n }, () =>
+        fetch("/api/generate-image", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            prompt:  fullPrompt,
+            size:    getApiSize(ratio),
+            quality: getApiQuality(mode),
+            n: 1,
+          }),
+        }).then(r => r.json()).catch(() => ({}))
+      );
 
-      const res = await fetch("/api/generate-image", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          prompt: fullPrompt,
-          size:   "1024x1536",
-          quality: "high",
-          n: 1,
-          // Pass refs so API can use them for face-lock
-          referenceImages: refBase64,
-          // Seed hint for consistency — pass character ID as seed string
-          characterSeed: String(activeChar.id),
-        }),
-      });
+      const results  = await Promise.all(requests);
+      const tempUrls = results.flatMap(d =>
+        Array.isArray(d?.images) ? d.images : d?.image ? [d.image] : []
+      );
 
-      const data = await res.json();
-      const url  = Array.isArray(data?.images) ? data.images[0] : data?.image ?? null;
+      // ── Step 1: Show image immediately with temp URL (zero extra wait) ──
+      const newGroup = {
+        id:             groupId,
+        prompt:         prompt.trim(),
+        negativePrompt: negativePrompt.trim(),
+        ratio, mode,
+        style:          styleLabel,
+        createdAt:      new Date().toISOString(),
+        images:         tempUrls.length > 0
+          ? tempUrls.map(url => ({ url, starred: false }))
+          : [{ url: null, starred: false }],
+      };
+      setGroups(p => { const next = [newGroup, ...p]; syncCache(next); return next; });
+      setGenerating(false); // ← unblock UI now, don't wait for upload
 
-      setOutputs(p => p.map(o => o.id === outputId ? { ...o, url } : o));
-      setCharacters(p => p.map(c => c.id === activeCharId ? { ...c, generations: c.generations + 1 } : c));
+      // ── Step 2: Upload to Supabase Storage in background ──
+      // First save with temp URLs so it's in DB immediately
+      await sbSaveGroup(newGroup, userId);
+
+      if (userId && tempUrls.length > 0) {
+        const permanentUrls = await Promise.all(
+          tempUrls.map((url, i) => uploadImageToStorage(url, userId, `${groupId}-${i}`))
+        );
+
+        // Swap temp URLs → permanent URLs in state
+        const updatedImages = permanentUrls.map(url => ({ url, starred: false }));
+        const updatedGroup  = { ...newGroup, images: updatedImages };
+
+        setGroups(p => { const next = p.map(g => g.id === groupId ? updatedGroup : g); syncCache(next); return next; });
+        // Update DB with permanent URLs
+        await sbSaveGroup(updatedGroup, userId);
+      }
+
+      if (notifState === "granted" && "Notification" in window) {
+        new Notification("Kylor", { body: "Your image generation is complete." });
+      }
     } catch (err) {
-      console.error("Generate failed:", err);
-    } finally {
+      console.error("Generation failed:", err);
+      const placeholder = {
+        id: groupId, prompt: prompt.trim(), negativePrompt: negativePrompt.trim(),
+        ratio, mode, style: styleLabel, createdAt: new Date().toISOString(),
+        images: [{ url: null, starred: false }],
+      };
+      setGroups(p => [placeholder, ...p]);
+      await sbSaveGroup(placeholder, userId);
       setGenerating(false);
     }
   }
 
-  const canGenerate = !!activeChar && !generating;
+  // ── Generate variation ────────────────────────────────────────────────────
+  async function handleVariation(group, variationIndex) {
+    if (!group?.prompt || generating) return;
+    setGenerating(true);
+    canvasRef.current?.scrollTo({ top: 0, behavior: "smooth" });
 
+    const variationPrompt = [
+      group.prompt,
+      group.style ? `Style: ${group.style}` : null,
+      group.negativePrompt ? `Negative: ${group.negativePrompt}` : null,
+      `Variation ${variationIndex + 1}, slightly different composition, same subject and style.`,
+      "No text, no captions, no subtitles, no watermark.",
+    ].filter(Boolean).join(". ");
+
+    const varGroupId = Date.now();
+
+    try {
+      const res     = await fetch("/api/generate-image", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: variationPrompt, size: getApiSize(group.ratio), quality: getApiQuality(group.mode), n: 1 }),
+      });
+      const data    = await res.json();
+      const tempUrl = Array.isArray(data?.images) ? data.images[0] : data?.image;
+
+      if (tempUrl) {
+        // Show immediately with temp URL
+        const newGroup = {
+          id: varGroupId, prompt: group.prompt, negativePrompt: group.negativePrompt,
+          ratio: group.ratio, mode: group.mode, style: group.style,
+          createdAt: new Date().toISOString(),
+          images: [{ url: tempUrl, starred: false }],
+        };
+        setGroups(p => [newGroup, ...p]);
+        setGenerating(false); // unblock UI immediately
+
+        // Save temp URL to DB right away
+        await sbSaveGroup(newGroup, userId);
+
+        // Upload to Storage in background, swap URL silently
+        if (userId) {
+          const permanentUrl = await uploadImageToStorage(tempUrl, userId, `${varGroupId}-0`);
+          const updatedGroup = { ...newGroup, images: [{ url: permanentUrl, starred: false }] };
+          setGroups(p => p.map(g => g.id === varGroupId ? updatedGroup : g));
+          await sbSaveGroup(updatedGroup, userId);
+        }
+
+        if (notifState === "granted" && "Notification" in window) {
+          new Notification("Kylor", { body: `Variation V${variationIndex + 1} is ready.` });
+        }
+      } else {
+        setGenerating(false);
+      }
+    } catch (err) {
+      console.error("Variation failed:", err);
+      setGenerating(false);
+    }
+  }
+
+  // ── Filtered view ─────────────────────────────────────────────────────────
+  const filteredGroups = useMemo(() => {
+    if (contentFilter === "Videos" || contentFilter === "Audio") return [];
+    if (favoritesOnly) return groups.filter(g => g.images.some(i => i.starred));
+    return groups;
+  }, [groups, contentFilter, favoritesOnly]);
+
+  // ─────────────────────────────────────────────────────────────────────────
   return (
     <main style={{
       height: "100vh", overflow: "hidden",
@@ -517,7 +908,8 @@ export default function ConsistencyPage() {
       {/* ── Sidebar ── */}
       <aside style={{ borderRight: `1px solid ${C.border}`, background: C.sidebar,
         padding: "18px 10px", height: "100vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
-        <div style={{ width: 46, height: 46, borderRadius: 16, margin: "0 auto 22px", display: "grid", placeItems: "center",
+        <div style={{ width: 46, height: 46, borderRadius: 16, margin: "0 auto 22px",
+          display: "grid", placeItems: "center",
           background: "linear-gradient(135deg,rgba(79,70,229,0.28),rgba(124,58,237,0.18))",
           border: `1px solid ${C.border}`, boxShadow: `0 0 20px ${C.accentGlow}` }}>
           <Sparkles size={20} color="#a78bfa" />
@@ -527,53 +919,30 @@ export default function ConsistencyPage() {
         </div>
       </aside>
 
-      {/* ── Main ── */}
+      {/* ── Main column ── */}
       <div style={{ display: "grid", gridTemplateRows: "48px 1fr", height: "100vh", overflow: "hidden" }}>
 
         {/* ── Top Nav ── */}
         <div style={{ borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center",
           justifyContent: "space-between", padding: "0 18px", background: "rgba(255,255,255,0.01)" }}>
           <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-            <div style={{ height: 30, padding: "0 12px", borderRadius: radius.full,
-              border: `1px solid ${C.accentBorder}`, background: C.accentSoft, color: "#c4b5fd",
-              fontSize: 13, display: "inline-flex", alignItems: "center", gap: 7, fontWeight: 600 }}>
-              <span style={{ width: 7, height: 7, borderRadius: 999, background: C.accent, boxShadow: `0 0 8px ${C.accent}` }} />
-              Character Consistency
-            </div>
-            <div style={{ width: 1, height: 20, background: C.border, margin: "0 2px" }} />
-            {[
-              { label: "Generate",   id: "generate",   icon: Wand2 },
-              { label: "Characters", id: "characters", icon: Users },
-            ].map(({ label, id, icon: Icon }) => (
-              <motion.button key={id} whileTap={{ scale: 0.95 }} onClick={() => setActiveView(id)}
-                style={{ height: 30, padding: "0 12px", borderRadius: 9, display: "inline-flex", alignItems: "center", gap: 6,
-                  border: `1px solid ${activeView === id ? C.accentBorder : "transparent"}`,
-                  background: activeView === id ? C.accentSoft : "transparent",
-                  color: activeView === id ? "#c4b5fd" : C.textMuted, cursor: "pointer", fontSize: 12.5,
-                  fontFamily: "inherit", fontWeight: activeView === id ? 600 : 400, transition: "all 0.15s ease" }}>
-                <Icon size={12} /> {label}
+            {["All","Output","Projects"].map(tab => (
+              <motion.button key={tab} whileTap={{ scale: 0.95 }} onClick={() => setTopTab(tab)}
+                style={{ height: 30, padding: "0 14px", borderRadius: 9,
+                  border: `1px solid ${topTab === tab ? C.accentBorder : "transparent"}`,
+                  background: topTab === tab ? C.accentSoft : "transparent",
+                  color: topTab === tab ? "#c4b5fd" : C.textMuted, cursor: "pointer", fontSize: 13,
+                  fontFamily: "inherit", fontWeight: topTab === tab ? 600 : 400, transition: "all 0.15s ease" }}>
+                {tab}
               </motion.button>
             ))}
           </div>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            {/* FIX 3: Send to Image Gen button */}
-            {activeChar && (
-              <motion.button whileHover={{ borderColor: C.accentBorder, color: "#c4b5fd" }}
-                whileTap={{ scale: 0.96 }} onClick={sendToImageGen}
-                style={{ height: 34, padding: "0 14px", borderRadius: radius.sm,
-                  border: `1px solid ${C.border}`, background: C.surface,
-                  color: C.textMuted, display: "inline-flex", alignItems: "center", gap: 6,
-                  cursor: "pointer", fontSize: 12.5, fontFamily: "inherit", transition: "all 0.15s ease" }}>
-                <ImageIcon size={13} />
-                Send to Image Gen
-                <ExternalLink size={11} />
-              </motion.button>
-            )}
-            {[{ icon: Grid3X3, val: "grid" }, { icon: List, val: "list" }].map(({ icon: Icon, val }) => (
-              <motion.button key={val} whileTap={{ scale: 0.94 }} onClick={() => setOutputView(val)}
+            {[{icon:Grid3X3,val:"grid"},{icon:List,val:"list"}].map(({icon:Icon,val}) => (
+              <motion.button key={val} whileTap={{ scale: 0.94 }} onClick={() => setAssetView(val)}
                 style={{ width: 34, height: 34, borderRadius: radius.sm, border: `1px solid ${C.border}`,
-                  background: outputView === val ? "rgba(255,255,255,0.08)" : "transparent",
-                  color: outputView === val ? C.text : C.textMuted, display: "grid", placeItems: "center",
+                  background: assetView === val ? "rgba(255,255,255,0.08)" : "transparent",
+                  color: assetView === val ? C.text : C.textMuted, display: "grid", placeItems: "center",
                   cursor: "pointer", transition: "all 0.15s ease" }}>
                 <Icon size={15} />
               </motion.button>
@@ -587,500 +956,447 @@ export default function ConsistencyPage() {
           </div>
         </div>
 
-        {/* ── Content ── */}
+        {/* ── Split ── */}
         <div style={{ display: "grid", gridTemplateColumns: "380px 1fr", height: "100%", overflow: "hidden" }}>
 
           {/* ══ LEFT PANEL ══ */}
           <div style={{ borderRight: `1px solid ${C.border}`,
             background: "linear-gradient(180deg,rgba(7,9,15,0.98),rgba(9,11,17,0.98))",
-            height: "100%", overflow: "hidden", display: "flex", flexDirection: "column", boxSizing: "border-box" }}>
+            height: "100%", overflow: "hidden", display: "flex", flexDirection: "column",
+            padding: 16, gap: 12, boxSizing: "border-box" }}>
 
-            {/* Section tabs */}
-            <div style={{ padding: "12px 16px 0", flexShrink: 0 }}>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 4, padding: 4,
-                borderRadius: radius.md, background: "rgba(255,255,255,0.03)", border: `1px solid ${C.border}` }}>
-                {[
-                  { id: "traits",   label: "Traits",   icon: Sliders },
-                  { id: "refs",     label: "Refs",     icon: Camera },
-                  { id: "generate", label: "Generate", icon: Sparkles },
-                ].map(({ id, label, icon: Icon }) => {
-                  const active = formSection === id;
-                  return (
-                    <motion.button key={id} whileTap={{ scale: 0.96 }} onClick={() => setFormSection(id)}
-                      style={{ height: 34, borderRadius: radius.sm,
-                        border: active ? `1px solid ${C.accentBorder}` : "1px solid transparent",
-                        background: active ? "linear-gradient(160deg,rgba(79,70,229,0.18),rgba(124,58,237,0.13))" : "transparent",
-                        color: active ? "white" : C.textMuted, fontSize: 12, cursor: "pointer",
-                        fontFamily: "inherit", transition: "all 0.15s ease",
-                        display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5 }}>
-                      <Icon size={11} /> {label}
-                    </motion.button>
-                  );
-                })}
+            <div style={{ borderBottom: `1px solid ${C.border}`, paddingBottom: 14, flexShrink: 0 }}>
+              <div style={{ color: C.text, fontWeight: 700, fontSize: 14, position: "relative",
+                display: "inline-block", paddingBottom: 4 }}>
+                Image Generation
+                <span style={{ position: "absolute", left: 0, bottom: -15, width: "100%", height: 2,
+                  borderRadius: radius.full, background: `linear-gradient(90deg,${C.indigo},${C.accent})` }} />
               </div>
             </div>
 
-            {/* Heading */}
-            <div style={{ padding: "14px 16px 0", flexShrink: 0 }}>
-              <div style={{ borderBottom: `1px solid ${C.border}`, paddingBottom: 12 }}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                  <div style={{ color: C.text, fontWeight: 700, fontSize: 13.5, position: "relative",
-                    display: "inline-block", paddingBottom: 4 }}>
-                    {formSection === "traits" ? "Character Traits" : formSection === "refs" ? "Reference Images" : "Generate"}
-                    <span style={{ position: "absolute", left: 0, bottom: -13, width: "100%", height: 2,
-                      borderRadius: radius.full, background: `linear-gradient(90deg,${C.indigo},${C.accent})` }} />
-                  </div>
-                  {activeChar && (
-                    <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "3px 8px",
-                      borderRadius: radius.full, border: `1px solid ${C.accentBorder}`, background: C.accentSoft,
-                      fontSize: 11, color: "#c4b5fd", fontWeight: 600 }}>
-                      <User size={9} /> {activeChar.name}
+            <motion.button whileHover={{ borderColor: C.accentBorder }} whileTap={{ scale: 0.99 }}
+              style={{ width: "100%", padding: "10px 12px", borderRadius: radius.md, border: `1px solid ${C.border}`,
+                background: C.surface, color: C.text, display: "flex", alignItems: "center", gap: 10,
+                cursor: "pointer", fontFamily: "inherit", transition: "all 0.16s ease", flexShrink: 0 }}>
+              <div style={{ width: 34, height: 34, borderRadius: 10, flexShrink: 0,
+                background: "linear-gradient(135deg,#6D5CFF,#9d4edd)",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontWeight: 800, fontSize: 12, color: "#fff" }}>V1</div>
+              <div style={{ flex: 1, minWidth: 0, textAlign: "left" }}>
+                <div style={{ fontSize: 14, fontWeight: 700 }}>Kylor V1</div>
+                <div style={{ fontSize: 11.5, color: C.textMuted, whiteSpace: "nowrap",
+                  overflow: "hidden", textOverflow: "ellipsis" }}>Consistency · free multi-reference generation</div>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+                <div style={{ fontSize: 10, padding: "2px 7px", borderRadius: 6,
+                  background: "rgba(124,58,237,0.2)", border: `1px solid ${C.accentBorder}`, color: "#c4b5fd" }}>FREE</div>
+                <ChevronDown size={14} color={C.textMuted} />
+              </div>
+            </motion.button>
+
+            <div style={{ flexShrink: 0 }}><DropZone files={refImages} onFiles={setRefImages} /></div>
+
+            <div style={{ flex: 1, minHeight: 0, borderRadius: radius.md, border: `1px solid ${C.border}`,
+              background: C.surface, padding: 12, display: "flex", flexDirection: "column" }}>
+              <textarea ref={textareaRef} value={prompt}
+                onChange={e => setPrompt(e.target.value.slice(0, charLimit))}
+                placeholder="Describe the image you want to create..."
+                style={{ flex: 1, width: "100%", border: "none", background: "transparent", color: C.text,
+                  resize: "none", fontFamily: "inherit", fontSize: 13.5, lineHeight: 1.7,
+                  outline: "none", minHeight: 0, boxSizing: "border-box" }} />
+
+              <AnimatePresence>
+                {negativeOpen && (
+                  <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }}
+                    exit={{ opacity: 0, height: 0 }} style={{ overflow: "hidden" }}>
+                    <div style={{ borderTop: `1px solid ${C.border}`, marginTop: 8, paddingTop: 8 }}>
+                      <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.08em",
+                        textTransform: "uppercase", color: "#f87171", marginBottom: 6 }}>Negative Prompt</div>
+                      <textarea value={negativePrompt} onChange={e => setNegativePrompt(e.target.value)}
+                        placeholder="What to avoid: blurry, distorted, watermark..." rows={3}
+                        style={{ width: "100%", border: "1px solid rgba(248,113,113,0.25)",
+                          background: "rgba(248,113,113,0.04)", color: C.text, borderRadius: radius.sm,
+                          padding: "8px 10px", resize: "none", fontFamily: "inherit", fontSize: 12.5,
+                          lineHeight: 1.6, outline: "none", boxSizing: "border-box" }} />
                     </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between",
+                marginTop: 10, paddingTop: 10, borderTop: `1px solid ${C.border}`, flexShrink: 0 }}>
+                <div style={{ display: "flex", gap: 6 }}>
+                  <motion.button whileTap={{ scale: 0.95 }} onClick={() => setStylesOpen(p => !p)}
+                    style={{ height: 30, padding: "0 12px", borderRadius: 9,
+                      border: `1px solid ${activeStyle ? activeStyle.color + "55" : C.accentBorder}`,
+                      background: activeStyle ? activeStyle.color + "18" : C.accentSoft,
+                      color: activeStyle ? C.text : "#a78bfa", fontSize: 12, fontWeight: 600,
+                      cursor: "pointer", fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: 5 }}>
+                    {activeStyle ? <><Check size={10} />{activeStyle.label}</> : "Styles"}
+                  </motion.button>
+                  <motion.button whileTap={{ scale: 0.95 }} onClick={() => setNegativeOpen(p => !p)}
+                    style={{ height: 30, padding: "0 12px", borderRadius: 9,
+                      border: `1px solid ${negativeOpen || negativePrompt ? "rgba(248,113,113,0.3)" : C.border}`,
+                      background: negativeOpen || negativePrompt ? "rgba(248,113,113,0.08)" : C.surface,
+                      color: negativeOpen || negativePrompt ? "#fca5a5" : C.textMuted,
+                      fontSize: 12, cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s ease" }}>
+                    Negative{negativePrompt ? " ✓" : ""}
+                  </motion.button>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <span style={{ fontSize: 11, color: prompt.length > charLimit * 0.9 ? "#f87171" : C.textDim }}>
+                    {prompt.length}/{charLimit}
+                  </span>
+                  <motion.button whileTap={{ scale: 0.92 }} title="Enhance prompt"
+                    onClick={() => { if (prompt.trim()) setPrompt(p => p.trim() + ", ultra detailed, cinematic lighting, 8K"); }}
+                    style={{ width: 32, height: 32, borderRadius: 10, border: `1px solid ${C.accentBorder}`,
+                      background: C.accentSoft, color: "#a78bfa", display: "grid", placeItems: "center", cursor: "pointer" }}>
+                    <Sparkles size={14} />
+                  </motion.button>
+                </div>
+              </div>
+            </div>
+
+            {/* Settings + Generate */}
+            <div style={{ position: "relative", flexShrink: 0 }}>
+              <div ref={stylesRef}>
+                <AnimatePresence>
+                  {stylesOpen && <StylesPicker value={selectedStyle} onChange={setSelectedStyle} onClose={() => setStylesOpen(false)} />}
+                </AnimatePresence>
+              </div>
+              <div ref={panelRef}>
+                <AnimatePresence>
+                  {settingsOpen && (
+                    <motion.div initial={{ opacity: 0, y: 16, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 10, scale: 0.97 }} transition={{ duration: 0.22, ease: [0.22,1,0.36,1] }}
+                      style={{ position: "absolute", left: 0, right: 0, bottom: "calc(100% + 8px)", zIndex: 10,
+                        borderRadius: 18, border: `1px solid ${C.border}`, background: "rgba(14,16,26,0.99)",
+                        backdropFilter: "blur(16px)", boxShadow: "0 28px 80px rgba(0,0,0,0.5)",
+                        padding: 16, display: "grid", gap: 16 }}>
+                      <div>
+                        <div style={{ fontSize: 11, color: C.textMuted, marginBottom: 8, fontWeight: 600,
+                          letterSpacing: "0.08em", textTransform: "uppercase" }}>Mode</div>
+                        <SegmentControl options={MODES} value={mode} onChange={setMode} />
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 11, color: C.textMuted, marginBottom: 8, fontWeight: 600,
+                          letterSpacing: "0.08em", textTransform: "uppercase" }}>Aspect Ratio</div>
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 6 }}>
+                          {RATIOS.map(r => (
+                            <motion.button key={r} whileTap={{ scale: 0.95 }} onClick={() => setRatio(r)}
+                              style={{ height: 34, borderRadius: radius.sm,
+                                border: ratio === r ? `1px solid ${C.accentBorder}` : `1px solid ${C.border}`,
+                                background: ratio === r ? "linear-gradient(160deg,rgba(79,70,229,0.18),rgba(124,58,237,0.12))" : C.surface,
+                                color: ratio === r ? "white" : C.textMuted, fontSize: 12, cursor: "pointer",
+                                fontFamily: "inherit", transition: "all 0.15s ease" }}>
+                              {r}
+                            </motion.button>
+                          ))}
+                        </div>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 11, color: C.textMuted, marginBottom: 8, fontWeight: 600,
+                          letterSpacing: "0.08em", textTransform: "uppercase" }}>Output Count</div>
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 6 }}>
+                          {OUTPUTS.map(n => (
+                            <motion.button key={n} whileTap={{ scale: 0.95 }} onClick={() => setOutputCount(n)}
+                              style={{ height: 34, borderRadius: radius.sm,
+                                border: outputCount === n ? `1px solid ${C.accentBorder}` : `1px solid ${C.border}`,
+                                background: outputCount === n ? "linear-gradient(160deg,rgba(79,70,229,0.18),rgba(124,58,237,0.12))" : C.surface,
+                                color: outputCount === n ? "white" : C.textMuted, fontSize: 13, cursor: "pointer",
+                                fontFamily: "inherit", transition: "all 0.15s ease" }}>
+                              {n}
+                            </motion.button>
+                          ))}
+                        </div>
+                        <p style={{ margin: "8px 0 0", fontSize: 11, color: C.textMuted }}>Max 4 per generation</p>
+                      </div>
+                    </motion.div>
                   )}
+                </AnimatePresence>
+
+                <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: 10 }}>
+                  <motion.button whileHover={{ borderColor: C.borderHover }} whileTap={{ scale: 0.97 }}
+                    onClick={() => setSettingsOpen(p => !p)}
+                    style={{ height: 46, padding: "0 14px", borderRadius: radius.md,
+                      border: `1px solid ${settingsOpen ? C.accentBorder : C.border}`,
+                      background: settingsOpen ? C.accentSoft : "#0d0f18", color: "rgba(255,255,255,0.85)",
+                      display: "flex", alignItems: "center", gap: 8, cursor: "pointer",
+                      fontSize: 13, fontFamily: "inherit", whiteSpace: "nowrap", transition: "all 0.15s ease" }}>
+                    <Settings size={14} />
+                    <span>{mode} · {ratio} · ×{outputCount}</span>
+                    <motion.div animate={{ rotate: settingsOpen ? 180 : 0 }} transition={{ duration: 0.2 }}>
+                      <ChevronDown size={14} />
+                    </motion.div>
+                  </motion.button>
+
+                  <motion.button
+                    whileHover={prompt.trim() && !generating ? { boxShadow: "0 18px 40px rgba(124,58,237,0.42)" } : {}}
+                    whileTap={prompt.trim() && !generating ? { scale: 0.98 } : {}}
+                    onClick={handleGenerate} disabled={generating}
+                    style={{ height: 46, width: "100%", borderRadius: radius.md, border: "none",
+                      background: prompt.trim() && !generating ? "linear-gradient(135deg,#4f46e5,#7c3aed)" : "rgba(255,255,255,0.06)",
+                      color: prompt.trim() && !generating ? "white" : C.textMuted,
+                      cursor: prompt.trim() && !generating ? "pointer" : "default",
+                      fontSize: 14, fontWeight: 700,
+                      boxShadow: prompt.trim() && !generating ? "0 10px 28px rgba(124,58,237,0.28)" : "none",
+                      display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8,
+                      fontFamily: "inherit", transition: "all 0.2s ease" }}>
+                    <AnimatePresence mode="wait">
+                      {generating ? (
+                        <motion.span key="gen" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                          style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: "linear" }}>
+                            <Zap size={15} />
+                          </motion.div>
+                          Generating…
+                        </motion.span>
+                      ) : (
+                        <motion.span key="idle" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                          style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <Wand2 size={15} /> Generate <ChevronRight size={15} />
+                        </motion.span>
+                      )}
+                    </AnimatePresence>
+                  </motion.button>
                 </div>
               </div>
             </div>
-
-            {/* Form */}
-            <div style={{ flex: 1, overflowY: "auto", padding: "14px 16px", minHeight: 0,
-              display: "flex", flexDirection: "column", gap: 12 }}>
-
-              {/* TRAITS */}
-              {formSection === "traits" && (<>
-                <div>
-                  <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: C.textMuted, marginBottom: 6 }}>Character Name *</div>
-                  <input value={charName} onChange={e => setCharName(e.target.value)} placeholder="e.g. Aria Voss, Marcus Kane…"
-                    style={{ width: "100%", height: 38, padding: "0 12px", borderRadius: radius.sm,
-                      border: `1px solid ${charName ? C.accentBorder : C.border}`, background: charName ? C.accentSoft : C.surface,
-                      color: C.text, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box", transition: "all 0.16s ease" }} />
-                </div>
-                <div>
-                  <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: C.textMuted, marginBottom: 6 }}>Description</div>
-                  <textarea value={charDesc} onChange={e => setCharDesc(e.target.value)} rows={3}
-                    placeholder="Scar above left eyebrow, always wears a silver necklace…"
-                    style={{ width: "100%", padding: "8px 12px", borderRadius: radius.sm,
-                      border: `1px solid ${C.border}`, background: C.surface, color: C.text, resize: "none",
-                      fontSize: 12.5, fontFamily: "inherit", lineHeight: 1.6, outline: "none", boxSizing: "border-box" }} />
-                </div>
-                <div>
-                  <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: C.textMuted, marginBottom: 8 }}>Demographics</div>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                    <div><div style={{ fontSize: 11, color: C.textMuted, marginBottom: 4 }}>Gender</div><Select label="Select" options={GENDERS} value={gender} onChange={setGender} /></div>
-                    <div><div style={{ fontSize: 11, color: C.textMuted, marginBottom: 4 }}>Age</div><Select label="Select" options={AGE_RANGE} value={ageRange} onChange={setAgeRange} /></div>
-                    <div style={{ gridColumn: "1/-1" }}><div style={{ fontSize: 11, color: C.textMuted, marginBottom: 4 }}>Ethnicity</div><Select label="Select" options={ETHNICITIES} value={ethnicity} onChange={setEthnicity} /></div>
-                  </div>
-                </div>
-                <div>
-                  <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: C.textMuted, marginBottom: 8 }}>Physical Features</div>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                    <div><div style={{ fontSize: 11, color: C.textMuted, marginBottom: 4 }}>Hair style</div><Select label="Select" options={HAIR_STYLES} value={hairStyle} onChange={setHairStyle} /></div>
-                    <div><div style={{ fontSize: 11, color: C.textMuted, marginBottom: 4 }}>Hair color</div><Select label="Select" options={HAIR_COLORS} value={hairColor} onChange={setHairColor} /></div>
-                    <div><div style={{ fontSize: 11, color: C.textMuted, marginBottom: 4 }}>Eye color</div><Select label="Select" options={EYE_COLORS} value={eyeColor} onChange={setEyeColor} /></div>
-                    <div><div style={{ fontSize: 11, color: C.textMuted, marginBottom: 4 }}>Build</div><Select label="Select" options={BUILD_TYPES} value={build} onChange={setBuild} /></div>
-                  </div>
-                </div>
-                <motion.button whileTap={{ scale: 0.97 }} onClick={() => setCharLocked(p => !p)}
-                  style={{ height: 36, padding: "0 14px", borderRadius: radius.sm, cursor: "pointer",
-                    border: `1px solid ${charLocked ? "rgba(34,197,94,0.3)" : C.border}`,
-                    background: charLocked ? "rgba(34,197,94,0.08)" : C.surface,
-                    color: charLocked ? "#86efac" : C.textMuted, fontSize: 12.5, fontFamily: "inherit",
-                    display: "inline-flex", alignItems: "center", gap: 7, transition: "all 0.15s ease" }}>
-                  {charLocked ? <Lock size={13} /> : <Unlock size={13} />}
-                  {charLocked ? "Character locked (consistent)" : "Lock character traits"}
-                </motion.button>
-                <motion.button whileHover={charName.trim() ? { boxShadow: "0 12px 32px rgba(124,58,237,0.35)" } : {}}
-                  whileTap={charName.trim() ? { scale: 0.98 } : {}} onClick={saveCharacter}
-                  style={{ height: 44, borderRadius: radius.md, border: "none", cursor: charName.trim() ? "pointer" : "default",
-                    background: charName.trim() ? "linear-gradient(135deg,#4f46e5,#7c3aed)" : "rgba(255,255,255,0.06)",
-                    color: charName.trim() ? "white" : C.textMuted, fontSize: 13.5, fontWeight: 700,
-                    display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8,
-                    fontFamily: "inherit", transition: "all 0.2s ease",
-                    boxShadow: charName.trim() ? "0 8px 24px rgba(124,58,237,0.25)" : "none" }}>
-                  <User size={15} /> Save Character
-                </motion.button>
-              </>)}
-
-              {/* REFS */}
-              {formSection === "refs" && (<>
-                <p style={{ margin: 0, fontSize: 12.5, color: C.textMuted, lineHeight: 1.65 }}>
-                  Upload clear photos of the person. The AI uses these to lock their face identity for every generation.
-                </p>
-                <RefUpload entries={refEntries} onEntries={setRefEntries}
-                  label="Face reference photos" hint="Clear, well-lit, front-facing · best results" max={5} />
-                {refEntries.length > 0 && (
-                  <div style={{ padding: "10px 12px", borderRadius: radius.sm,
-                    border: `1px solid rgba(34,197,94,0.25)`, background: "rgba(34,197,94,0.06)",
-                    display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "#86efac" }}>
-                    <Check size={13} />
-                    {refEntries.length} photo{refEntries.length > 1 ? "s" : ""} uploaded — face will be locked in generation.
-                  </div>
-                )}
-                <div style={{ padding: 14, borderRadius: radius.md, border: `1px solid ${C.border}`, background: C.surface }}>
-                  <div style={{ fontSize: 12, fontWeight: 600, color: C.text, marginBottom: 8 }}>Tips for best face consistency</div>
-                  {[
-                    "Use clear, well-lit front-facing photos",
-                    "Include 3/4 angle shots if possible",
-                    "Avoid sunglasses, hats, or heavy shadows",
-                    "2–5 photos gives best results",
-                    "Higher resolution = more accurate face lock",
-                  ].map((tip, i, arr) => (
-                    <div key={i} style={{ display: "flex", gap: 8, alignItems: "flex-start", marginBottom: i < arr.length - 1 ? 6 : 0 }}>
-                      <div style={{ width: 5, height: 5, borderRadius: 999, background: C.accent, flexShrink: 0, marginTop: 5 }} />
-                      <span style={{ fontSize: 11.5, color: C.textMuted, lineHeight: 1.5 }}>{tip}</span>
-                    </div>
-                  ))}
-                </div>
-                {activeChar && (
-                  <motion.button whileTap={{ scale: 0.97 }} onClick={() => setFormSection("generate")}
-                    style={{ height: 40, borderRadius: radius.md, border: `1px solid ${C.accentBorder}`,
-                      background: C.accentSoft, color: "#c4b5fd", fontSize: 13, fontWeight: 600,
-                      display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 7,
-                      cursor: "pointer", fontFamily: "inherit" }}>
-                    <ChevronRight size={13} /> Continue to Generate
-                  </motion.button>
-                )}
-              </>)}
-
-              {/* GENERATE */}
-              {formSection === "generate" && (<>
-                {!activeChar && (
-                  <div style={{ padding: 20, borderRadius: radius.md, border: `1px solid ${C.border}`,
-                    background: C.surface, textAlign: "center" }}>
-                    <User size={32} color={C.textDim} style={{ margin: "0 auto 12px" }} />
-                    <div style={{ fontSize: 13, fontWeight: 600, color: C.text, marginBottom: 6 }}>No character selected</div>
-                    <div style={{ fontSize: 12, color: C.textMuted, marginBottom: 14, lineHeight: 1.6 }}>Create a character first, or select one from Characters.</div>
-                    <motion.button whileTap={{ scale: 0.96 }} onClick={() => setFormSection("traits")}
-                      style={{ height: 34, padding: "0 14px", borderRadius: radius.sm,
-                        border: `1px solid ${C.accentBorder}`, background: C.accentSoft, color: "#c4b5fd",
-                        fontSize: 12.5, cursor: "pointer", fontFamily: "inherit",
-                        display: "inline-flex", alignItems: "center", gap: 6 }}>
-                      <Plus size={12} /> Create character
-                    </motion.button>
-                  </div>
-                )}
-
-                {activeChar && (<>
-                  <div>
-                    <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: C.textMuted, marginBottom: 8 }}>Scene Type</div>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
-                      {SCENE_TYPES.map(s => (
-                        <motion.button key={s} whileTap={{ scale: 0.95 }} onClick={() => setScene(scene === s ? "" : s)}
-                          style={{ height: 34, borderRadius: radius.sm, cursor: "pointer",
-                            border: `1px solid ${scene === s ? C.accentBorder : C.border}`,
-                            background: scene === s ? "linear-gradient(160deg,rgba(79,70,229,0.18),rgba(124,58,237,0.12))" : C.surface,
-                            color: scene === s ? "white" : C.textMuted, fontSize: 11.5,
-                            fontFamily: "inherit", transition: "all 0.15s ease" }}>
-                          {s}
-                        </motion.button>
-                      ))}
-                    </div>
-                  </div>
-                  <div>
-                    <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: C.textMuted, marginBottom: 8 }}>Lighting</div>
-                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                      {LIGHTING_PRESETS.map(l => (
-                        <motion.button key={l.id} whileTap={{ scale: 0.94 }}
-                          onClick={() => setLighting(lighting === l.id ? null : l.id)}
-                          style={{ height: 30, padding: "0 11px", borderRadius: radius.full, cursor: "pointer",
-                            border: `1px solid ${lighting === l.id ? l.color + "60" : C.border}`,
-                            background: lighting === l.id ? l.color + "18" : C.surface,
-                            color: lighting === l.id ? l.color : C.textMuted,
-                            fontSize: 11.5, fontFamily: "inherit", transition: "all 0.14s ease" }}>
-                          {l.label}
-                        </motion.button>
-                      ))}
-                    </div>
-                  </div>
-                  <div>
-                    <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: C.textMuted, marginBottom: 6 }}>Additional Details</div>
-                    <div style={{ position: "relative" }}>
-                      <textarea value={extraPrompt} onChange={e => setExtraPrompt(e.target.value.slice(0, charLimit))}
-                        placeholder="wearing a leather jacket, rainy city background, 2049…" rows={4}
-                        style={{ width: "100%", padding: "10px 12px", borderRadius: radius.md,
-                          border: `1px solid ${C.border}`, background: C.surface, color: C.text,
-                          resize: "none", fontSize: 12.5, fontFamily: "inherit", lineHeight: 1.6,
-                          outline: "none", boxSizing: "border-box" }} />
-                      <div style={{ position: "absolute", bottom: 8, right: 10, fontSize: 10.5,
-                        color: extraPrompt.length > charLimit * 0.9 ? "#f87171" : C.textDim }}>
-                        {extraPrompt.length}/{charLimit}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Character summary */}
-                  <div style={{ padding: "10px 12px", borderRadius: radius.sm, border: `1px solid ${C.border}`,
-                    background: "rgba(255,255,255,0.02)", display: "flex", alignItems: "center", gap: 10 }}>
-                    <div style={{ width: 34, height: 34, borderRadius: 9, overflow: "hidden", flexShrink: 0,
-                      background: CARD_GRADIENTS[activeChar.id % CARD_GRADIENTS.length], display: "grid", placeItems: "center" }}>
-                      {activeChar.refEntries.length > 0
-                        ? <img src={activeChar.refEntries[0].previewUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                        : <User size={14} color="rgba(255,255,255,0.4)" />}
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 12.5, fontWeight: 700, color: C.text }}>{activeChar.name}</div>
-                      <div style={{ fontSize: 11, color: activeChar.refEntries.length > 0 ? "#86efac" : "#fca5a5" }}>
-                        {activeChar.refEntries.length > 0
-                          ? `✓ ${activeChar.refEntries.length} ref photo${activeChar.refEntries.length > 1 ? "s" : ""} — face locked`
-                          : "⚠ No refs — add photos for face consistency"}
-                      </div>
-                    </div>
-                    <button onClick={() => setFormSection("refs")}
-                      style={{ border: "none", background: "transparent", color: C.textMuted, cursor: "pointer", display: "grid", placeItems: "center" }}>
-                      <Camera size={13} />
-                    </button>
-                  </div>
-
-                  {/* Send to Image Gen button — also in left panel */}
-                  <motion.button whileHover={{ borderColor: C.accentBorder, color: "#c4b5fd" }}
-                    whileTap={{ scale: 0.97 }} onClick={sendToImageGen}
-                    style={{ height: 36, borderRadius: radius.sm, cursor: "pointer",
-                      border: `1px solid ${C.border}`, background: C.surface,
-                      color: C.textMuted, fontSize: 12.5, fontFamily: "inherit",
-                      display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 7,
-                      transition: "all 0.15s ease" }}>
-                    <ImageIcon size={13} /> Send to Image Generation <ArrowRight size={12} />
-                  </motion.button>
-                </>)}
-              </>)}
-            </div>
-
-            {/* Generate button */}
-            {formSection === "generate" && activeChar && (
-              <div style={{ padding: "12px 16px", borderTop: `1px solid ${C.border}`, flexShrink: 0 }}>
-                <motion.button
-                  whileHover={canGenerate ? { boxShadow: "0 18px 40px rgba(124,58,237,0.42)" } : {}}
-                  whileTap={canGenerate ? { scale: 0.98 } : {}}
-                  onClick={handleGenerate} disabled={!canGenerate}
-                  style={{ height: 48, width: "100%", borderRadius: radius.md, border: "none",
-                    background: canGenerate ? "linear-gradient(135deg,#4f46e5,#7c3aed)" : "rgba(255,255,255,0.06)",
-                    color: canGenerate ? "white" : C.textMuted, cursor: canGenerate ? "pointer" : "default",
-                    fontSize: 14.5, fontWeight: 700, display: "inline-flex", alignItems: "center",
-                    justifyContent: "center", gap: 9, fontFamily: "inherit", transition: "all 0.2s ease",
-                    boxShadow: canGenerate ? "0 10px 28px rgba(124,58,237,0.28)" : "none" }}>
-                  <AnimatePresence mode="wait">
-                    {generating ? (
-                      <motion.span key="gen" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                        style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: "linear" }}><Zap size={16} /></motion.div>
-                        Generating…
-                      </motion.span>
-                    ) : (
-                      <motion.span key="idle" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                        style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <Wand2 size={16} /> Generate Character <ChevronRight size={15} />
-                      </motion.span>
-                    )}
-                  </AnimatePresence>
-                </motion.button>
-              </div>
-            )}
           </div>
 
           {/* ══ RIGHT PANEL ══ */}
-          <div style={{ background: "rgba(4,5,12,0.95)", display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
+          <div style={{ background: "rgba(4,5,12,0.95)", display: "flex", flexDirection: "column",
+            height: "100%", overflow: "hidden" }}>
 
-            {activeView === "generate" && (
-              <>
-                <div style={{ padding: "0 16px", borderBottom: `1px solid ${C.border}`, height: 48,
-                  flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <span style={{ fontSize: 12, color: C.textMuted, fontWeight: 500 }}>
-                      {activeChar ? `${activeChar.name} — ${charOutputs.length} image${charOutputs.length !== 1 ? "s" : ""}` : "No character selected"}
-                    </span>
-                    {generating && (
-                      <div style={{ display: "flex", alignItems: "center", gap: 5, padding: "2px 9px",
-                        borderRadius: radius.full, border: `1px solid ${C.accentBorder}`, background: C.accentSoft,
-                        fontSize: 11, color: "#c4b5fd" }}>
-                        <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: "linear" }}><Zap size={10} /></motion.div>
-                        Generating…
-                      </div>
-                    )}
+            {/* Notification bar */}
+            <AnimatePresence>
+              {notifState === "idle" && (
+                <motion.div key="notif-idle" initial={{ height: 44 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.2 }}
+                  style={{ borderBottom: `1px solid ${C.border}`, background: "#12141e", padding: "0 16px",
+                    display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10,
+                    overflow: "hidden", flexShrink: 0, height: 44 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, color: "rgba(255,255,255,0.75)", fontSize: 13 }}>
+                    <Bell size={13} color={C.textMuted} />
+                    <span>Turn on notifications for generation updates.</span>
+                    <button onClick={handleAllowNotifications}
+                      style={{ border: "none", background: "transparent", color: "#a78bfa",
+                        cursor: "pointer", fontWeight: 700, fontSize: 13, fontFamily: "inherit" }}>Allow</button>
                   </div>
-                  {charOutputs.length > 0 && (
-                    <button onClick={() => setOutputs(p => p.filter(o => o.charId !== activeCharId))}
-                      style={{ height: 28, padding: "0 10px", borderRadius: 8,
-                        border: "1px solid rgba(248,113,113,0.25)", background: "rgba(248,113,113,0.07)",
-                        color: "#fca5a5", fontSize: 11.5, cursor: "pointer", fontFamily: "inherit",
-                        display: "inline-flex", alignItems: "center", gap: 5 }}>
-                      <Trash2 size={11} /> Clear
-                    </button>
-                  )}
-                </div>
-
-                <div ref={canvasRef} style={{ flex: 1, overflowY: "auto", padding: "16px" }}>
-                  {!activeChar && (
-                    <div style={{ height: "80%", display: "grid", placeItems: "center" }}>
-                      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
-                        style={{ textAlign: "center", maxWidth: 320 }}>
-                        <div style={{ width: 80, height: 80, borderRadius: 999, margin: "0 auto 20px",
-                          display: "grid", placeItems: "center", border: `1px solid ${C.border}`, background: C.surface }}>
-                          <UserCircle2 size={36} color={C.textDim} />
-                        </div>
-                        <p style={{ margin: "0 0 8px", color: C.text, fontSize: 17, fontWeight: 800, letterSpacing: "-0.02em" }}>No character yet</p>
-                        <p style={{ margin: "0 0 22px", color: C.textMuted, fontSize: 13, lineHeight: 1.7 }}>
-                          Create a character, upload reference photos, then generate consistent portraits.
-                        </p>
-                        <motion.button whileTap={{ scale: 0.96 }} onClick={() => setFormSection("traits")}
-                          style={{ height: 40, padding: "0 20px", borderRadius: radius.md,
-                            border: `1px solid ${C.accentBorder}`, background: C.accentSoft, color: "#c4b5fd",
-                            fontSize: 13.5, fontWeight: 600, cursor: "pointer", fontFamily: "inherit",
-                            display: "inline-flex", alignItems: "center", gap: 7 }}>
-                          <Plus size={14} /> Create your first character
-                        </motion.button>
-                      </motion.div>
-                    </div>
-                  )}
-
-                  {activeChar && charOutputs.length === 0 && !generating && (
-                    <div style={{ height: "80%", display: "grid", placeItems: "center" }}>
-                      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
-                        style={{ textAlign: "center", maxWidth: 300 }}>
-                        <div style={{ width: 72, height: 72, borderRadius: 999, margin: "0 auto 16px",
-                          display: "grid", placeItems: "center", border: `1px solid ${C.border}`, background: C.surface }}>
-                          <ImageIcon size={28} color={C.textDim} />
-                        </div>
-                        <p style={{ margin: "0 0 6px", color: C.text, fontSize: 15, fontWeight: 700 }}>Ready to generate</p>
-                        <p style={{ margin: "0 0 18px", color: C.textMuted, fontSize: 12.5, lineHeight: 1.7 }}>
-                          Choose a scene and lighting, then hit Generate Character.
-                        </p>
-                        <motion.button whileTap={{ scale: 0.96 }} onClick={() => setFormSection("generate")}
-                          style={{ height: 36, padding: "0 16px", borderRadius: radius.md,
-                            border: `1px solid ${C.accentBorder}`, background: C.accentSoft, color: "#c4b5fd",
-                            fontSize: 13, cursor: "pointer", fontFamily: "inherit",
-                            display: "inline-flex", alignItems: "center", gap: 6 }}>
-                          <Wand2 size={13} /> Set up generation
-                        </motion.button>
-                      </motion.div>
-                    </div>
-                  )}
-
-                  {activeChar && charOutputs.length > 0 && (
-                    <div style={{ display: "grid", gridTemplateColumns: outputView === "grid" ? "repeat(auto-fill,minmax(200px,1fr))" : "1fr", gap: 12 }}>
-                      {charOutputs.map((item, i) => (
-                        outputView === "grid" ? (
-                          <motion.div key={item.id} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}>
-                            <OutputCard item={item}
-                              onDelete={() => setOutputs(p => p.filter(o => o.id !== item.id))}
-                              onOpen={setLightboxItem} />
-                          </motion.div>
-                        ) : (
-                          <motion.div key={item.id} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.04 }}
-                            onClick={() => item.url && setLightboxItem(item)}
-                            style={{ display: "flex", alignItems: "center", gap: 14, padding: "10px 14px",
-                              borderRadius: radius.md, border: `1px solid ${C.border}`, background: C.surface,
-                              cursor: item.url ? "zoom-in" : "default" }}>
-                            <div style={{ width: 52, height: 52, borderRadius: radius.sm, flexShrink: 0,
-                              overflow: "hidden", border: `1px solid ${C.border}`,
-                              background: CARD_GRADIENTS[item.id % CARD_GRADIENTS.length] }}>
-                              {item.url && <img src={item.url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />}
-                            </div>
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                              <div style={{ fontSize: 13, fontWeight: 600, color: C.text, marginBottom: 2 }}>{item.scene || "Portrait"}</div>
-                              <div style={{ fontSize: 11, color: C.textMuted }}>{new Date(item.createdAt).toLocaleString()}</div>
-                            </div>
-                            <div style={{ display: "flex", gap: 5 }}>
-                              {[Download, Trash2].map((Icon, j) => (
-                                <button key={j} onClick={e => { e.stopPropagation(); if (j === 1) setOutputs(p => p.filter(o => o.id !== item.id)); }}
-                                  style={{ width: 30, height: 30, borderRadius: 8, border: `1px solid ${C.border}`,
-                                    background: C.surface, color: j === 1 ? "#f87171" : C.textMuted,
-                                    display: "grid", placeItems: "center", cursor: "pointer" }}>
-                                  <Icon size={13} />
-                                </button>
-                              ))}
-                            </div>
-                          </motion.div>
-                        )
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </>
-            )}
-
-            {activeView === "characters" && (
-              <>
-                <div style={{ padding: "0 16px", borderBottom: `1px solid ${C.border}`, height: 48,
-                  flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                  <span style={{ fontSize: 12, color: C.textMuted, fontWeight: 500 }}>
-                    {characters.length} character{characters.length !== 1 ? "s" : ""} saved
-                  </span>
-                  <motion.button whileTap={{ scale: 0.95 }}
-                    onClick={() => { setFormSection("traits"); setActiveView("generate"); }}
-                    style={{ height: 30, padding: "0 12px", borderRadius: 9,
-                      border: `1px solid ${C.accentBorder}`, background: C.accentSoft, color: "#c4b5fd",
-                      cursor: "pointer", fontSize: 12, fontFamily: "inherit",
-                      display: "inline-flex", alignItems: "center", gap: 5, fontWeight: 600 }}>
-                    <Plus size={12} /> New character
+                  <motion.button whileTap={{ scale: 0.9 }} onClick={() => setNotifState("dismissed")}
+                    style={{ border: "none", background: "transparent", color: C.textMuted,
+                      cursor: "pointer", display: "grid", placeItems: "center" }}>
+                    <X size={14} />
                   </motion.button>
-                </div>
-                <div style={{ flex: 1, overflowY: "auto", padding: 16, minHeight: 0 }}>
-                  {characters.length === 0 ? (
-                    <div style={{ height: "80%", display: "grid", placeItems: "center" }}>
-                      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
-                        style={{ textAlign: "center", maxWidth: 280 }}>
-                        <div style={{ width: 72, height: 72, borderRadius: 999, margin: "0 auto 16px",
-                          display: "grid", placeItems: "center", border: `1px solid ${C.border}`, background: C.surface }}>
-                          <Users size={28} color={C.textDim} />
+                </motion.div>
+              )}
+              {notifState === "granted" && (
+                <motion.div key="notif-ok" initial={{ height: 0, opacity: 0 }} animate={{ height: 44, opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.2 }}
+                  style={{ borderBottom: `1px solid ${C.border}`, background: "rgba(34,197,94,0.07)", padding: "0 16px",
+                    display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, overflow: "hidden", flexShrink: 0 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#86efac", fontSize: 13 }}>
+                    <Check size={13} /> Notifications enabled — you'll be notified when generation completes.
+                  </div>
+                  <button onClick={() => setNotifState("dismissed")} style={{ border: "none", background: "transparent", color: C.textMuted, cursor: "pointer" }}>
+                    <X size={14} />
+                  </button>
+                </motion.div>
+              )}
+              {notifState === "denied" && (
+                <motion.div key="notif-denied" initial={{ height: 0, opacity: 0 }} animate={{ height: 44, opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.2 }}
+                  style={{ borderBottom: `1px solid ${C.border}`, background: "rgba(239,68,68,0.07)", padding: "0 16px",
+                    display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, overflow: "hidden", flexShrink: 0 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#fca5a5", fontSize: 13 }}>
+                    <BellOff size={13} /> Notifications blocked — enable them in your browser settings.
+                  </div>
+                  <button onClick={() => setNotifState("dismissed")} style={{ border: "none", background: "transparent", color: C.textMuted, cursor: "pointer" }}>
+                    <X size={14} />
+                  </button>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Filter bar */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between",
+              padding: "0 16px", borderBottom: `1px solid ${C.border}`, height: 48, flexShrink: 0 }}>
+              <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                {CONTENT_TABS.map(tab => (
+                  <motion.button key={tab} whileTap={{ scale: 0.95 }} onClick={() => setContentFilter(tab)}
+                    style={{ height: 28, padding: "0 12px", borderRadius: 8,
+                      border: `1px solid ${contentFilter === tab ? C.border : "transparent"}`,
+                      background: contentFilter === tab ? "rgba(255,255,255,0.09)" : "transparent",
+                      color: contentFilter === tab ? C.text : C.textMuted, cursor: "pointer",
+                      fontSize: 12.5, fontFamily: "inherit", transition: "all 0.14s ease",
+                      display: "inline-flex", alignItems: "center", gap: 5 }}>
+                    {tab === "Videos" && <Video size={11} />}
+                    {tab === "Audio"  && <Music size={11} />}
+                    {tab === "Images" && <ImageIcon size={11} />}
+                    {tab}
+                  </motion.button>
+                ))}
+                <label style={{ display: "flex", alignItems: "center", gap: 6, marginLeft: 6,
+                  fontSize: 12.5, color: favoritesOnly ? "#a78bfa" : C.textMuted, cursor: "pointer" }}>
+                  <input type="checkbox" checked={favoritesOnly} onChange={e => setFavoritesOnly(e.target.checked)}
+                    style={{ accentColor: C.accent }} />
+                  Favorites
+                </label>
+              </div>
+              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                {groups.length > 0 && (
+                  <motion.button whileTap={{ scale: 0.95 }} onClick={clearAll}
+                    style={{ height: 28, padding: "0 10px", borderRadius: 8,
+                      border: "1px solid rgba(248,113,113,0.25)", background: "rgba(248,113,113,0.07)",
+                      color: "#fca5a5", fontSize: 11.5, cursor: "pointer", fontFamily: "inherit",
+                      display: "inline-flex", alignItems: "center", gap: 5 }}>
+                    <Trash2 size={11} /> Clear all
+                  </motion.button>
+                )}
+                <motion.button whileHover={{ borderColor: C.borderHover }}
+                  style={{ height: 28, padding: "0 10px", borderRadius: 8, border: `1px solid ${C.border}`,
+                    background: C.surface, color: "rgba(255,255,255,0.8)", display: "inline-flex",
+                    alignItems: "center", gap: 5, cursor: "pointer", fontSize: 12, fontFamily: "inherit" }}>
+                  <Folder size={12} /> Assets
+                </motion.button>
+              </div>
+            </div>
+
+            {/* ── Scrollable feed ── */}
+            <div ref={canvasRef} style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
+
+              {/* Generating banner (non-blocking) */}
+              <AnimatePresence>
+                {generating && (
+                  <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }}
+                    exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.3 }} style={{ overflow: "hidden" }}>
+                    <div style={{ margin: "16px 16px 0", borderRadius: 16,
+                      border: `1px solid ${C.accentBorder}`, background: "rgba(124,58,237,0.06)",
+                      padding: "18px 20px", display: "flex", alignItems: "center", gap: 16 }}>
+                      <div style={{ position: "relative", width: 48, height: 48, flexShrink: 0 }}>
+                        <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 2, ease: "linear" }}
+                          style={{ position: "absolute", inset: 0, borderRadius: 999,
+                            border: `2px solid ${C.accent}`, borderTopColor: "transparent" }} />
+                        <motion.div animate={{ rotate: -360 }} transition={{ repeat: Infinity, duration: 3, ease: "linear" }}
+                          style={{ position: "absolute", inset: 6, borderRadius: 999,
+                            border: `1.5px solid ${C.accentBorder}`, borderBottomColor: "transparent" }} />
+                        <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center" }}>
+                          <Sparkles size={14} color="#a78bfa" />
                         </div>
-                        <p style={{ margin: "0 0 6px", color: C.text, fontSize: 15, fontWeight: 700 }}>No characters yet</p>
-                        <p style={{ margin: "0 0 16px", color: C.textMuted, fontSize: 12.5, lineHeight: 1.7 }}>
-                          Build your cast by defining characters with traits and reference photos.
-                        </p>
-                        <motion.button whileTap={{ scale: 0.96 }}
-                          onClick={() => { setFormSection("traits"); setActiveView("generate"); }}
-                          style={{ height: 36, padding: "0 16px", borderRadius: radius.md,
-                            border: `1px solid ${C.accentBorder}`, background: C.accentSoft, color: "#c4b5fd",
-                            fontSize: 13, cursor: "pointer", fontFamily: "inherit",
-                            display: "inline-flex", alignItems: "center", gap: 6 }}>
-                          <Plus size={13} /> Create first character
-                        </motion.button>
-                      </motion.div>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 14, fontWeight: 700, color: C.text, marginBottom: 3 }}>
+                          Generating your image…
+                        </div>
+                        <div style={{ fontSize: 12, color: C.textMuted }}>
+                          {mode} · {ratio}{activeStyle ? ` · ${activeStyle.label}` : ""} · {outputCount} output{outputCount > 1 ? "s" : ""}
+                        </div>
+                      </div>
                     </div>
-                  ) : (
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(200px,1fr))", gap: 14 }}>
-                      {characters.map((char, i) => (
-                        <motion.div key={char.id} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}>
-                          <div style={{ position: "relative" }}>
-                            <CharacterCard char={char} isActive={char.id === activeCharId}
-                              onClick={() => { loadCharacterIntoForm(char); setActiveView("generate"); }}
-                              onDelete={() => deleteCharacter(char.id)} />
-                            <button onClick={e => { e.stopPropagation(); deleteCharacter(char.id); }}
-                              style={{ position: "absolute", top: 8, right: 8, width: 26, height: 26, borderRadius: 8,
-                                border: `1px solid rgba(248,113,113,0.25)`, background: "rgba(248,113,113,0.1)",
-                                color: "#f87171", display: "grid", placeItems: "center", cursor: "pointer" }}>
-                              <Trash2 size={11} />
-                            </button>
-                          </div>
-                        </motion.div>
-                      ))}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* Videos / Audio empty states */}
+              {!generating && contentFilter === "Videos" && (
+                <div style={{ height: "80vh", display: "grid", placeItems: "center" }}>
+                  <div style={{ textAlign: "center" }}>
+                    <div style={{ width: 64, height: 64, borderRadius: 999, margin: "0 auto 14px",
+                      display: "grid", placeItems: "center", border: `1px solid ${C.border}`, background: C.surface }}>
+                      <Video size={26} color={C.textDim} />
                     </div>
-                  )}
+                    <p style={{ margin: "0 0 4px", color: C.text, fontSize: 15, fontWeight: 600 }}>Video Generation</p>
+                    <p style={{ margin: 0, color: C.textMuted, fontSize: 13 }}>Coming soon.</p>
+                  </div>
                 </div>
-              </>
-            )}
+              )}
+              {!generating && contentFilter === "Audio" && (
+                <div style={{ height: "80vh", display: "grid", placeItems: "center" }}>
+                  <div style={{ textAlign: "center" }}>
+                    <div style={{ width: 64, height: 64, borderRadius: 999, margin: "0 auto 14px",
+                      display: "grid", placeItems: "center", border: `1px solid ${C.border}`, background: C.surface }}>
+                      <Music size={26} color={C.textDim} />
+                    </div>
+                    <p style={{ margin: "0 0 4px", color: C.text, fontSize: 15, fontWeight: 600 }}>Audio Generation</p>
+                    <p style={{ margin: 0, color: C.textMuted, fontSize: 13 }}>Coming soon.</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Empty state */}
+              {!generating && (contentFilter === "All" || contentFilter === "Images") && filteredGroups.length === 0 && (
+                <div style={{ height: "80vh", display: "grid", placeItems: "center" }}>
+                  <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
+                    style={{ textAlign: "center", maxWidth: 300 }}>
+                    <div style={{ width: 72, height: 72, borderRadius: 999, margin: "0 auto 18px",
+                      display: "grid", placeItems: "center", border: `1px solid ${C.border}`, background: C.surface }}>
+                      <ImageIcon size={30} color={C.textDim} />
+                    </div>
+                    <p style={{ margin: "0 0 8px", color: C.text, fontSize: 16, fontWeight: 700 }}>Your canvas is empty</p>
+                    <p style={{ margin: "0 0 20px", color: C.textMuted, fontSize: 13, lineHeight: 1.7 }}>
+                      Describe what you want to create and hit Generate — your images will be auto-saved and reappear after refresh.
+                    </p>
+                    <motion.button whileTap={{ scale: 0.96 }} onClick={() => textareaRef.current?.focus()}
+                      style={{ height: 36, padding: "0 18px", borderRadius: radius.md,
+                        border: `1px solid ${C.accentBorder}`, background: C.accentSoft, color: "#c4b5fd",
+                        fontSize: 13, cursor: "pointer", fontFamily: "inherit",
+                        display: "inline-flex", alignItems: "center", gap: 7 }}>
+                      <Plus size={13} /> Start with a prompt
+                    </motion.button>
+                  </motion.div>
+                </div>
+              )}
+
+              {/* Feed */}
+              {(contentFilter === "All" || contentFilter === "Images") && filteredGroups.length > 0 && (
+                <div style={{ padding: "16px 16px 64px", display: "flex", flexDirection: "column", gap: 16 }}>
+                  {filteredGroups.map((group, idx) => (
+                    <GenerationCard key={group.id} group={group}
+                      isLatest={idx === 0 && !generating}
+                      generating={generating}
+                      onDelete={deleteGroup}
+                      onToggleFavorite={toggleFavorite}
+                      onDownload={handleDownload}
+                      onShare={handleShare}
+                      onVariation={handleVariation}
+                      onOpenLightbox={(img, promptText) => setLightboxItem({ ...img, promptText })} />
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
 
-      {/* FIX 2: Lightbox ── */}
+      {/* ── Lightbox ── */}
       <AnimatePresence>
         {lightboxItem && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}
             onClick={() => setLightboxItem(null)}
             style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,0.92)",
-              backdropFilter: "blur(14px)", display: "flex", alignItems: "center",
+              backdropFilter: "blur(12px)", display: "flex", alignItems: "center",
               justifyContent: "center", padding: 24 }}>
-            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }} transition={{ duration: 0.25, ease: [0.22,1,0.36,1] }}
+            <motion.div initial={{ scale: 0.92, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.92, opacity: 0 }} transition={{ duration: 0.25, ease: [0.22,1,0.36,1] }}
               onClick={e => e.stopPropagation()}
               style={{ position: "relative", maxWidth: "90vw", maxHeight: "90vh",
                 borderRadius: radius.xl, overflow: "hidden", boxShadow: "0 40px 100px rgba(0,0,0,0.7)" }}>
-              <img src={lightboxItem.url} alt={lightboxItem.scene}
-                style={{ display: "block", maxWidth: "90vw", maxHeight: "88vh", objectFit: "contain" }} />
+              {lightboxItem.url ? (
+                <img src={lightboxItem.url} alt={lightboxItem.promptText}
+                  style={{ display: "block", maxWidth: "90vw", maxHeight: "88vh", objectFit: "contain" }} />
+              ) : (
+                <div style={{ width: 600, height: 700,
+                  background: CARD_GRADIENTS[(lightboxItem.id || 0) % CARD_GRADIENTS.length],
+                  display: "grid", placeItems: "center" }}>
+                  <ImageIcon size={60} color="rgba(255,255,255,0.15)" />
+                </div>
+              )}
               <div style={{ position: "absolute", top: 14, right: 14, display: "flex", gap: 8 }}>
-                {[Download, Share2, X].map((Icon, i) => (
-                  <motion.button key={i} whileTap={{ scale: 0.9 }}
-                    onClick={() => { if (i === 2) setLightboxItem(null); }}
+                {[
+                  { Icon: Download, action: () => handleDownload(lightboxItem) },
+                  { Icon: Share2,   action: () => handleShare(lightboxItem) },
+                  { Icon: X,        action: () => setLightboxItem(null) },
+                ].map(({ Icon, action }, i) => (
+                  <motion.button key={i} whileTap={{ scale: 0.9 }} onClick={action}
                     style={{ width: 40, height: 40, borderRadius: 12, border: "1px solid rgba(255,255,255,0.12)",
                       background: "rgba(0,0,0,0.6)", backdropFilter: "blur(8px)", color: "white",
                       display: "grid", placeItems: "center", cursor: "pointer" }}>
@@ -1088,11 +1404,12 @@ export default function ConsistencyPage() {
                   </motion.button>
                 ))}
               </div>
-              <div style={{ position: "absolute", bottom: 0, left: 0, right: 0,
-                background: "linear-gradient(to top,rgba(0,0,0,0.8),transparent)", padding: "40px 20px 18px" }}>
-                <p style={{ margin: "0 0 4px", fontSize: 14, fontWeight: 600, color: "white" }}>{lightboxItem.scene || "Portrait"}</p>
-                <p style={{ margin: 0, fontSize: 12, color: C.textMuted }}>{new Date(lightboxItem.createdAt).toLocaleString()}</p>
-              </div>
+              {lightboxItem.promptText && (
+                <div style={{ position: "absolute", bottom: 0, left: 0, right: 0,
+                  background: "linear-gradient(to top,rgba(0,0,0,0.8),transparent)", padding: "40px 20px 18px" }}>
+                  <p style={{ margin: 0, fontSize: 14, fontWeight: 600, color: "white" }}>{lightboxItem.promptText}</p>
+                </div>
+              )}
             </motion.div>
           </motion.div>
         )}
