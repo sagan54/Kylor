@@ -1,677 +1,1408 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Sparkles,
-  Clapperboard,
-  Image as ImageIcon,
-  Video,
-  UserCircle2,
-  Orbit,
-  FolderKanban,
-  Compass,
-  Settings,
-  Folder,
-  Grid3X3,
-  List,
-  ChevronDown,
-  Wand2,
-  ChevronRight,
-  Copy,
-  Check,
-  Save,
-  Plus,
-  Trash2,
-  ExternalLink,
-  FileText,
-  Clock,
+  Sparkles, Compass, Clapperboard, Image as ImageIcon, Video, UserCircle2,
+  Orbit, FolderKanban, Settings, Grid3X3, List, Wand2, ChevronRight,
+  Bell, BellOff, X, ChevronDown, Folder, Upload, Zap, Star, Download,
+  Share2, Trash2, Plus, Music, Check, Copy, CloudUpload,
 } from "lucide-react";
-import { supabase } from "../../lib/supabase";
+import { useEffect, useRef, useState, useCallback, useMemo } from "react";
+import { createClient } from "@supabase/supabase-js";
 
-// ─── Tokens (matches image page) ─────────────────────────────────────────────
+// ─── Supabase client ──────────────────────────────────────────────────────────
+// Uses your existing env vars — same client as the rest of the app
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+);
+
+// ─── Supabase helpers ─────────────────────────────────────────────────────────
+// Table: image_generations
+// Columns: id (int8/bigint), user_id (uuid), prompt (text), negative_prompt (text),
+//          ratio (text), mode (text), style (text), images (jsonb),
+//          created_at (timestamptz, default now())
+//
+// Run this once in your Supabase SQL editor:
+// ─────────────────────────────────────────────────────────────────────────────
+// create table if not exists image_generations (
+//   id            bigint primary key,
+//   user_id       uuid references auth.users(id) on delete cascade,
+//   prompt        text,
+//   negative_prompt text,
+//   ratio         text,
+//   mode          text,
+//   style         text,
+//   images        jsonb default '[]'::jsonb,
+//   created_at    timestamptz default now()
+// );
+// alter table image_generations enable row level security;
+// create policy "Users manage own generations" on image_generations
+//   using (auth.uid() = user_id) with check (auth.uid() = user_id);
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function sbLoadAll(userId) {
+  if (!userId) return [];
+  const { data, error } = await supabase
+    .from("image_generations")
+    .select("*")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false });
+  if (error) { console.error("sbLoadAll:", error.message); return []; }
+  // Map snake_case DB cols → camelCase app shape
+  return (data || []).map(row => ({
+    id:             row.id,
+    prompt:         row.prompt,
+    negativePrompt: row.negative_prompt,
+    ratio:          row.ratio,
+    mode:           row.mode,
+    style:          row.style,
+    createdAt:      row.created_at,
+    images:         row.images || [],
+  }));
+}
+
+async function sbSaveGroup(group, userId) {
+  if (!userId) return;
+  const { error } = await supabase
+    .from("image_generations")
+    .upsert({
+      id:              group.id,
+      user_id:         userId,
+      prompt:          group.prompt,
+      negative_prompt: group.negativePrompt,
+      ratio:           group.ratio,
+      mode:            group.mode,
+      style:           group.style,
+      images:          group.images,
+      created_at:      group.createdAt,
+    });
+  if (error) console.error("sbSaveGroup:", error.message);
+}
+
+async function sbDeleteGroup(id, userId) {
+  if (!userId) return;
+  const { error } = await supabase
+    .from("image_generations")
+    .delete()
+    .eq("id", id)
+    .eq("user_id", userId);
+  if (error) console.error("sbDeleteGroup:", error.message);
+}
+
+async function sbClearAll(userId) {
+  if (!userId) return;
+  const { error } = await supabase
+    .from("image_generations")
+    .delete()
+    .eq("user_id", userId);
+  if (error) console.error("sbClearAll:", error.message);
+}
+
+// ─── Upload image to Supabase Storage → returns permanent public URL ──────────
+// Bucket: "generated-images"  (create it once in Supabase → Storage → New bucket,
+//         set Public = true, leave file size limit at default)
+const STORAGE_BUCKET = "generated-images";
+
+async function uploadImageToStorage(tempUrl, userId, imageId) {
+  try {
+    // Fetch the image blob from the temporary OpenAI URL
+    const res  = await fetch(tempUrl);
+    if (!res.ok) throw new Error(`Fetch failed: ${res.status}`);
+    const blob = await res.blob();
+    const ext  = blob.type === "image/webp" ? "webp" : blob.type === "image/jpeg" ? "jpg" : "png";
+
+    // Path: userId/imageId.ext  — keeps each user's images in their own folder
+    const path = `${userId}/${imageId}.${ext}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from(STORAGE_BUCKET)
+      .upload(path, blob, { contentType: blob.type, upsert: true });
+
+    if (uploadError) throw uploadError;
+
+    // Get the permanent public URL
+    const { data } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(path);
+    return data?.publicUrl ?? null;
+  } catch (err) {
+    console.warn("uploadImageToStorage failed, keeping temp URL:", err.message);
+    return tempUrl; // Fallback: keep the original URL for now
+  }
+}
+
+async function deleteImageFromStorage(userId, imageId) {
+  try {
+    // Try both common extensions
+    await supabase.storage.from(STORAGE_BUCKET).remove([
+      `${userId}/${imageId}.png`,
+      `${userId}/${imageId}.jpg`,
+      `${userId}/${imageId}.webp`,
+    ]);
+  } catch (err) {
+    console.warn("deleteImageFromStorage:", err.message);
+  }
+}
+
+// ─── Tokens ───────────────────────────────────────────────────────────────────
 const C = {
-  accent: "#7c3aed",
-  accentSoft: "rgba(124,58,237,0.15)",
-  accentBorder: "rgba(124,58,237,0.35)",
-  accentGlow: "rgba(124,58,237,0.25)",
-  indigo: "#4f46e5",
-  border: "rgba(255,255,255,0.07)",
-  borderHover: "rgba(255,255,255,0.13)",
-  surface: "rgba(255,255,255,0.03)",
-  surfaceHover: "rgba(255,255,255,0.055)",
-  text: "white",
-  textMuted: "rgba(255,255,255,0.52)",
-  textDim: "rgba(255,255,255,0.32)",
-  bg: "#05070c",
-  sidebar: "#080a10",
+  accent: "#7c3aed", accentSoft: "rgba(124,58,237,0.15)",
+  accentBorder: "rgba(124,58,237,0.35)", accentGlow: "rgba(124,58,237,0.25)",
+  indigo: "#4f46e5", border: "rgba(255,255,255,0.07)",
+  borderHover: "rgba(255,255,255,0.13)", surface: "rgba(255,255,255,0.03)",
+  surfaceHover: "rgba(255,255,255,0.055)", text: "white",
+  textMuted: "rgba(255,255,255,0.52)", textDim: "rgba(255,255,255,0.32)",
+  bg: "#05070c", sidebar: "#080a10",
 };
+const radius = { sm: "10px", md: "14px", lg: "18px", xl: "22px", full: "999px" };
 
-const radius = {
-  sm: "10px",
-  md: "14px",
-  lg: "18px",
-  xl: "22px",
-  full: "999px",
-};
-
-// ─── Sidebar items ────────────────────────────────────────────────────────────
-const SIDEBAR_ITEMS = [
-  { label: "Home", icon: Compass, href: "/" },
-  { label: "Explore", icon: Compass, href: "/explore" },
-  { label: "Story", icon: Clapperboard, href: "/story", active: true },
-  { label: "Image", icon: ImageIcon, href: "/image" },
-  { label: "Video", icon: Video, href: "#" },
-  { label: "Consistency", icon: UserCircle2, href: "/consistency" },
-  { label: "Motion", icon: Orbit, href: "#" },
-  { label: "Projects", icon: FolderKanban, href: "/story" },
-  { label: "Settings", icon: Settings, href: "#" },
+// ─── Style presets ────────────────────────────────────────────────────────────
+const STYLES = [
+  { id: "cinematic",      label: "Cinematic",     desc: "Film-grade, anamorphic lens, deep color grade",  color: "#6366f1" },
+  { id: "neon_noir",      label: "Neon Noir",      desc: "Dark city, glowing neon reflections, rain-slick", color: "#a855f7" },
+  { id: "anime",          label: "Anime",          desc: "Japanese animation, vibrant, bold outlines",      color: "#ec4899" },
+  { id: "photorealistic", label: "Photorealistic", desc: "Hyper-detailed, DSLR quality, natural light",     color: "#14b8a6" },
+  { id: "oil_painting",   label: "Oil Painting",   desc: "Classical brushwork, rich texture, canvas feel",  color: "#f59e0b" },
+  { id: "concept_art",    label: "Concept Art",    desc: "Studio-quality game/film concept, dramatic",      color: "#3b82f6" },
+  { id: "low_poly",       label: "Low Poly",       desc: "Geometric, faceted shapes, minimal palette",      color: "#10b981" },
+  { id: "watercolor",     label: "Watercolor",     desc: "Soft washes, painterly, delicate paper texture",  color: "#06b6d4" },
+  { id: "retro_scifi",    label: "Retro Sci-Fi",   desc: "70s pulp art, retrofuturism, gritty print",       color: "#f97316" },
+  { id: "dark_fantasy",   label: "Dark Fantasy",   desc: "Moody, mythic, smoke and shadow",                 color: "#8b5cf6" },
+  { id: "studio_photo",   label: "Studio Photo",   desc: "Clean professional shot, neutral backdrop",       color: "#64748b" },
+  { id: "impressionist",  label: "Impressionist",  desc: "Loose brushstrokes, dappled light, movement",     color: "#84cc16" },
 ];
 
-const GENRES = ["Sci-Fi", "Thriller", "Drama", "Horror", "Action", "Mystery", "Romance"];
-const TONES = ["Cinematic", "Dark", "Emotional", "Gritty", "Epic", "Suspenseful"];
+const SIDEBAR_ITEMS = [
+  { label: "Home",       icon: Compass,      href: "/" },
+  { label: "Explore",    icon: Compass,      href: "/explore" },
+  { label: "Story",      icon: Clapperboard, href: "/story" },
+  { label: "Image",      icon: ImageIcon,    href: "/image", active: true },
+  { label: "Video",      icon: Video,        href: "#" },
+  { label: "Consistency", icon: UserCircle2,  href: "/consistency" },
+  { label: "Motion",     icon: Orbit,        href: "#" },
+  { label: "Projects",   icon: FolderKanban, href: "/story" },
+  { label: "Settings",   icon: Settings,     href: "#" },
+];
 
-// ─── Custom Select ────────────────────────────────────────────────────────────
-function CustomSelect({ value, onChange, options, placeholder = "Select" }) {
-  const [open, setOpen] = useState(false);
-  const wrapperRef = useRef(null);
+const MODES   = ["1K SD", "2K HD", "4K"];
+const RATIOS  = ["Auto", "9:16", "2:3", "3:4", "1:1", "4:3", "3:2", "16:9", "21:9"];
+const OUTPUTS = [1, 2, 3, 4];
+const CONTENT_TABS = ["All", "Images", "Videos", "Audio"];
+const CARD_GRADIENTS = [
+  "linear-gradient(135deg, rgba(79,70,229,0.55), rgba(124,58,237,0.35))",
+  "linear-gradient(135deg, rgba(124,58,237,0.5),  rgba(17,17,34,0.9))",
+  "linear-gradient(135deg, rgba(49,46,129,0.65),  rgba(79,70,229,0.4))",
+  "linear-gradient(135deg, rgba(91,33,182,0.55),  rgba(55,48,163,0.45))",
+  "linear-gradient(135deg, rgba(67,56,202,0.6),   rgba(124,58,237,0.35))",
+  "linear-gradient(135deg, rgba(109,92,255,0.45), rgba(49,46,129,0.55))",
+];
 
-  useEffect(() => {
-    function handleClickOutside(e) {
-      if (wrapperRef.current && !wrapperRef.current.contains(e.target)) setOpen(false);
-    }
-    function handleEscape(e) {
-      if (e.key === "Escape") setOpen(false);
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    document.addEventListener("keydown", handleEscape);
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-      document.removeEventListener("keydown", handleEscape);
-    };
-  }, []);
 
-  return (
-    <div ref={wrapperRef} style={{ position: "relative", width: "100%" }}>
-      <motion.button
-        type="button"
-        onClick={() => setOpen((p) => !p)}
-        whileHover={{ borderColor: C.accentBorder }}
-        style={{
-          width: "100%", height: "46px", padding: "0 14px", fontSize: "14px",
-          borderRadius: radius.md, border: `1px solid ${open ? C.accentBorder : C.border}`,
-          background: open ? C.accentSoft : C.surface,
-          color: value ? C.text : C.textMuted, outline: "none",
-          display: "flex", alignItems: "center", justifyContent: "space-between",
-          cursor: "pointer", fontFamily: "inherit", transition: "all 0.16s ease",
-        }}
-      >
-        <span style={{ fontWeight: value ? 500 : 400 }}>{value || placeholder}</span>
-        <motion.div animate={{ rotate: open ? 180 : 0 }} transition={{ duration: 0.2 }}>
-          <ChevronDown size={15} color={C.textMuted} />
-        </motion.div>
-      </motion.button>
 
-      <AnimatePresence>
-        {open && (
-          <motion.div
-            initial={{ opacity: 0, y: 8, scale: 0.97 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 4, scale: 0.97 }}
-            transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
-            style={{
-              position: "absolute", top: "calc(100% + 6px)", left: 0, width: "100%",
-              background: "rgba(14,16,26,0.99)", border: `1px solid ${C.border}`,
-              borderRadius: radius.md, boxShadow: "0 20px 50px rgba(0,0,0,0.4)",
-              overflow: "hidden", zIndex: 1000, backdropFilter: "blur(14px)",
-            }}
-          >
-            {options.map((option, i) => (
-              <button
-                key={option} type="button"
-                onClick={() => { onChange(option); setOpen(false); }}
-                style={{
-                  width: "100%", padding: "11px 14px",
-                  background: value === option ? `linear-gradient(135deg, rgba(79,70,229,0.22), rgba(124,58,237,0.18))` : "transparent",
-                  color: value === option ? C.text : C.textMuted,
-                  border: "none",
-                  borderBottom: i !== options.length - 1 ? `1px solid rgba(255,255,255,0.04)` : "none",
-                  textAlign: "left", cursor: "pointer", fontSize: "14px",
-                  fontFamily: "inherit", transition: "background 0.14s ease",
-                }}
-                onMouseEnter={(e) => { if (value !== option) e.currentTarget.style.background = C.surfaceHover; }}
-                onMouseLeave={(e) => { if (value !== option) e.currentTarget.style.background = "transparent"; }}
-              >
-                {option}
-              </button>
-            ))}
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
-  );
+// ─── Misc helpers ─────────────────────────────────────────────────────────────
+function getApiSize(r) {
+  if (["9:16","2:3","3:4"].includes(r)) return "1024x1536";
+  if (["16:9","21:9","4:3","3:2"].includes(r)) return "1536x1024";
+  return "1024x1024";
+}
+function getApiQuality(m) {
+  if (m === "1K SD") return "low";
+  if (m === "4K")    return "high";
+  return "medium";
+}
+async function downloadImage(url, filename = "kylor-output.png") {
+  try {
+    const res  = await fetch(url);
+    const blob = await res.blob();
+    const a    = Object.assign(document.createElement("a"), {
+      href: URL.createObjectURL(blob), download: filename,
+    });
+    document.body.appendChild(a); a.click(); a.remove();
+  } catch { window.open(url, "_blank"); }
+}
+async function shareImage({ url, title, text }) {
+  try {
+    if (navigator.share) { await navigator.share({ title, text, url }); return true; }
+    await navigator.clipboard.writeText(url); return true;
+  } catch { return false; }
+}
+function fmtDate(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+    + " · " + d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
 }
 
 // ─── Sidebar Item ─────────────────────────────────────────────────────────────
 function SidebarItem({ item }) {
   const Icon = item.icon;
   const inner = (
-    <motion.div
-      whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
-      style={{
-        display: "grid", justifyItems: "center", gap: "6px",
-        padding: "10px 6px", borderRadius: radius.lg,
-        background: item.active ? "linear-gradient(160deg, rgba(79,70,229,0.22), rgba(124,58,237,0.14))" : "transparent",
+    <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
+      style={{ display: "grid", justifyItems: "center", gap: "6px", padding: "10px 6px",
+        borderRadius: radius.lg,
+        background: item.active ? "linear-gradient(160deg,rgba(79,70,229,0.22),rgba(124,58,237,0.14))" : "transparent",
         border: `1px solid ${item.active ? C.border : "transparent"}`,
-        color: item.active ? C.text : C.textMuted,
-        cursor: "pointer", transition: "all 0.18s ease",
-      }}
-    >
-      <div style={{ width: "36px", height: "36px", borderRadius: "12px", display: "grid", placeItems: "center", background: item.active ? "rgba(255,255,255,0.07)" : "rgba(255,255,255,0.02)" }}>
+        color: item.active ? C.text : C.textMuted, cursor: "pointer", transition: "all 0.18s ease" }}>
+      <div style={{ width: 36, height: 36, borderRadius: 12, display: "grid", placeItems: "center",
+        background: item.active ? "rgba(255,255,255,0.07)" : "rgba(255,255,255,0.02)" }}>
         <Icon size={17} />
       </div>
       <span style={{ fontSize: "10.5px", textAlign: "center", lineHeight: 1.2 }}>{item.label}</span>
     </motion.div>
   );
-  return item.href === "#" ? <div>{inner}</div> : (
-    <Link href={item.href} style={{ textDecoration: "none", color: "inherit" }}>{inner}</Link>
-  );
+  return item.href === "#" ? <div>{inner}</div>
+    : <Link href={item.href} style={{ textDecoration: "none", color: "inherit" }}>{inner}</Link>;
 }
 
-// ─── Section Block (output content) ──────────────────────────────────────────
-function Section({ label, children }) {
+// ─── Segment Control ──────────────────────────────────────────────────────────
+function SegmentControl({ options, value, onChange }) {
   return (
-    <div style={{ display: "grid", gap: "6px" }}>
-      <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: C.textMuted }}>{label}</div>
-      <div style={{ fontSize: "14.5px", color: "rgba(255,255,255,0.82)", lineHeight: 1.7 }}>{children}</div>
+    <div style={{ display: "grid", gridTemplateColumns: `repeat(${options.length},1fr)`, gap: 6,
+      padding: 4, borderRadius: radius.lg, background: "rgba(255,255,255,0.03)", border: `1px solid ${C.border}` }}>
+      {options.map(opt => {
+        const active = opt === value;
+        return (
+          <motion.button key={opt} onClick={() => onChange(opt)} whileTap={{ scale: 0.96 }}
+            style={{ height: 36, borderRadius: radius.sm,
+              border: active ? `1px solid ${C.accentBorder}` : "1px solid transparent",
+              background: active ? "linear-gradient(160deg,rgba(79,70,229,0.18),rgba(124,58,237,0.13))" : "transparent",
+              color: active ? "white" : C.textMuted, fontSize: 13, cursor: "pointer",
+              fontFamily: "inherit", transition: "all 0.16s ease" }}>
+            {opt}
+          </motion.button>
+        );
+      })}
     </div>
   );
 }
 
-// ─── Project Card ─────────────────────────────────────────────────────────────
-function ProjectCard({ project, onOpen, onDelete }) {
-  const [hovered, setHovered] = useState(false);
+// ─── Drop Zone ────────────────────────────────────────────────────────────────
+function DropZone({ files, onFiles }) {
+  const [dragging, setDragging] = useState(false);
+  const inputRef = useRef(null);
+  const handleDrop = useCallback(e => {
+    e.preventDefault(); setDragging(false);
+    const dropped = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith("image/"));
+    if (dropped.length) onFiles(p => [...p, ...dropped].slice(0, 10));
+  }, [onFiles]);
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
-      onHoverStart={() => setHovered(true)} onHoverEnd={() => setHovered(false)}
-      style={{
-        borderRadius: radius.lg, border: `1px solid ${hovered ? C.borderHover : C.border}`,
-        background: hovered ? C.surfaceHover : C.surface,
-        padding: "14px 16px", display: "flex", justifyContent: "space-between",
-        alignItems: "center", gap: "12px", transition: "all 0.16s ease", cursor: "default",
-      }}
-    >
-      <div style={{ display: "flex", alignItems: "center", gap: "12px", minWidth: 0 }}>
-        <div style={{ width: "38px", height: "38px", borderRadius: radius.sm, flexShrink: 0, background: C.accentSoft, border: `1px solid ${C.accentBorder}`, display: "grid", placeItems: "center" }}>
-          <FileText size={16} color="#a78bfa" />
+    <div style={{ display: "grid", gap: 8 }}>
+      <motion.div
+        onDragOver={e => { e.preventDefault(); setDragging(true); }}
+        onDragLeave={() => setDragging(false)} onDrop={handleDrop}
+        onClick={() => inputRef.current?.click()}
+        animate={{ borderColor: dragging ? C.accent : "rgba(255,255,255,0.08)", background: dragging ? C.accentSoft : C.surface }}
+        style={{ borderRadius: radius.md, border: "1.5px dashed rgba(255,255,255,0.08)",
+          padding: "12px 14px", cursor: "pointer", display: "flex", alignItems: "center", gap: 12 }}>
+        <input ref={inputRef} type="file" accept="image/*" multiple style={{ display: "none" }}
+          onChange={e => { onFiles(p => [...p, ...Array.from(e.target.files).filter(f => f.type.startsWith("image/"))].slice(0,10)); e.target.value = ""; }} />
+        <div style={{ width: 34, height: 34, borderRadius: radius.sm, flexShrink: 0,
+          background: C.accentSoft, border: `1px solid ${C.accentBorder}`, display: "grid", placeItems: "center" }}>
+          <Upload size={14} color="#a78bfa" />
         </div>
-        <div style={{ minWidth: 0 }}>
-          <div style={{ fontSize: "14px", fontWeight: 600, color: C.text, marginBottom: "3px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{project.title}</div>
-          <div style={{ fontSize: "12px", color: C.textMuted }}>
-            {project.genre} · {project.tone}
-            {project.created_at && (
-              <span style={{ marginLeft: "8px", color: C.textDim }}>
-                · {new Date(project.created_at).toLocaleDateString()}
-              </span>
-            )}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 13, color: C.text, fontWeight: 500 }}>
+            Drop images or <span style={{ color: "#a78bfa" }}>browse</span>
           </div>
+          <div style={{ fontSize: 11, color: C.textMuted, marginTop: 2 }}>PNG, JPG, WEBP · max 10 refs</div>
+        </div>
+        <div style={{ fontSize: 12, color: files.length > 0 ? "#a78bfa" : C.textDim, fontWeight: 600 }}>{files.length}/10</div>
+      </motion.div>
+      {files.length > 0 && (
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {files.map((file, i) => (
+            <div key={i} style={{ position: "relative", width: 44, height: 44, borderRadius: 8,
+              overflow: "hidden", border: `1px solid ${C.accentBorder}` }}>
+              <img src={URL.createObjectURL(file)} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+              <button onClick={e => { e.stopPropagation(); onFiles(p => p.filter((_, j) => j !== i)); }}
+                style={{ position: "absolute", top: 2, right: 2, width: 16, height: 16, borderRadius: 999,
+                  background: "rgba(0,0,0,0.75)", border: "none", color: "white",
+                  display: "grid", placeItems: "center", cursor: "pointer" }}>
+                <X size={9} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Styles Picker ────────────────────────────────────────────────────────────
+function StylesPicker({ value, onChange, onClose }) {
+  return (
+    <motion.div initial={{ opacity: 0, y: 8, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: 4, scale: 0.97 }} transition={{ duration: 0.2, ease: [0.22,1,0.36,1] }}
+      style={{ position: "absolute", left: 0, right: 0, bottom: "calc(100% + 8px)", zIndex: 20,
+        borderRadius: radius.lg, border: `1px solid ${C.border}`, background: "rgba(12,14,22,0.99)",
+        backdropFilter: "blur(18px)", boxShadow: "0 32px 80px rgba(0,0,0,0.6)", padding: 14 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+        <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: C.textMuted }}>
+          Choose Style
+        </div>
+        <button onClick={onClose} style={{ border: "none", background: "transparent", color: C.textMuted, cursor: "pointer", display: "grid", placeItems: "center" }}>
+          <X size={14} />
+        </button>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, maxHeight: 260, overflowY: "auto" }}>
+        {STYLES.map(s => {
+          const active = value === s.id;
+          return (
+            <motion.button key={s.id} whileTap={{ scale: 0.96 }}
+              onClick={() => { onChange(active ? null : s.id); if (!active) onClose(); }}
+              style={{ padding: "10px 12px", borderRadius: radius.sm,
+                border: `1px solid ${active ? s.color + "55" : C.border}`,
+                background: active ? s.color + "18" : C.surface, cursor: "pointer",
+                textAlign: "left", fontFamily: "inherit", transition: "all 0.15s ease", display: "grid", gap: 3 }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <span style={{ fontSize: 12.5, fontWeight: 600, color: active ? C.text : "rgba(255,255,255,0.85)" }}>{s.label}</span>
+                {active && <Check size={11} color={s.color} />}
+              </div>
+              <span style={{ fontSize: 10.5, color: C.textDim, lineHeight: 1.4 }}>{s.desc}</span>
+            </motion.button>
+          );
+        })}
+      </div>
+      {value && (
+        <button onClick={() => onChange(null)} style={{ marginTop: 10, width: "100%", padding: 8,
+          borderRadius: radius.sm, border: `1px solid ${C.border}`, background: "transparent",
+          color: C.textMuted, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
+          Clear style
+        </button>
+      )}
+    </motion.div>
+  );
+}
+
+// ─── Generation Feed Card ─────────────────────────────────────────────────────
+function GenerationCard({ group, isLatest, onDelete, onToggleFavorite, onDownload, onShare, onOpenLightbox, onVariation, generating }) {
+  const [copiedPrompt, setCopiedPrompt] = useState(false);
+  const [featuredIdx, setFeaturedIdx]   = useState(0);
+  const featured = group.images[featuredIdx];
+
+  async function copyPrompt() {
+    if (!group.prompt) return;
+    try { await navigator.clipboard.writeText(group.prompt); setCopiedPrompt(true); setTimeout(() => setCopiedPrompt(false), 1800); } catch {}
+  }
+
+  return (
+    <motion.div initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, ease: [0.22,1,0.36,1] }}
+      style={{ borderRadius: 20,
+        border: `1px solid ${isLatest ? C.accentBorder : C.border}`,
+        background: isLatest ? "rgba(124,58,237,0.04)" : "rgba(255,255,255,0.015)",
+        overflow: "hidden",
+        boxShadow: isLatest ? "0 0 0 1px rgba(124,58,237,0.08) inset, 0 8px 32px rgba(0,0,0,0.3)" : "none" }}>
+
+      {/* Header */}
+      <div style={{ padding: "12px 16px", borderBottom: `1px solid ${C.border}`,
+        display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ width: 28, height: 28, borderRadius: 9, flexShrink: 0,
+            background: "linear-gradient(135deg,#6D5CFF,#9d4edd)",
+            display: "grid", placeItems: "center", fontWeight: 800, fontSize: 11, color: "#fff" }}>V1</div>
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: C.text }}>Kylor V1</div>
+            <div style={{ fontSize: 11, color: C.textMuted }}>{fmtDate(group.createdAt)}</div>
+          </div>
+          {isLatest && (
+            <div style={{ padding: "2px 8px", borderRadius: radius.full, background: C.accentSoft,
+              border: `1px solid ${C.accentBorder}`, fontSize: 10.5, color: "#c4b5fd", fontWeight: 700 }}>
+              Latest
+            </div>
+          )}
+        </div>
+        <div style={{ display: "flex", gap: 6 }}>
+          {[
+            { icon: Star, action: () => onToggleFavorite?.(group.id, featuredIdx), active: featured?.starred, activeColor: "#fbbf24", activeFill: "#fbbf24" },
+            { icon: Download, action: () => onDownload?.(featured) },
+            { icon: Share2,   action: () => onShare?.(featured) },
+            { icon: Trash2,   action: () => onDelete?.(group.id), danger: true },
+          ].map(({ icon: Icon, action, active, activeColor, activeFill, danger }, i) => (
+            <button key={i} onClick={action}
+              style={{ width: 30, height: 30, borderRadius: 9, cursor: "pointer",
+                border: `1px solid ${danger ? "rgba(248,113,113,0.25)" : active ? `${activeColor}40` : C.border}`,
+                background: danger ? "rgba(248,113,113,0.07)" : active ? `${activeColor}12` : C.surface,
+                color: danger ? "#f87171" : active ? activeColor : C.textMuted,
+                display: "grid", placeItems: "center" }}>
+              <Icon size={13} fill={active && activeFill ? activeFill : "none"} />
+            </button>
+          ))}
         </div>
       </div>
-      <AnimatePresence>
-        {hovered && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} style={{ display: "flex", gap: "6px", flexShrink: 0 }}>
-            <motion.button whileTap={{ scale: 0.95 }} onClick={() => onOpen(project)}
-              style={{ height: "32px", padding: "0 14px", borderRadius: radius.sm, border: "none", background: "linear-gradient(135deg, #4f46e5, #7c3aed)", color: "white", cursor: "pointer", fontSize: "12.5px", fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: "5px" }}
-            ><ExternalLink size={12} /> Open</motion.button>
-            <motion.button whileTap={{ scale: 0.95 }} onClick={() => onDelete(project.id)}
-              style={{ width: "32px", height: "32px", borderRadius: radius.sm, border: `1px solid ${C.border}`, background: C.surface, color: C.textMuted, display: "grid", placeItems: "center", cursor: "pointer" }}
-            ><Trash2 size={13} /></motion.button>
-          </motion.div>
-        )}
-      </AnimatePresence>
+
+      {/* Body: image left + details right */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 320px" }}>
+
+        {/* Image area */}
+        <div style={{ position: "relative", minHeight: 360, background: "#05070c",
+          borderRight: `1px solid ${C.border}`, overflow: "hidden" }}>
+          {featured?.url ? (
+            <img src={featured.url} alt={group.prompt}
+              onClick={() => onOpenLightbox?.(featured, group.prompt)}
+              style={{ width: "100%", height: "100%", objectFit: "contain", display: "block",
+                cursor: "zoom-in", maxHeight: 560 }} />
+          ) : (
+            <div style={{ width: "100%", height: "100%", minHeight: 360,
+              background: CARD_GRADIENTS[(group.id || 0) % CARD_GRADIENTS.length],
+              display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 14 }}>
+              <ImageIcon size={42} color="rgba(255,255,255,0.18)" />
+              <span style={{ fontSize: 12, color: "rgba(255,255,255,0.3)", maxWidth: 220, textAlign: "center", lineHeight: 1.6 }}>
+                {group.prompt}
+              </span>
+            </div>
+          )}
+
+          {/* Multi-image thumbnails */}
+          {group.images.length > 1 && (
+            <div style={{ position: "absolute", bottom: 12, left: 12, display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {group.images.map((img, idx) => (
+                <button key={idx} onClick={() => setFeaturedIdx(idx)}
+                  style={{ width: 54, height: 54, borderRadius: 9, overflow: "hidden", padding: 0, cursor: "pointer",
+                    border: `2px solid ${featuredIdx === idx ? C.accent : "rgba(255,255,255,0.18)"}`,
+                    background: CARD_GRADIENTS[idx % CARD_GRADIENTS.length], flexShrink: 0,
+                    transition: "border-color 0.15s ease" }}>
+                  {img.url && <img src={img.url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {featured?.url && (
+            <div style={{ position: "absolute", top: 12, right: 12, padding: "4px 10px",
+              borderRadius: radius.full, background: "rgba(0,0,0,0.58)", backdropFilter: "blur(8px)",
+              fontSize: 11, color: "rgba(255,255,255,0.55)", pointerEvents: "none" }}>
+              Click to zoom
+            </div>
+          )}
+        </div>
+
+        {/* Details panel */}
+        <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12, overflow: "hidden" }}>
+
+          {/* Meta chips */}
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {[group.ratio, group.mode, group.style].filter(Boolean).map(tag => (
+              <div key={tag} style={{ height: 26, padding: "0 10px", borderRadius: radius.full,
+                border: `1px solid ${C.border}`, background: "rgba(255,255,255,0.04)",
+                color: "rgba(255,255,255,0.75)", fontSize: 11.5, display: "inline-flex", alignItems: "center" }}>
+                {tag}
+              </div>
+            ))}
+            {group.images.length > 1 && (
+              <div style={{ height: 26, padding: "0 10px", borderRadius: radius.full,
+                border: `1px solid ${C.accentBorder}`, background: C.accentSoft,
+                color: "#c4b5fd", fontSize: 11.5, display: "inline-flex", alignItems: "center", gap: 4 }}>
+                <ImageIcon size={10} /> {group.images.length} images
+              </div>
+            )}
+          </div>
+
+          {/* Prompt */}
+          <div style={{ flex: 1, borderRadius: radius.md, border: `1px solid ${C.border}`,
+            background: "rgba(255,255,255,0.02)", padding: "10px 12px", overflow: "hidden",
+            display: "flex", flexDirection: "column", gap: 8 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.08em",
+                textTransform: "uppercase", color: C.textMuted }}>Prompt</div>
+              <button onClick={copyPrompt}
+                style={{ height: 24, padding: "0 8px", borderRadius: 7, cursor: "pointer",
+                  border: `1px solid ${copiedPrompt ? C.accentBorder : C.border}`,
+                  background: copiedPrompt ? C.accentSoft : C.surface,
+                  color: copiedPrompt ? "#c4b5fd" : C.textMuted, display: "inline-flex",
+                  alignItems: "center", gap: 4, fontSize: 11, fontFamily: "inherit", transition: "all 0.16s" }}>
+                {copiedPrompt ? <Check size={10} /> : <Copy size={10} />}
+                {copiedPrompt ? "Copied" : "Copy"}
+              </button>
+            </div>
+            <p style={{ margin: 0, color: "rgba(255,255,255,0.82)", fontSize: 12.5, lineHeight: 1.65,
+              wordBreak: "break-word", display: "-webkit-box", WebkitLineClamp: 7,
+              WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+              {group.prompt}
+            </p>
+          </div>
+
+          {/* Negative prompt */}
+          {group.negativePrompt && (
+            <div style={{ borderRadius: radius.sm, border: "1px solid rgba(248,113,113,0.2)",
+              background: "rgba(248,113,113,0.04)", padding: "8px 12px" }}>
+              <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.08em",
+                textTransform: "uppercase", color: "#fca5a5", marginBottom: 4 }}>Negative</div>
+              <p style={{ margin: 0, color: "rgba(255,255,255,0.65)", fontSize: 12, lineHeight: 1.6 }}>
+                {group.negativePrompt}
+              </p>
+            </div>
+          )}
+
+          {/* Variation buttons */}
+          <div>
+            <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.08em",
+              textTransform: "uppercase", color: C.textMuted, marginBottom: 6 }}>Variations</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 6 }}>
+              {[1,2,3,4].map((v, i) => (
+                <motion.button key={v} whileTap={{ scale: 0.95 }}
+                  onClick={() => onVariation?.(group, i)} disabled={generating}
+                  style={{ height: 34, borderRadius: radius.sm, cursor: generating ? "default" : "pointer",
+                    border: `1px solid ${C.border}`,
+                    background: generating ? "rgba(255,255,255,0.02)" : C.surface,
+                    color: generating ? C.textDim : C.textMuted,
+                    fontSize: 12, fontWeight: 600, fontFamily: "inherit", transition: "all 0.15s ease" }}>
+                  V{v}
+                </motion.button>
+              ))}
+            </div>
+          </div>
+
+          {/* Download CTA */}
+          <button onClick={() => onDownload?.(featured)}
+            style={{ height: 40, borderRadius: radius.sm,
+              border: `1px solid ${C.accentBorder}`, background: C.accentSoft, color: "#c4b5fd",
+              display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
+              cursor: "pointer", fontSize: 12.5, fontWeight: 600, fontFamily: "inherit" }}>
+            <Download size={13} /> Download image
+          </button>
+        </div>
+      </div>
     </motion.div>
   );
 }
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
-export default function StoryPage() {
-  const router = useRouter();
+export default function ImagePage() {
+  // Nav state
+  const [topTab,         setTopTab]         = useState("All");
+  const [contentFilter,  setContentFilter]  = useState("All");
+  const [assetView,      setAssetView]      = useState("grid");
+  const [favoritesOnly,  setFavoritesOnly]  = useState(false);
 
-  const [user, setUser] = useState(null);
-  const [title, setTitle] = useState("");
-  const [genre, setGenre] = useState("Sci-Fi");
-  const [tone, setTone] = useState("Cinematic");
-  const [idea, setIdea] = useState("");
-  const [result, setResult] = useState("");
-  const [structuredResult, setStructuredResult] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const [projects, setProjects] = useState([]);
-  const [saving, setSaving] = useState(false);
-  const [activeTab, setActiveTab] = useState("All");
-  const [assetView, setAssetView] = useState("grid");
+  // Prompt
+  const [prompt,         setPrompt]         = useState("");
+  const charLimit = 500;
+  const [negativeOpen,   setNegativeOpen]   = useState(false);
+  const [negativePrompt, setNegativePrompt] = useState("");
 
-  const ideaRef = useRef(null);
+  // Style
+  const [stylesOpen,     setStylesOpen]     = useState(false);
+  const [selectedStyle,  setSelectedStyle]  = useState(null);
+
+  // Reference images
+  const [refImages,      setRefImages]      = useState([]);
+
+  // Settings
+  const [ratio,          setRatio]          = useState("16:9");
+  const [mode,           setMode]           = useState("2K HD");
+  const [outputCount,    setOutputCount]    = useState(1);
+  const [settingsOpen,   setSettingsOpen]   = useState(false);
+
+  // Notifications
+  const [notifState,     setNotifState]     = useState("idle");
+
+  // Auth
+  const [userId,         setUserId]         = useState(null);
+
+  // Generations (persisted via Supabase)
+  const [groups,         setGroups]         = useState([]);
+  const [dbLoaded,       setDbLoaded]       = useState(false);
+  const [generating,     setGenerating]     = useState(false);
+
+  // Lightbox
+  const [lightboxItem,   setLightboxItem]   = useState(null);
+
+  const panelRef    = useRef(null);
+  const stylesRef   = useRef(null);
+  const textareaRef = useRef(null);
+  const canvasRef   = useRef(null);
+
+  // ── Auth + instant cache-first load ───────────────────────────────────────
+  // sessionStorage key per user — clears when tab closes but persists navigation
+  const SESSION_KEY = "kylor_img_cache";
 
   useEffect(() => {
-    async function initializePage() {
-      const { data: { user }, error } = await supabase.auth.getUser();
-      if (error || !user) { router.push("/login"); return; }
-      setUser(user);
-      await fetchProjects(user);
-    }
-    initializePage();
-  }, [router]);
+    async function init() {
+      // Step 1: get current user (fast, local)
+      const { data: { session } } = await supabase.auth.getSession();
+      const uid = session?.user?.id ?? null;
+      setUserId(uid);
 
-  async function fetchProjects(currentUser = user) {
-    if (!currentUser) return;
-    const { data, error } = await supabase
-      .from("projects").select("*")
-      .eq("user_id", currentUser.id)
-      .order("created_at", { ascending: false });
-    if (!error) setProjects(data || []);
+      // Step 2: show cached data INSTANTLY (zero network wait)
+      try {
+        const raw = sessionStorage.getItem(SESSION_KEY);
+        if (raw) {
+          const cached = JSON.parse(raw);
+          if (Array.isArray(cached) && cached.length > 0) {
+            setGroups(cached);
+            setDbLoaded(true); // show feed right away
+          }
+        }
+      } catch {}
+
+      // Step 3: fetch fresh data from Supabase in background
+      const fresh = await sbLoadAll(uid);
+      setGroups(fresh);
+      setDbLoaded(true);
+
+      // Step 4: update cache with fresh data
+      try { sessionStorage.setItem(SESSION_KEY, JSON.stringify(fresh)); } catch {}
+    }
+
+    init();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      const uid = session?.user?.id ?? null;
+      setUserId(uid);
+      const fresh = await sbLoadAll(uid);
+      setGroups(fresh);
+      setDbLoaded(true);
+      try { sessionStorage.setItem(SESSION_KEY, JSON.stringify(fresh)); } catch {}
+    });
+    return () => subscription.unsubscribe();
+  }, []);
+
+  // ── Close popovers on outside click ───────────────────────────────────────
+  useEffect(() => {
+    function handleOutside(e) {
+      if (panelRef.current  && !panelRef.current.contains(e.target))  setSettingsOpen(false);
+      if (stylesRef.current && !stylesRef.current.contains(e.target)) setStylesOpen(false);
+    }
+    document.addEventListener("mousedown", handleOutside);
+    return () => document.removeEventListener("mousedown", handleOutside);
+  }, []);
+
+  // ── Keep sessionStorage cache in sync ─────────────────────────────────────
+  function syncCache(updatedGroups) {
+    try { sessionStorage.setItem(SESSION_KEY, JSON.stringify(updatedGroups)); } catch {}
   }
 
-  async function handleGenerate() {
-    if (!idea.trim()) return;
-    setLoading(true);
-    setStructuredResult(null);
-    setActiveTab("Output");
+  const activeStyle = STYLES.find(s => s.id === selectedStyle);
+
+  // ── Notifications ─────────────────────────────────────────────────────────
+  async function handleAllowNotifications() {
+    if (!("Notification" in window)) { setNotifState("dismissed"); return; }
     try {
-      const res = await fetch("/api/script", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title, genre, tone, idea }),
+      const p = await Notification.requestPermission();
+      setNotifState(p === "granted" ? "granted" : "denied");
+    } catch { setNotifState("dismissed"); }
+  }
+
+  // ── Delete single group ────────────────────────────────────────────────────
+  async function deleteGroup(groupId) {
+    const group = groups.find(g => g.id === groupId);
+    const next  = groups.filter(g => g.id !== groupId);
+    setGroups(next);
+    syncCache(next);
+    if (lightboxItem?.groupId === groupId) setLightboxItem(null);
+    await sbDeleteGroup(groupId, userId);
+    if (group && userId) {
+      const count = group.images.length;
+      await Promise.all(
+        Array.from({ length: count }, (_, i) =>
+          deleteImageFromStorage(userId, `${groupId}-${i}`)
+        )
+      );
+    }
+  }
+
+  // ── Toggle favourite ──────────────────────────────────────────────────────
+  async function toggleFavorite(groupId, imgIdx) {
+    let updated;
+    setGroups(p => {
+      const next = p.map(g => g.id !== groupId ? g : {
+        ...g, images: g.images.map((img, i) => i === imgIdx ? { ...img, starred: !img.starred } : img),
       });
-      const data = await res.json();
-      if (data.structuredResult) {
-        setStructuredResult(data.structuredResult);
-        setResult(data.result || "");
-      } else {
-        setResult(data.result || "Something went wrong.");
+      updated = next.find(g => g.id === groupId);
+      syncCache(next);
+      return next;
+    });
+    if (updated) await sbSaveGroup(updated, userId);
+  }
+
+  // ── Download / share ──────────────────────────────────────────────────────
+  async function handleDownload(img) {
+    if (!img?.url) return;
+    await downloadImage(img.url, `kylor-${Date.now()}.png`);
+  }
+  async function handleShare(img) {
+    if (!img?.url) return;
+    await shareImage({ url: img.url, title: "Kylor image", text: img.prompt || "" });
+  }
+
+  // ── Clear all ─────────────────────────────────────────────────────────────
+  async function clearAll() {
+    if (!confirm("Delete all saved generations? This cannot be undone.")) return;
+    setGroups([]);
+    setLightboxItem(null);
+    syncCache([]);
+    await sbClearAll(userId);
+  }
+
+  // ── Generate ──────────────────────────────────────────────────────────────
+  async function handleGenerate() {
+    if (!prompt.trim() || generating) return;
+    setGenerating(true);
+    canvasRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+
+    const styleLabel = activeStyle?.label ?? null;
+    const fullPrompt = [
+      prompt.trim(),
+      styleLabel            ? `Style: ${styleLabel}` : null,
+      negativePrompt.trim() ? `Negative: ${negativePrompt.trim()}` : null,
+      "No text, no captions, no subtitles, no watermark.",
+    ].filter(Boolean).join(". ");
+
+    const n       = Math.min(outputCount, 4);
+    const groupId = Date.now();
+
+    try {
+      const requests = Array.from({ length: n }, () =>
+        fetch("/api/generate-image", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            prompt:  fullPrompt,
+            size:    getApiSize(ratio),
+            quality: getApiQuality(mode),
+            n: 1,
+          }),
+        }).then(r => r.json()).catch(() => ({}))
+      );
+
+      const results  = await Promise.all(requests);
+      const tempUrls = results.flatMap(d =>
+        Array.isArray(d?.images) ? d.images : d?.image ? [d.image] : []
+      );
+
+      // ── Step 1: Show image immediately with temp URL (zero extra wait) ──
+      const newGroup = {
+        id:             groupId,
+        prompt:         prompt.trim(),
+        negativePrompt: negativePrompt.trim(),
+        ratio, mode,
+        style:          styleLabel,
+        createdAt:      new Date().toISOString(),
+        images:         tempUrls.length > 0
+          ? tempUrls.map(url => ({ url, starred: false }))
+          : [{ url: null, starred: false }],
+      };
+      setGroups(p => { const next = [newGroup, ...p]; syncCache(next); return next; });
+      setGenerating(false); // ← unblock UI now, don't wait for upload
+
+      // ── Step 2: Upload to Supabase Storage in background ──
+      // First save with temp URLs so it's in DB immediately
+      await sbSaveGroup(newGroup, userId);
+
+      if (userId && tempUrls.length > 0) {
+        const permanentUrls = await Promise.all(
+          tempUrls.map((url, i) => uploadImageToStorage(url, userId, `${groupId}-${i}`))
+        );
+
+        // Swap temp URLs → permanent URLs in state
+        const updatedImages = permanentUrls.map(url => ({ url, starred: false }));
+        const updatedGroup  = { ...newGroup, images: updatedImages };
+
+        setGroups(p => { const next = p.map(g => g.id === groupId ? updatedGroup : g); syncCache(next); return next; });
+        // Update DB with permanent URLs
+        await sbSaveGroup(updatedGroup, userId);
+      }
+
+      if (notifState === "granted" && "Notification" in window) {
+        new Notification("Kylor", { body: "Your image generation is complete." });
       }
     } catch (err) {
-      setResult("Something went wrong while generating the script.");
-    } finally {
-      setLoading(false);
-      setCopied(false);
+      console.error("Generation failed:", err);
+      const placeholder = {
+        id: groupId, prompt: prompt.trim(), negativePrompt: negativePrompt.trim(),
+        ratio, mode, style: styleLabel, createdAt: new Date().toISOString(),
+        images: [{ url: null, starred: false }],
+      };
+      setGroups(p => [placeholder, ...p]);
+      await sbSaveGroup(placeholder, userId);
+      setGenerating(false);
     }
   }
 
-  function handleNewProject() {
-    setTitle(""); setGenre("Sci-Fi"); setTone("Cinematic");
-    setIdea(""); setResult(""); setStructuredResult(null);
-    setCopied(false); setActiveTab("All");
-  }
+  // ── Generate variation ────────────────────────────────────────────────────
+  async function handleVariation(group, variationIndex) {
+    if (!group?.prompt || generating) return;
+    setGenerating(true);
+    canvasRef.current?.scrollTo({ top: 0, behavior: "smooth" });
 
-  async function handleCopy() {
-    if (!structuredResult) return;
-    const text = `Title: ${structuredResult.title}\n\nGenre: ${structuredResult.genre}\nTone: ${structuredResult.tone}\n\nLogline:\n${structuredResult.logline}\n\nTheme:\n${structuredResult.theme}\n\nMain Characters:\n${structuredResult.characters?.join("\n") || ""}\n\nAct 1:\n${structuredResult.act1}\n\nAct 2:\n${structuredResult.act2}\n\nAct 3:\n${structuredResult.act3}\n\nScene Breakdown:\n${structuredResult.sceneBreakdown?.join("\n") || ""}`;
+    const variationPrompt = [
+      group.prompt,
+      group.style ? `Style: ${group.style}` : null,
+      group.negativePrompt ? `Negative: ${group.negativePrompt}` : null,
+      `Variation ${variationIndex + 1}, slightly different composition, same subject and style.`,
+      "No text, no captions, no subtitles, no watermark.",
+    ].filter(Boolean).join(". ");
+
+    const varGroupId = Date.now();
+
     try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch (err) { console.error("Copy failed:", err); }
+      const res     = await fetch("/api/generate-image", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: variationPrompt, size: getApiSize(group.ratio), quality: getApiQuality(group.mode), n: 1 }),
+      });
+      const data    = await res.json();
+      const tempUrl = Array.isArray(data?.images) ? data.images[0] : data?.image;
+
+      if (tempUrl) {
+        // Show immediately with temp URL
+        const newGroup = {
+          id: varGroupId, prompt: group.prompt, negativePrompt: group.negativePrompt,
+          ratio: group.ratio, mode: group.mode, style: group.style,
+          createdAt: new Date().toISOString(),
+          images: [{ url: tempUrl, starred: false }],
+        };
+        setGroups(p => [newGroup, ...p]);
+        setGenerating(false); // unblock UI immediately
+
+        // Save temp URL to DB right away
+        await sbSaveGroup(newGroup, userId);
+
+        // Upload to Storage in background, swap URL silently
+        if (userId) {
+          const permanentUrl = await uploadImageToStorage(tempUrl, userId, `${varGroupId}-0`);
+          const updatedGroup = { ...newGroup, images: [{ url: permanentUrl, starred: false }] };
+          setGroups(p => p.map(g => g.id === varGroupId ? updatedGroup : g));
+          await sbSaveGroup(updatedGroup, userId);
+        }
+
+        if (notifState === "granted" && "Notification" in window) {
+          new Notification("Kylor", { body: `Variation V${variationIndex + 1} is ready.` });
+        }
+      } else {
+        setGenerating(false);
+      }
+    } catch (err) {
+      console.error("Variation failed:", err);
+      setGenerating(false);
+    }
   }
 
-  async function handleSaveProject() {
-    if (!structuredResult) return;
-    setSaving(true);
-    const { data: { user: currentUser }, error: userError } = await supabase.auth.getUser();
-    if (userError || !currentUser) { setSaving(false); router.push("/login"); return; }
-    const projectTitle = title || structuredResult.title || "Untitled Project";
-    const { error } = await supabase.from("projects").insert([{
-      user_id: currentUser.id, title: projectTitle,
-      genre, tone, idea, structured_result: structuredResult, result,
-    }]);
-    setSaving(false);
-    if (!error) { await fetchProjects(currentUser); setActiveTab("Projects"); }
-  }
+  // ── Filtered view ─────────────────────────────────────────────────────────
+  const filteredGroups = useMemo(() => {
+    if (contentFilter === "Videos" || contentFilter === "Audio") return [];
+    if (favoritesOnly) return groups.filter(g => g.images.some(i => i.starred));
+    return groups;
+  }, [groups, contentFilter, favoritesOnly]);
 
-  function handleLoadProject(project) { router.push(`/project/${project.id}`); }
-
-  async function handleDeleteProject(id) {
-    const { data: { user: currentUser }, error: userError } = await supabase.auth.getUser();
-    if (userError || !currentUser) { router.push("/login"); return; }
-    await supabase.from("projects").delete().eq("id", id).eq("user_id", currentUser.id);
-    await fetchProjects(currentUser);
-  }
-
-  const showProjects = activeTab === "Projects";
-
+  // ─────────────────────────────────────────────────────────────────────────
   return (
     <main style={{
       height: "100vh", overflow: "hidden",
-      background: `radial-gradient(ellipse at 8% 12%, rgba(79,70,229,0.13), transparent 28%), radial-gradient(ellipse at 92% 8%, rgba(124,58,237,0.11), transparent 30%), ${C.bg}`,
-      color: C.text, fontFamily: "'Inter', 'SF Pro Display', sans-serif",
+      background: `radial-gradient(ellipse at 8% 12%,rgba(79,70,229,0.13),transparent 28%),radial-gradient(ellipse at 92% 8%,rgba(124,58,237,0.11),transparent 30%),${C.bg}`,
+      color: C.text, fontFamily: "'Inter','SF Pro Display',sans-serif",
       display: "grid", gridTemplateColumns: "88px 1fr",
     }}>
 
       {/* ── Sidebar ── */}
-      <aside style={{ borderRight: `1px solid ${C.border}`, background: C.sidebar, padding: "18px 10px", height: "100vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
-        <div style={{ width: "46px", height: "46px", borderRadius: "16px", margin: "0 auto 22px", display: "grid", placeItems: "center", background: "linear-gradient(135deg, rgba(79,70,229,0.28), rgba(124,58,237,0.18))", border: `1px solid ${C.border}`, boxShadow: `0 0 20px ${C.accentGlow}` }}>
+      <aside style={{ borderRight: `1px solid ${C.border}`, background: C.sidebar,
+        padding: "18px 10px", height: "100vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+        <div style={{ width: 46, height: 46, borderRadius: 16, margin: "0 auto 22px",
+          display: "grid", placeItems: "center",
+          background: "linear-gradient(135deg,rgba(79,70,229,0.28),rgba(124,58,237,0.18))",
+          border: `1px solid ${C.border}`, boxShadow: `0 0 20px ${C.accentGlow}` }}>
           <Sparkles size={20} color="#a78bfa" />
         </div>
-        <div style={{ display: "grid", gap: "8px" }}>
-          {SIDEBAR_ITEMS.map((item) => <SidebarItem key={item.label} item={item} />)}
+        <div style={{ display: "grid", gap: 8 }}>
+          {SIDEBAR_ITEMS.map(item => <SidebarItem key={item.label} item={item} />)}
         </div>
       </aside>
 
-      {/* ── Main ── */}
+      {/* ── Main column ── */}
       <div style={{ display: "grid", gridTemplateRows: "48px 1fr", height: "100vh", overflow: "hidden" }}>
 
-        {/* ── Top Nav Bar ── */}
-        <div style={{ borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 18px", background: "rgba(255,255,255,0.01)" }}>
-          <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
-            {/* Back pill */}
-            <Link href="/" style={{ textDecoration: "none" }}>
-              <motion.div whileHover={{ borderColor: C.borderHover }} whileTap={{ scale: 0.97 }}
-                style={{ height: "30px", padding: "0 14px", borderRadius: radius.full, border: `1px solid ${C.border}`, background: C.surface, color: C.textMuted, fontSize: "13px", display: "inline-flex", alignItems: "center", gap: "6px", cursor: "pointer", transition: "border-color 0.15s ease" }}
-              >← Back</motion.div>
-            </Link>
-
-            {/* Story Engine badge */}
-            <div style={{ height: "30px", padding: "0 12px", borderRadius: radius.full, border: `1px solid ${C.accentBorder}`, background: C.accentSoft, color: "#c4b5fd", fontSize: "13px", display: "inline-flex", alignItems: "center", gap: "7px", fontWeight: 500 }}>
-              <span style={{ width: "7px", height: "7px", borderRadius: "999px", background: C.accent, boxShadow: `0 0 8px ${C.accent}` }} />
-              Story Engine
-            </div>
-
-            {/* Tab spacer */}
-            <div style={{ width: "1px", height: "20px", background: C.border, margin: "0 4px" }} />
-
-            {["All", "Output", "Projects"].map((tab) => (
-              <motion.button key={tab} whileTap={{ scale: 0.95 }} onClick={() => setActiveTab(tab)}
-                style={{ height: "30px", padding: "0 14px", borderRadius: "9px", border: `1px solid ${activeTab === tab ? C.accentBorder : "transparent"}`, background: activeTab === tab ? C.accentSoft : "transparent", color: activeTab === tab ? "#c4b5fd" : C.textMuted, cursor: "pointer", fontSize: "13px", fontFamily: "inherit", fontWeight: activeTab === tab ? 600 : 400, transition: "all 0.15s ease" }}
-              >{tab}</motion.button>
+        {/* ── Top Nav ── */}
+        <div style={{ borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center",
+          justifyContent: "space-between", padding: "0 18px", background: "rgba(255,255,255,0.01)" }}>
+          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+            {["All","Output","Projects"].map(tab => (
+              <motion.button key={tab} whileTap={{ scale: 0.95 }} onClick={() => setTopTab(tab)}
+                style={{ height: 30, padding: "0 14px", borderRadius: 9,
+                  border: `1px solid ${topTab === tab ? C.accentBorder : "transparent"}`,
+                  background: topTab === tab ? C.accentSoft : "transparent",
+                  color: topTab === tab ? "#c4b5fd" : C.textMuted, cursor: "pointer", fontSize: 13,
+                  fontFamily: "inherit", fontWeight: topTab === tab ? 600 : 400, transition: "all 0.15s ease" }}>
+                {tab}
+              </motion.button>
             ))}
           </div>
-
-          <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-            {[{ icon: Grid3X3, val: "grid" }, { icon: List, val: "list" }].map(({ icon: Icon, val }) => (
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            {[{icon:Grid3X3,val:"grid"},{icon:List,val:"list"}].map(({icon:Icon,val}) => (
               <motion.button key={val} whileTap={{ scale: 0.94 }} onClick={() => setAssetView(val)}
-                style={{ width: "34px", height: "34px", borderRadius: radius.sm, border: `1px solid ${C.border}`, background: assetView === val ? "rgba(255,255,255,0.08)" : "transparent", color: assetView === val ? C.text : C.textMuted, display: "grid", placeItems: "center", cursor: "pointer", transition: "all 0.15s ease" }}
-              ><Icon size={15} /></motion.button>
+                style={{ width: 34, height: 34, borderRadius: radius.sm, border: `1px solid ${C.border}`,
+                  background: assetView === val ? "rgba(255,255,255,0.08)" : "transparent",
+                  color: assetView === val ? C.text : C.textMuted, display: "grid", placeItems: "center",
+                  cursor: "pointer", transition: "all 0.15s ease" }}>
+                <Icon size={15} />
+              </motion.button>
             ))}
-            <motion.button whileHover={{ borderColor: C.borderHover }} whileTap={{ scale: 0.96 }}
-              style={{ height: "34px", padding: "0 14px", borderRadius: radius.sm, border: `1px solid ${C.border}`, background: C.surface, color: "rgba(255,255,255,0.8)", display: "inline-flex", alignItems: "center", gap: "7px", cursor: "pointer", fontSize: "13px", fontFamily: "inherit", transition: "border-color 0.15s ease" }}
-            ><Folder size={13} /> Assets</motion.button>
+            <motion.button whileHover={{ borderColor: C.borderHover }}
+              style={{ height: 34, padding: "0 14px", borderRadius: radius.sm, border: `1px solid ${C.border}`,
+                background: C.surface, color: "rgba(255,255,255,0.8)", display: "inline-flex",
+                alignItems: "center", gap: 7, cursor: "pointer", fontSize: 13, fontFamily: "inherit" }}>
+              <Folder size={13} /> Assets
+            </motion.button>
           </div>
         </div>
 
-        {/* ── Full-Height Split ── */}
-        <div style={{ display: "grid", gridTemplateColumns: "400px 1fr", height: "100%", overflow: "hidden" }}>
+        {/* ── Split ── */}
+        <div style={{ display: "grid", gridTemplateColumns: "380px 1fr", height: "100%", overflow: "hidden" }}>
 
-          {/* ── Left Panel — Editor ── */}
-          <div style={{ borderRight: `1px solid ${C.border}`, background: "linear-gradient(180deg, rgba(7,9,15,0.98), rgba(9,11,17,0.98))", padding: "16px", display: "grid", gridTemplateRows: "auto 1fr auto", gap: "12px", overflow: "hidden", height: "100%" }}>
+          {/* ══ LEFT PANEL ══ */}
+          <div style={{ borderRight: `1px solid ${C.border}`,
+            background: "linear-gradient(180deg,rgba(7,9,15,0.98),rgba(9,11,17,0.98))",
+            height: "100%", overflow: "hidden", display: "flex", flexDirection: "column",
+            padding: 16, gap: 12, boxSizing: "border-box" }}>
 
-            {/* Heading */}
-            <div style={{ borderBottom: `1px solid ${C.border}`, paddingBottom: "14px" }}>
-              <div style={{ color: C.text, fontWeight: 700, fontSize: "14px", position: "relative", display: "inline-block", paddingBottom: "4px" }}>
-                Create Story Project
-                <span style={{ position: "absolute", left: 0, bottom: "-15px", width: "100%", height: "2px", borderRadius: radius.full, background: `linear-gradient(90deg, ${C.indigo}, ${C.accent})` }} />
+            <div style={{ borderBottom: `1px solid ${C.border}`, paddingBottom: 14, flexShrink: 0 }}>
+              <div style={{ color: C.text, fontWeight: 700, fontSize: 14, position: "relative",
+                display: "inline-block", paddingBottom: 4 }}>
+                Image Generation
+                <span style={{ position: "absolute", left: 0, bottom: -15, width: "100%", height: 2,
+                  borderRadius: radius.full, background: `linear-gradient(90deg,${C.indigo},${C.accent})` }} />
               </div>
             </div>
 
-            {/* Form fields */}
-            <div style={{ display: "grid", gap: "10px", alignContent: "start", overflowY: "auto", paddingRight: "2px" }}>
-
-              {/* Title */}
-              <motion.input
-                whileFocus={{ borderColor: C.accentBorder }}
-                value={title} onChange={(e) => setTitle(e.target.value)}
-                placeholder="Project title (optional)"
-                style={{ width: "100%", height: "46px", padding: "0 14px", fontSize: "14px", borderRadius: radius.md, border: `1px solid ${C.border}`, background: C.surface, color: C.text, outline: "none", boxSizing: "border-box", fontFamily: "inherit", transition: "border-color 0.16s ease" }}
-              />
-
-              {/* Genre + Tone */}
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
-                <CustomSelect value={genre} onChange={setGenre} options={GENRES} />
-                <CustomSelect value={tone} onChange={setTone} options={TONES} />
+            <motion.button whileHover={{ borderColor: C.accentBorder }} whileTap={{ scale: 0.99 }}
+              style={{ width: "100%", padding: "10px 12px", borderRadius: radius.md, border: `1px solid ${C.border}`,
+                background: C.surface, color: C.text, display: "flex", alignItems: "center", gap: 10,
+                cursor: "pointer", fontFamily: "inherit", transition: "all 0.16s ease", flexShrink: 0 }}>
+              <div style={{ width: 34, height: 34, borderRadius: 10, flexShrink: 0,
+                background: "linear-gradient(135deg,#6D5CFF,#9d4edd)",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontWeight: 800, fontSize: 12, color: "#fff" }}>V1</div>
+              <div style={{ flex: 1, minWidth: 0, textAlign: "left" }}>
+                <div style={{ fontSize: 14, fontWeight: 700 }}>Kylor V1</div>
+                <div style={{ fontSize: 11.5, color: C.textMuted, whiteSpace: "nowrap",
+                  overflow: "hidden", textOverflow: "ellipsis" }}>Consistency · free multi-reference generation</div>
               </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+                <div style={{ fontSize: 10, padding: "2px 7px", borderRadius: 6,
+                  background: "rgba(124,58,237,0.2)", border: `1px solid ${C.accentBorder}`, color: "#c4b5fd" }}>FREE</div>
+                <ChevronDown size={14} color={C.textMuted} />
+              </div>
+            </motion.button>
 
-              {/* Idea textarea */}
-              <div style={{ borderRadius: radius.md, border: `1px solid ${C.border}`, background: C.surface, padding: "12px", display: "grid", gap: "0" }}>
-                <textarea
-                  ref={ideaRef}
-                  value={idea}
-                  onChange={(e) => {
-                    setIdea(e.target.value);
-                    const el = e.target;
-                    el.style.height = "auto";
-                    el.style.height = el.scrollHeight + "px";
-                  }}
-                  placeholder="Enter your film idea..."
-                  rows={6}
-                  style={{ width: "100%", border: "none", background: "transparent", color: C.text, resize: "none", fontFamily: "inherit", fontSize: "14px", lineHeight: 1.7, outline: "none", boxSizing: "border-box", minHeight: "120px" }}
-                />
-                <div style={{ paddingTop: "10px", borderTop: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                  <span style={{ fontSize: "11px", color: C.textDim }}>{idea.length} chars</span>
-                  <motion.button whileTap={{ scale: 0.92 }}
-                    onClick={() => setIdea("")}
-                    style={{ fontSize: "11px", color: C.textMuted, background: "transparent", border: "none", cursor: idea ? "pointer" : "default", fontFamily: "inherit", opacity: idea ? 1 : 0.3 }}
-                  >Clear</motion.button>
+            <div style={{ flexShrink: 0 }}><DropZone files={refImages} onFiles={setRefImages} /></div>
+
+            <div style={{ flex: 1, minHeight: 0, borderRadius: radius.md, border: `1px solid ${C.border}`,
+              background: C.surface, padding: 12, display: "flex", flexDirection: "column" }}>
+              <textarea ref={textareaRef} value={prompt}
+                onChange={e => setPrompt(e.target.value.slice(0, charLimit))}
+                placeholder="Describe the image you want to create..."
+                style={{ flex: 1, width: "100%", border: "none", background: "transparent", color: C.text,
+                  resize: "none", fontFamily: "inherit", fontSize: 13.5, lineHeight: 1.7,
+                  outline: "none", minHeight: 0, boxSizing: "border-box" }} />
+
+              <AnimatePresence>
+                {negativeOpen && (
+                  <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }}
+                    exit={{ opacity: 0, height: 0 }} style={{ overflow: "hidden" }}>
+                    <div style={{ borderTop: `1px solid ${C.border}`, marginTop: 8, paddingTop: 8 }}>
+                      <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.08em",
+                        textTransform: "uppercase", color: "#f87171", marginBottom: 6 }}>Negative Prompt</div>
+                      <textarea value={negativePrompt} onChange={e => setNegativePrompt(e.target.value)}
+                        placeholder="What to avoid: blurry, distorted, watermark..." rows={3}
+                        style={{ width: "100%", border: "1px solid rgba(248,113,113,0.25)",
+                          background: "rgba(248,113,113,0.04)", color: C.text, borderRadius: radius.sm,
+                          padding: "8px 10px", resize: "none", fontFamily: "inherit", fontSize: 12.5,
+                          lineHeight: 1.6, outline: "none", boxSizing: "border-box" }} />
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between",
+                marginTop: 10, paddingTop: 10, borderTop: `1px solid ${C.border}`, flexShrink: 0 }}>
+                <div style={{ display: "flex", gap: 6 }}>
+                  <motion.button whileTap={{ scale: 0.95 }} onClick={() => setStylesOpen(p => !p)}
+                    style={{ height: 30, padding: "0 12px", borderRadius: 9,
+                      border: `1px solid ${activeStyle ? activeStyle.color + "55" : C.accentBorder}`,
+                      background: activeStyle ? activeStyle.color + "18" : C.accentSoft,
+                      color: activeStyle ? C.text : "#a78bfa", fontSize: 12, fontWeight: 600,
+                      cursor: "pointer", fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: 5 }}>
+                    {activeStyle ? <><Check size={10} />{activeStyle.label}</> : "Styles"}
+                  </motion.button>
+                  <motion.button whileTap={{ scale: 0.95 }} onClick={() => setNegativeOpen(p => !p)}
+                    style={{ height: 30, padding: "0 12px", borderRadius: 9,
+                      border: `1px solid ${negativeOpen || negativePrompt ? "rgba(248,113,113,0.3)" : C.border}`,
+                      background: negativeOpen || negativePrompt ? "rgba(248,113,113,0.08)" : C.surface,
+                      color: negativeOpen || negativePrompt ? "#fca5a5" : C.textMuted,
+                      fontSize: 12, cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s ease" }}>
+                    Negative{negativePrompt ? " ✓" : ""}
+                  </motion.button>
                 </div>
-              </div>
-
-              {/* Quick genre chips */}
-              <div>
-                <div style={{ fontSize: "11px", color: C.textMuted, marginBottom: "8px", fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase" }}>Quick Genre</div>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
-                  {GENRES.map((g) => (
-                    <motion.button key={g} whileTap={{ scale: 0.95 }} onClick={() => setGenre(g)}
-                      style={{ height: "28px", padding: "0 12px", borderRadius: radius.full, border: `1px solid ${genre === g ? C.accentBorder : C.border}`, background: genre === g ? C.accentSoft : "transparent", color: genre === g ? "#c4b5fd" : C.textMuted, fontSize: "12px", cursor: "pointer", fontFamily: "inherit", transition: "all 0.14s ease" }}
-                    >{g}</motion.button>
-                  ))}
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <span style={{ fontSize: 11, color: prompt.length > charLimit * 0.9 ? "#f87171" : C.textDim }}>
+                    {prompt.length}/{charLimit}
+                  </span>
+                  <motion.button whileTap={{ scale: 0.92 }} title="Enhance prompt"
+                    onClick={() => { if (prompt.trim()) setPrompt(p => p.trim() + ", ultra detailed, cinematic lighting, 8K"); }}
+                    style={{ width: 32, height: 32, borderRadius: 10, border: `1px solid ${C.accentBorder}`,
+                      background: C.accentSoft, color: "#a78bfa", display: "grid", placeItems: "center", cursor: "pointer" }}>
+                    <Sparkles size={14} />
+                  </motion.button>
                 </div>
               </div>
             </div>
 
-            {/* Generate button */}
-            <div style={{ paddingTop: "12px", borderTop: `1px solid ${C.border}` }}>
-              <motion.button
-                whileHover={{ boxShadow: "0 18px 40px rgba(124,58,237,0.38)" }}
-                whileTap={{ scale: 0.98 }}
-                onClick={handleGenerate}
-                disabled={loading || !idea.trim()}
-                style={{
-                  width: "100%", height: "46px", borderRadius: radius.md, border: "none",
-                  background: idea.trim() && !loading ? "linear-gradient(135deg, #4f46e5, #7c3aed)" : "rgba(255,255,255,0.06)",
-                  color: idea.trim() && !loading ? "white" : C.textMuted,
-                  cursor: idea.trim() && !loading ? "pointer" : "default",
-                  fontSize: "14px", fontWeight: 700,
-                  boxShadow: idea.trim() && !loading ? "0 14px 32px rgba(124,58,237,0.28)" : "none",
-                  display: "inline-flex", alignItems: "center", justifyContent: "center",
-                  gap: "8px", fontFamily: "inherit", transition: "all 0.2s ease",
-                }}
-              >
-                <AnimatePresence mode="wait">
-                  {loading ? (
-                    <motion.div key="loading" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                      <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: "linear" }}><Sparkles size={15} /></motion.div>
-                      Generating Script…
-                    </motion.div>
-                  ) : (
-                    <motion.div key="idle" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                      <Wand2 size={15} /> Generate Script <ChevronRight size={15} />
+            {/* Settings + Generate */}
+            <div style={{ position: "relative", flexShrink: 0 }}>
+              <div ref={stylesRef}>
+                <AnimatePresence>
+                  {stylesOpen && <StylesPicker value={selectedStyle} onChange={setSelectedStyle} onClose={() => setStylesOpen(false)} />}
+                </AnimatePresence>
+              </div>
+              <div ref={panelRef}>
+                <AnimatePresence>
+                  {settingsOpen && (
+                    <motion.div initial={{ opacity: 0, y: 16, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 10, scale: 0.97 }} transition={{ duration: 0.22, ease: [0.22,1,0.36,1] }}
+                      style={{ position: "absolute", left: 0, right: 0, bottom: "calc(100% + 8px)", zIndex: 10,
+                        borderRadius: 18, border: `1px solid ${C.border}`, background: "rgba(14,16,26,0.99)",
+                        backdropFilter: "blur(16px)", boxShadow: "0 28px 80px rgba(0,0,0,0.5)",
+                        padding: 16, display: "grid", gap: 16 }}>
+                      <div>
+                        <div style={{ fontSize: 11, color: C.textMuted, marginBottom: 8, fontWeight: 600,
+                          letterSpacing: "0.08em", textTransform: "uppercase" }}>Mode</div>
+                        <SegmentControl options={MODES} value={mode} onChange={setMode} />
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 11, color: C.textMuted, marginBottom: 8, fontWeight: 600,
+                          letterSpacing: "0.08em", textTransform: "uppercase" }}>Aspect Ratio</div>
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 6 }}>
+                          {RATIOS.map(r => (
+                            <motion.button key={r} whileTap={{ scale: 0.95 }} onClick={() => setRatio(r)}
+                              style={{ height: 34, borderRadius: radius.sm,
+                                border: ratio === r ? `1px solid ${C.accentBorder}` : `1px solid ${C.border}`,
+                                background: ratio === r ? "linear-gradient(160deg,rgba(79,70,229,0.18),rgba(124,58,237,0.12))" : C.surface,
+                                color: ratio === r ? "white" : C.textMuted, fontSize: 12, cursor: "pointer",
+                                fontFamily: "inherit", transition: "all 0.15s ease" }}>
+                              {r}
+                            </motion.button>
+                          ))}
+                        </div>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 11, color: C.textMuted, marginBottom: 8, fontWeight: 600,
+                          letterSpacing: "0.08em", textTransform: "uppercase" }}>Output Count</div>
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 6 }}>
+                          {OUTPUTS.map(n => (
+                            <motion.button key={n} whileTap={{ scale: 0.95 }} onClick={() => setOutputCount(n)}
+                              style={{ height: 34, borderRadius: radius.sm,
+                                border: outputCount === n ? `1px solid ${C.accentBorder}` : `1px solid ${C.border}`,
+                                background: outputCount === n ? "linear-gradient(160deg,rgba(79,70,229,0.18),rgba(124,58,237,0.12))" : C.surface,
+                                color: outputCount === n ? "white" : C.textMuted, fontSize: 13, cursor: "pointer",
+                                fontFamily: "inherit", transition: "all 0.15s ease" }}>
+                              {n}
+                            </motion.button>
+                          ))}
+                        </div>
+                        <p style={{ margin: "8px 0 0", fontSize: 11, color: C.textMuted }}>Max 4 per generation</p>
+                      </div>
                     </motion.div>
                   )}
                 </AnimatePresence>
-              </motion.button>
-            </div>
-          </div>
 
-          {/* ── Right Panel — Output / Projects ── */}
-          <div style={{ background: "rgba(4,5,12,0.95)", display: "grid", gridTemplateRows: "48px 1fr", height: "100%", overflow: "hidden" }}>
-
-            {/* Output toolbar */}
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 18px", borderBottom: `1px solid ${C.border}`, background: "rgba(255,255,255,0.01)" }}>
-              <div style={{ fontSize: "15px", fontWeight: 700, color: C.text }}>
-                {showProjects ? "Saved Projects" : (structuredResult ? "Generated Output" : "Story Workspace")}
-              </div>
-              {!showProjects && (
-                <div style={{ display: "flex", gap: "8px" }}>
-                  <motion.button whileTap={{ scale: 0.96 }} onClick={handleCopy} disabled={!structuredResult}
-                    style={{ height: "32px", padding: "0 14px", borderRadius: radius.sm, border: `1px solid ${copied ? "rgba(34,197,94,0.4)" : C.border}`, background: copied ? "rgba(34,197,94,0.12)" : C.surface, color: copied ? "#86efac" : C.textMuted, cursor: structuredResult ? "pointer" : "default", fontSize: "12.5px", fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: "6px", transition: "all 0.16s ease" }}
-                  >
-                    {copied ? <><Check size={12} /> Copied!</> : <><Copy size={12} /> Copy Output</>}
+                <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: 10 }}>
+                  <motion.button whileHover={{ borderColor: C.borderHover }} whileTap={{ scale: 0.97 }}
+                    onClick={() => setSettingsOpen(p => !p)}
+                    style={{ height: 46, padding: "0 14px", borderRadius: radius.md,
+                      border: `1px solid ${settingsOpen ? C.accentBorder : C.border}`,
+                      background: settingsOpen ? C.accentSoft : "#0d0f18", color: "rgba(255,255,255,0.85)",
+                      display: "flex", alignItems: "center", gap: 8, cursor: "pointer",
+                      fontSize: 13, fontFamily: "inherit", whiteSpace: "nowrap", transition: "all 0.15s ease" }}>
+                    <Settings size={14} />
+                    <span>{mode} · {ratio} · ×{outputCount}</span>
+                    <motion.div animate={{ rotate: settingsOpen ? 180 : 0 }} transition={{ duration: 0.2 }}>
+                      <ChevronDown size={14} />
+                    </motion.div>
                   </motion.button>
-                  <motion.button whileTap={{ scale: 0.96 }} onClick={handleSaveProject} disabled={!structuredResult || saving}
-                    style={{ height: "32px", padding: "0 14px", borderRadius: radius.sm, border: `1px solid ${C.border}`, background: C.surface, color: C.textMuted, cursor: structuredResult && !saving ? "pointer" : "default", fontSize: "12.5px", fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: "6px" }}
-                  ><Save size={12} /> {saving ? "Saving…" : "Save Project"}</motion.button>
-                  <motion.button whileTap={{ scale: 0.96 }} onClick={handleNewProject}
-                    style={{ height: "32px", padding: "0 14px", borderRadius: radius.sm, border: `1px solid ${C.border}`, background: C.surface, color: C.textMuted, cursor: "pointer", fontSize: "12.5px", fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: "6px" }}
-                  ><Plus size={12} /> New Project</motion.button>
+
+                  <motion.button
+                    whileHover={prompt.trim() && !generating ? { boxShadow: "0 18px 40px rgba(124,58,237,0.42)" } : {}}
+                    whileTap={prompt.trim() && !generating ? { scale: 0.98 } : {}}
+                    onClick={handleGenerate} disabled={generating}
+                    style={{ height: 46, width: "100%", borderRadius: radius.md, border: "none",
+                      background: prompt.trim() && !generating ? "linear-gradient(135deg,#4f46e5,#7c3aed)" : "rgba(255,255,255,0.06)",
+                      color: prompt.trim() && !generating ? "white" : C.textMuted,
+                      cursor: prompt.trim() && !generating ? "pointer" : "default",
+                      fontSize: 14, fontWeight: 700,
+                      boxShadow: prompt.trim() && !generating ? "0 10px 28px rgba(124,58,237,0.28)" : "none",
+                      display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8,
+                      fontFamily: "inherit", transition: "all 0.2s ease" }}>
+                    <AnimatePresence mode="wait">
+                      {generating ? (
+                        <motion.span key="gen" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                          style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: "linear" }}>
+                            <Zap size={15} />
+                          </motion.div>
+                          Generating…
+                        </motion.span>
+                      ) : (
+                        <motion.span key="idle" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                          style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <Wand2 size={15} /> Generate <ChevronRight size={15} />
+                        </motion.span>
+                      )}
+                    </AnimatePresence>
+                  </motion.button>
                 </div>
+              </div>
+            </div>
+          </div>
+
+          {/* ══ RIGHT PANEL ══ */}
+          <div style={{ background: "rgba(4,5,12,0.95)", display: "flex", flexDirection: "column",
+            height: "100%", overflow: "hidden" }}>
+
+            {/* Notification bar */}
+            <AnimatePresence>
+              {notifState === "idle" && (
+                <motion.div key="notif-idle" initial={{ height: 44 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.2 }}
+                  style={{ borderBottom: `1px solid ${C.border}`, background: "#12141e", padding: "0 16px",
+                    display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10,
+                    overflow: "hidden", flexShrink: 0, height: 44 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, color: "rgba(255,255,255,0.75)", fontSize: 13 }}>
+                    <Bell size={13} color={C.textMuted} />
+                    <span>Turn on notifications for generation updates.</span>
+                    <button onClick={handleAllowNotifications}
+                      style={{ border: "none", background: "transparent", color: "#a78bfa",
+                        cursor: "pointer", fontWeight: 700, fontSize: 13, fontFamily: "inherit" }}>Allow</button>
+                  </div>
+                  <motion.button whileTap={{ scale: 0.9 }} onClick={() => setNotifState("dismissed")}
+                    style={{ border: "none", background: "transparent", color: C.textMuted,
+                      cursor: "pointer", display: "grid", placeItems: "center" }}>
+                    <X size={14} />
+                  </motion.button>
+                </motion.div>
               )}
+              {notifState === "granted" && (
+                <motion.div key="notif-ok" initial={{ height: 0, opacity: 0 }} animate={{ height: 44, opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.2 }}
+                  style={{ borderBottom: `1px solid ${C.border}`, background: "rgba(34,197,94,0.07)", padding: "0 16px",
+                    display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, overflow: "hidden", flexShrink: 0 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#86efac", fontSize: 13 }}>
+                    <Check size={13} /> Notifications enabled — you'll be notified when generation completes.
+                  </div>
+                  <button onClick={() => setNotifState("dismissed")} style={{ border: "none", background: "transparent", color: C.textMuted, cursor: "pointer" }}>
+                    <X size={14} />
+                  </button>
+                </motion.div>
+              )}
+              {notifState === "denied" && (
+                <motion.div key="notif-denied" initial={{ height: 0, opacity: 0 }} animate={{ height: 44, opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.2 }}
+                  style={{ borderBottom: `1px solid ${C.border}`, background: "rgba(239,68,68,0.07)", padding: "0 16px",
+                    display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, overflow: "hidden", flexShrink: 0 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#fca5a5", fontSize: 13 }}>
+                    <BellOff size={13} /> Notifications blocked — enable them in your browser settings.
+                  </div>
+                  <button onClick={() => setNotifState("dismissed")} style={{ border: "none", background: "transparent", color: C.textMuted, cursor: "pointer" }}>
+                    <X size={14} />
+                  </button>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Filter bar */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between",
+              padding: "0 16px", borderBottom: `1px solid ${C.border}`, height: 48, flexShrink: 0 }}>
+              <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                {CONTENT_TABS.map(tab => (
+                  <motion.button key={tab} whileTap={{ scale: 0.95 }} onClick={() => setContentFilter(tab)}
+                    style={{ height: 28, padding: "0 12px", borderRadius: 8,
+                      border: `1px solid ${contentFilter === tab ? C.border : "transparent"}`,
+                      background: contentFilter === tab ? "rgba(255,255,255,0.09)" : "transparent",
+                      color: contentFilter === tab ? C.text : C.textMuted, cursor: "pointer",
+                      fontSize: 12.5, fontFamily: "inherit", transition: "all 0.14s ease",
+                      display: "inline-flex", alignItems: "center", gap: 5 }}>
+                    {tab === "Videos" && <Video size={11} />}
+                    {tab === "Audio"  && <Music size={11} />}
+                    {tab === "Images" && <ImageIcon size={11} />}
+                    {tab}
+                  </motion.button>
+                ))}
+                <label style={{ display: "flex", alignItems: "center", gap: 6, marginLeft: 6,
+                  fontSize: 12.5, color: favoritesOnly ? "#a78bfa" : C.textMuted, cursor: "pointer" }}>
+                  <input type="checkbox" checked={favoritesOnly} onChange={e => setFavoritesOnly(e.target.checked)}
+                    style={{ accentColor: C.accent }} />
+                  Favorites
+                </label>
+              </div>
+              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                {groups.length > 0 && (
+                  <motion.button whileTap={{ scale: 0.95 }} onClick={clearAll}
+                    style={{ height: 28, padding: "0 10px", borderRadius: 8,
+                      border: "1px solid rgba(248,113,113,0.25)", background: "rgba(248,113,113,0.07)",
+                      color: "#fca5a5", fontSize: 11.5, cursor: "pointer", fontFamily: "inherit",
+                      display: "inline-flex", alignItems: "center", gap: 5 }}>
+                    <Trash2 size={11} /> Clear all
+                  </motion.button>
+                )}
+                <motion.button whileHover={{ borderColor: C.borderHover }}
+                  style={{ height: 28, padding: "0 10px", borderRadius: 8, border: `1px solid ${C.border}`,
+                    background: C.surface, color: "rgba(255,255,255,0.8)", display: "inline-flex",
+                    alignItems: "center", gap: 5, cursor: "pointer", fontSize: 12, fontFamily: "inherit" }}>
+                  <Folder size={12} /> Assets
+                </motion.button>
+              </div>
             </div>
 
-            {/* Content canvas */}
-            <div style={{ overflow: "auto", padding: "20px", minHeight: 0, height: "100%" }}>
+            {/* ── Scrollable feed ── */}
+            <div ref={canvasRef} style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
 
-              {/* ── Projects view ── */}
-              {showProjects ? (
-                <div>
-                  {projects.length === 0 ? (
-                    <div style={{ height: "100%", display: "grid", placeItems: "center", paddingTop: "80px" }}>
-                      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} style={{ textAlign: "center", maxWidth: "280px" }}>
-                        <div style={{ width: "64px", height: "64px", borderRadius: "999px", margin: "0 auto 16px", display: "grid", placeItems: "center", border: `1px solid ${C.border}`, background: C.surface }}>
-                          <FolderKanban size={26} color={C.textDim} />
+              {/* Generating banner (non-blocking) */}
+              <AnimatePresence>
+                {generating && (
+                  <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }}
+                    exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.3 }} style={{ overflow: "hidden" }}>
+                    <div style={{ margin: "16px 16px 0", borderRadius: 16,
+                      border: `1px solid ${C.accentBorder}`, background: "rgba(124,58,237,0.06)",
+                      padding: "18px 20px", display: "flex", alignItems: "center", gap: 16 }}>
+                      <div style={{ position: "relative", width: 48, height: 48, flexShrink: 0 }}>
+                        <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 2, ease: "linear" }}
+                          style={{ position: "absolute", inset: 0, borderRadius: 999,
+                            border: `2px solid ${C.accent}`, borderTopColor: "transparent" }} />
+                        <motion.div animate={{ rotate: -360 }} transition={{ repeat: Infinity, duration: 3, ease: "linear" }}
+                          style={{ position: "absolute", inset: 6, borderRadius: 999,
+                            border: `1.5px solid ${C.accentBorder}`, borderBottomColor: "transparent" }} />
+                        <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center" }}>
+                          <Sparkles size={14} color="#a78bfa" />
                         </div>
-                        <p style={{ margin: "0 0 6px", color: C.text, fontSize: "15px", fontWeight: 600 }}>No saved projects</p>
-                        <p style={{ margin: 0, color: C.textMuted, fontSize: "13px", lineHeight: 1.6 }}>Generate and save a script to see it here.</p>
-                      </motion.div>
-                    </div>
-                  ) : (
-                    <div style={{ display: "grid", gap: "8px" }}>
-                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "6px" }}>
-                        <span style={{ fontSize: "12px", color: C.textMuted, fontWeight: 500 }}>{projects.length} project{projects.length !== 1 ? "s" : ""}</span>
                       </div>
-                      {projects.map((project, i) => (
-                        <motion.div key={project.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}>
-                          <ProjectCard project={project} onOpen={handleLoadProject} onDelete={handleDeleteProject} />
-                        </motion.div>
-                      ))}
+                      <div>
+                        <div style={{ fontSize: 14, fontWeight: 700, color: C.text, marginBottom: 3 }}>
+                          Generating your image…
+                        </div>
+                        <div style={{ fontSize: 12, color: C.textMuted }}>
+                          {mode} · {ratio}{activeStyle ? ` · ${activeStyle.label}` : ""} · {outputCount} output{outputCount > 1 ? "s" : ""}
+                        </div>
+                      </div>
                     </div>
-                  )}
-                </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
 
-              ) : loading ? (
-                /* ── Generating state ── */
-                <div style={{ height: "100%", display: "grid", placeItems: "center" }}>
+              {/* Videos / Audio empty states */}
+              {!generating && contentFilter === "Videos" && (
+                <div style={{ height: "80vh", display: "grid", placeItems: "center" }}>
                   <div style={{ textAlign: "center" }}>
-                    <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 2, ease: "linear" }}
-                      style={{ width: "56px", height: "56px", borderRadius: "999px", margin: "0 auto 16px", border: `2px solid ${C.accent}`, borderTopColor: "transparent" }}
-                    />
-                    <p style={{ margin: "0 0 6px", color: C.text, fontSize: "15px", fontWeight: 600 }}>Generating your script…</p>
-                    <p style={{ margin: 0, color: C.textMuted, fontSize: "13px" }}>{genre} · {tone}</p>
+                    <div style={{ width: 64, height: 64, borderRadius: 999, margin: "0 auto 14px",
+                      display: "grid", placeItems: "center", border: `1px solid ${C.border}`, background: C.surface }}>
+                      <Video size={26} color={C.textDim} />
+                    </div>
+                    <p style={{ margin: "0 0 4px", color: C.text, fontSize: 15, fontWeight: 600 }}>Video Generation</p>
+                    <p style={{ margin: 0, color: C.textMuted, fontSize: 13 }}>Coming soon.</p>
                   </div>
                 </div>
-
-              ) : structuredResult ? (
-                /* ── Output view ── */
-                <div style={{ maxWidth: "720px" }}>
-                  {/* Header card */}
-                  <div style={{ borderRadius: radius.lg, border: `1px solid ${C.accentBorder}`, background: `linear-gradient(135deg, rgba(79,70,229,0.12), rgba(124,58,237,0.08))`, padding: "18px 20px", marginBottom: "20px" }}>
-                    <div style={{ fontSize: "22px", fontWeight: 800, letterSpacing: "-0.02em", marginBottom: "8px" }}>{structuredResult.title}</div>
-                    <div style={{ display: "flex", gap: "8px" }}>
-                      {[structuredResult.genre, structuredResult.tone].map((tag) => (
-                        <span key={tag} style={{ padding: "3px 10px", borderRadius: "6px", border: `1px solid ${C.accentBorder}`, background: C.accentSoft, fontSize: "12px", color: "#c4b5fd", fontWeight: 500 }}>{tag}</span>
-                      ))}
+              )}
+              {!generating && contentFilter === "Audio" && (
+                <div style={{ height: "80vh", display: "grid", placeItems: "center" }}>
+                  <div style={{ textAlign: "center" }}>
+                    <div style={{ width: 64, height: 64, borderRadius: 999, margin: "0 auto 14px",
+                      display: "grid", placeItems: "center", border: `1px solid ${C.border}`, background: C.surface }}>
+                      <Music size={26} color={C.textDim} />
                     </div>
-                  </div>
-
-                  {/* Content sections */}
-                  <div style={{ display: "grid", gap: "20px" }}>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
-                      <div style={{ borderRadius: radius.md, border: `1px solid ${C.border}`, background: C.surface, padding: "16px" }}>
-                        <Section label="Logline">{structuredResult.logline}</Section>
-                      </div>
-                      <div style={{ borderRadius: radius.md, border: `1px solid ${C.border}`, background: C.surface, padding: "16px" }}>
-                        <Section label="Theme">{structuredResult.theme}</Section>
-                      </div>
-                    </div>
-
-                    <div style={{ borderRadius: radius.md, border: `1px solid ${C.border}`, background: C.surface, padding: "16px" }}>
-                      <Section label="Main Characters">
-                        <ul style={{ margin: "6px 0 0", paddingLeft: "18px", display: "grid", gap: "4px" }}>
-                          {structuredResult.characters?.map((c, i) => <li key={i}>{c}</li>)}
-                        </ul>
-                      </Section>
-                    </div>
-
-                    {[["Act 1", structuredResult.act1], ["Act 2", structuredResult.act2], ["Act 3", structuredResult.act3]].map(([label, content]) => (
-                      <div key={label} style={{ borderRadius: radius.md, border: `1px solid ${C.border}`, background: C.surface, padding: "16px" }}>
-                        <Section label={label}>{content}</Section>
-                      </div>
-                    ))}
-
-                    <div style={{ borderRadius: radius.md, border: `1px solid ${C.border}`, background: C.surface, padding: "16px" }}>
-                      <Section label="Scene Breakdown">
-                        <ol style={{ margin: "6px 0 0", paddingLeft: "18px", display: "grid", gap: "6px" }}>
-                          {structuredResult.sceneBreakdown?.map((s, i) => <li key={i}>{s}</li>)}
-                        </ol>
-                      </Section>
-                    </div>
+                    <p style={{ margin: "0 0 4px", color: C.text, fontSize: 15, fontWeight: 600 }}>Audio Generation</p>
+                    <p style={{ margin: 0, color: C.textMuted, fontSize: 13 }}>Coming soon.</p>
                   </div>
                 </div>
+              )}
 
-              ) : (
-                /* ── Empty / default workspace ── */
-                <div style={{ maxWidth: "720px" }}>
-                  <div style={{ borderRadius: radius.lg, border: `1px solid ${C.border}`, background: C.surface, padding: "20px", marginBottom: "16px" }}>
-                    <div style={{ fontSize: "18px", fontWeight: 700, marginBottom: "14px", color: C.text }}>Story Workspace</div>
-                    <div style={{ display: "grid", gap: "14px" }}>
-                      <div>
-                        <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: C.textMuted, marginBottom: "4px" }}>Title</div>
-                        <div style={{ fontSize: "15px", color: title ? C.text : C.textDim }}>{title || "Untitled Project"}</div>
-                      </div>
-                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
-                        <div>
-                          <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: C.textMuted, marginBottom: "4px" }}>Genre</div>
-                          <div style={{ fontSize: "15px", color: C.text }}>{genre}</div>
-                        </div>
-                        <div>
-                          <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: C.textMuted, marginBottom: "4px" }}>Tone</div>
-                          <div style={{ fontSize: "15px", color: C.text }}>{tone}</div>
-                        </div>
-                      </div>
-                      <div>
-                        <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: C.textMuted, marginBottom: "4px" }}>Idea</div>
-                        <div style={{ fontSize: "14.5px", color: idea ? "rgba(255,255,255,0.82)" : C.textDim, lineHeight: 1.7 }}>{idea || "Your idea will appear here."}</div>
-                      </div>
-                      <div>
-                        <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: C.textMuted, marginBottom: "4px" }}>Preview</div>
-                        <div style={{ fontSize: "14px", color: C.textDim, lineHeight: 1.7 }}>Generate a script to preview your story here.</div>
-                      </div>
+              {/* Empty state */}
+              {!generating && (contentFilter === "All" || contentFilter === "Images") && filteredGroups.length === 0 && (
+                <div style={{ height: "80vh", display: "grid", placeItems: "center" }}>
+                  <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
+                    style={{ textAlign: "center", maxWidth: 300 }}>
+                    <div style={{ width: 72, height: 72, borderRadius: 999, margin: "0 auto 18px",
+                      display: "grid", placeItems: "center", border: `1px solid ${C.border}`, background: C.surface }}>
+                      <ImageIcon size={30} color={C.textDim} />
                     </div>
-                  </div>
+                    <p style={{ margin: "0 0 8px", color: C.text, fontSize: 16, fontWeight: 700 }}>Your canvas is empty</p>
+                    <p style={{ margin: "0 0 20px", color: C.textMuted, fontSize: 13, lineHeight: 1.7 }}>
+                      Describe what you want to create and hit Generate — your images will be auto-saved and reappear after refresh.
+                    </p>
+                    <motion.button whileTap={{ scale: 0.96 }} onClick={() => textareaRef.current?.focus()}
+                      style={{ height: 36, padding: "0 18px", borderRadius: radius.md,
+                        border: `1px solid ${C.accentBorder}`, background: C.accentSoft, color: "#c4b5fd",
+                        fontSize: 13, cursor: "pointer", fontFamily: "inherit",
+                        display: "inline-flex", alignItems: "center", gap: 7 }}>
+                      <Plus size={13} /> Start with a prompt
+                    </motion.button>
+                  </motion.div>
+                </div>
+              )}
 
-                  {/* Tips */}
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "10px" }}>
-                    {[
-                      { icon: Wand2, label: "AI-Powered", desc: "Structured script with acts & scenes" },
-                      { icon: Save, label: "Save Projects", desc: "Store and revisit your stories" },
-                      { icon: Clock, label: "Fast Output", desc: "Full script generated in seconds" },
-                    ].map(({ icon: Icon, label, desc }) => (
-                      <div key={label} style={{ borderRadius: radius.md, border: `1px solid ${C.border}`, background: C.surface, padding: "14px" }}>
-                        <div style={{ width: "32px", height: "32px", borderRadius: "10px", background: C.accentSoft, border: `1px solid ${C.accentBorder}`, display: "grid", placeItems: "center", marginBottom: "10px" }}>
-                          <Icon size={15} color="#a78bfa" />
-                        </div>
-                        <div style={{ fontSize: "13px", fontWeight: 600, color: C.text, marginBottom: "4px" }}>{label}</div>
-                        <div style={{ fontSize: "12px", color: C.textMuted, lineHeight: 1.5 }}>{desc}</div>
-                      </div>
-                    ))}
-                  </div>
+              {/* Feed */}
+              {(contentFilter === "All" || contentFilter === "Images") && filteredGroups.length > 0 && (
+                <div style={{ padding: "16px 16px 64px", display: "flex", flexDirection: "column", gap: 16 }}>
+                  {filteredGroups.map((group, idx) => (
+                    <GenerationCard key={group.id} group={group}
+                      isLatest={idx === 0 && !generating}
+                      generating={generating}
+                      onDelete={deleteGroup}
+                      onToggleFavorite={toggleFavorite}
+                      onDownload={handleDownload}
+                      onShare={handleShare}
+                      onVariation={handleVariation}
+                      onOpenLightbox={(img, promptText) => setLightboxItem({ ...img, promptText })} />
+                  ))}
                 </div>
               )}
             </div>
           </div>
-
         </div>
       </div>
+
+      {/* ── Lightbox ── */}
+      <AnimatePresence>
+        {lightboxItem && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}
+            onClick={() => setLightboxItem(null)}
+            style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,0.92)",
+              backdropFilter: "blur(12px)", display: "flex", alignItems: "center",
+              justifyContent: "center", padding: 24 }}>
+            <motion.div initial={{ scale: 0.92, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.92, opacity: 0 }} transition={{ duration: 0.25, ease: [0.22,1,0.36,1] }}
+              onClick={e => e.stopPropagation()}
+              style={{ position: "relative", maxWidth: "90vw", maxHeight: "90vh",
+                borderRadius: radius.xl, overflow: "hidden", boxShadow: "0 40px 100px rgba(0,0,0,0.7)" }}>
+              {lightboxItem.url ? (
+                <img src={lightboxItem.url} alt={lightboxItem.promptText}
+                  style={{ display: "block", maxWidth: "90vw", maxHeight: "88vh", objectFit: "contain" }} />
+              ) : (
+                <div style={{ width: 600, height: 700,
+                  background: CARD_GRADIENTS[(lightboxItem.id || 0) % CARD_GRADIENTS.length],
+                  display: "grid", placeItems: "center" }}>
+                  <ImageIcon size={60} color="rgba(255,255,255,0.15)" />
+                </div>
+              )}
+              <div style={{ position: "absolute", top: 14, right: 14, display: "flex", gap: 8 }}>
+                {[
+                  { Icon: Download, action: () => handleDownload(lightboxItem) },
+                  { Icon: Share2,   action: () => handleShare(lightboxItem) },
+                  { Icon: X,        action: () => setLightboxItem(null) },
+                ].map(({ Icon, action }, i) => (
+                  <motion.button key={i} whileTap={{ scale: 0.9 }} onClick={action}
+                    style={{ width: 40, height: 40, borderRadius: 12, border: "1px solid rgba(255,255,255,0.12)",
+                      background: "rgba(0,0,0,0.6)", backdropFilter: "blur(8px)", color: "white",
+                      display: "grid", placeItems: "center", cursor: "pointer" }}>
+                    <Icon size={15} />
+                  </motion.button>
+                ))}
+              </div>
+              {lightboxItem.promptText && (
+                <div style={{ position: "absolute", bottom: 0, left: 0, right: 0,
+                  background: "linear-gradient(to top,rgba(0,0,0,0.8),transparent)", padding: "40px 20px 18px" }}>
+                  <p style={{ margin: 0, fontSize: 14, fontWeight: 600, color: "white" }}>{lightboxItem.promptText}</p>
+                </div>
+              )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </main>
   );
 }
