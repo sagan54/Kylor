@@ -75,31 +75,35 @@ const CHARACTER_PACK_VIEWS = [
   {
     key: "front",
     label: "Front Full-Body",
-    shot: "front full-body view, neutral standing pose, facing camera, plain studio background",
+    shot: "single person, front-facing, full-body, standing straight, arms relaxed, centered composition",
+    size: "1024x1536",
   },
   {
-  key: "left",
-  label: "Left Profile Full-Body",
-  shot: "camera sees the character's left side profile, character facing toward the left edge of the frame, full-body, neutral standing pose, plain studio background",
-},
-
+    key: "left",
+    label: "Left Profile Full-Body",
+    shot: "single person, strict left side profile, full-body, facing the left edge of the frame, standing straight, arms relaxed, centered composition",
+    size: "1024x1536",
+  },
   {
-  key: "right",
-  label: "Right Profile Full-Body",
-  shot: "camera sees the character's right side profile, character facing toward the right edge of the frame, full-body, neutral standing pose, plain studio background",
-},
-
+    key: "right",
+    label: "Right Profile Full-Body",
+    shot: "single person, strict right side profile, full-body, facing the right edge of the frame, standing straight, arms relaxed, centered composition",
+    size: "1024x1536",
+  },
   {
     key: "back",
     label: "Back Full-Body",
-    shot: "back full-body view, neutral standing pose, plain studio background",
+    shot: "single person, full-body back view, facing away from camera, standing straight, arms relaxed, centered composition",
+    size: "1024x1536",
   },
   {
     key: "closeup",
     label: "Upper-Body Close-Up",
-    shot: "upper-body close-up portrait, facing camera, plain studio background",
+    shot: "single person, upper-body close-up portrait, facing camera, centered composition",
+    size: "1024x1024",
   },
 ];
+
 
 
 // ─── Helper: file → base64 ────────────────────────────────────────────────────
@@ -778,23 +782,12 @@ const uid = user?.id ?? null;
   const effectiveRefs = activeChar.refEntries.length > 0 ? activeChar.refEntries : refEntries;
   const hasRefs = effectiveRefs.length > 0;
 
-  const basePrompt = [
-    hasRefs
-      ? `IMPORTANT: This is a specific real person named ${activeChar.name}. Preserve EXACTLY their unique facial bone structure, face shape, jawline, nose shape, lip shape, eye shape and color, eyebrow shape, skin tone. DO NOT change or idealise their face. Same person, same face, different reference angle only.`
-      : `Character reference sheet of the same person named ${activeChar.name}. Maintain the exact same identity, face, hairstyle, outfit, body type, and proportions across all views.`,
-    traitDesc ? `Physical traits: ${traitDesc}` : null,
-    activeChar.desc ? `Additional features: ${activeChar.desc}` : null,
-    "Lighting: soft studio",
-    extraPrompt.trim() || null,
-    "Photorealistic, ultra detailed, neutral pose, reference-sheet style, plain studio background, no text, no watermark.",
-  ].filter(Boolean).join(". ");
-
   const createdAt = new Date().toISOString();
 
   const placeholderOutputs = CHARACTER_PACK_VIEWS.map(view => ({
     id: `${activeCharId}-${view.key}-${Date.now()}`,
     charId: activeCharId,
-    prompt: `${basePrompt}. ${view.shot}.`,
+    prompt: view.shot,
     scene: view.label,
     url: null,
     createdAt,
@@ -808,7 +801,7 @@ const uid = user?.id ?? null;
   canvasRef.current?.scrollTo({ top: 0, behavior: "smooth" });
 
   try {
-    const refBase64 = hasRefs
+    const uploadedRefs = hasRefs
       ? (await Promise.all(
           effectiveRefs.map(async e => {
             if (e.file) return fileToBase64(e.file);
@@ -819,30 +812,67 @@ const uid = user?.id ?? null;
       : [];
 
     const generatedUrls = [];
+    let primaryFrontReference = null;
 
     for (let i = 0; i < CHARACTER_PACK_VIEWS.length; i++) {
       const view = CHARACTER_PACK_VIEWS[i];
-      const finalPrompt = `${basePrompt}. View requirement: ${view.shot}. Same character, same outfit, same identity, only the camera angle changes.`;
+
+      const finalPrompt = [
+        hasRefs
+          ? `This is the same exact real person named ${activeChar.name}. Preserve the exact same identity, facial structure, skin tone, hairstyle, and proportions.`
+          : `This is the same exact character named ${activeChar.name}. Preserve the exact same identity, face, hairstyle, outfit, body type, and proportions.`,
+        traitDesc ? `Physical traits: ${traitDesc}.` : null,
+        activeChar.desc ? `Character details: ${activeChar.desc}.` : null,
+        extraPrompt.trim() ? `Additional fixed details: ${extraPrompt.trim()}.` : null,
+        `View requirement: ${view.shot}.`,
+        "Plain light studio background.",
+        "Neutral reference photo style.",
+        "Exactly one person only.",
+        "Show only one version of the character.",
+        "No duplicate person.",
+        "No collage.",
+        "No split screen.",
+        "No multiple angles in one image.",
+        "No character sheet.",
+        "No contact sheet.",
+        "No grid layout.",
+        "No text.",
+        "No watermark.",
+      ].filter(Boolean).join(" ");
+
+      const referenceImagesForThisView = [
+        ...uploadedRefs,
+        ...(primaryFrontReference && view.key !== "front" ? [primaryFrontReference] : []),
+      ];
 
       const res = await fetch("/api/generate-image", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           prompt: finalPrompt,
-          size: view.key === "closeup" ? "1024x1024" : "1024x1536",
+          size: view.size,
           quality: "high",
           n: 1,
-          referenceImages: refBase64,
+          referenceImages: referenceImagesForThisView,
           characterSeed: String(activeChar.id),
         }),
       });
 
       const data = await res.json();
       const url = Array.isArray(data?.images) ? data.images[0] : data?.image ?? null;
+
+      if (!url) {
+        console.error(`Failed to generate ${view.key}`, data);
+      }
+
+      if (view.key === "front" && url) {
+        primaryFrontReference = url;
+      }
+
       generatedUrls.push(url || null);
 
       setOutputs(prev =>
-        prev.map((o, idx) =>
+        prev.map(o =>
           o.id === placeholderOutputs[i].id ? { ...o, url } : o
         )
       );
@@ -854,7 +884,6 @@ const uid = user?.id ?? null;
       ...activeChar,
       generations: cleanUrls.length,
       generatedImages: cleanUrls,
-      style: lighting || activeChar.style || null,
       extraPrompt: extraPrompt || activeChar.extraPrompt || "",
     };
 
@@ -867,21 +896,19 @@ const uid = user?.id ?? null;
         .from("characters")
         .update({
           generated_images: cleanUrls,
-          cover_image: cleanUrls[4] || cleanUrls[0] || activeChar.refEntries?.[0]?.previewUrl || null,
-          style: activeChar.style || null,
-prompt: buildTraitsPayload({
-  charDesc: activeChar.desc,
-  gender: activeChar.gender,
-  ageRange: activeChar.ageRange,
-  ethnicity: activeChar.ethnicity,
-  hairStyle: activeChar.hairStyle,
-  hairColor: activeChar.hairColor,
-  eyeColor: activeChar.eyeColor,
-  build: activeChar.build,
-  charLocked: activeChar.locked,
-  extraPrompt,
-}),
-
+          cover_image: cleanUrls[0] || activeChar.refEntries?.[0]?.previewUrl || null,
+          prompt: buildTraitsPayload({
+            charDesc: activeChar.desc,
+            gender: activeChar.gender,
+            ageRange: activeChar.ageRange,
+            ethnicity: activeChar.ethnicity,
+            hairStyle: activeChar.hairStyle,
+            hairColor: activeChar.hairColor,
+            eyeColor: activeChar.eyeColor,
+            build: activeChar.build,
+            charLocked: activeChar.locked,
+            extraPrompt,
+          }),
         })
         .eq("id", activeCharId)
         .eq("user_id", userId);
