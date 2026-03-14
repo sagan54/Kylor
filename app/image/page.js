@@ -1106,6 +1106,7 @@ export default function ImagePage() {
   const [selectedStyle, setSelectedStyle] = useState(null);
 
   const [refImages, setRefImages] = useState([]);
+  const [showCharacterModal, setShowCharacterModal] = useState(false);
 
   const [ratio, setRatio] = useState("16:9");
   const [mode, setMode] = useState("2K HD");
@@ -1727,53 +1728,56 @@ export default function ImagePage() {
             </motion.button>
 
             <motion.button
-              whileHover={{ borderColor: C.accentBorder }}
-              whileTap={{ scale: 0.99 }}
-              style={{
-                width: "100%",
-                padding: "10px 12px",
-                borderRadius: radius.md,
-                border: `1px solid ${C.border}`,
-                background: C.surface,
-                color: C.text,
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-                cursor: "pointer",
-                fontFamily: "inherit",
-                transition: "all 0.16s ease",
-                flexShrink: 0,
-              }}
-            >
-              <div
-                style={{
-                  width: 34,
-                  height: 34,
-                  borderRadius: 10,
-                  flexShrink: 0,
-                  background: "rgba(255,255,255,0.05)",
-                  display: "grid",
-                  placeItems: "center",
-                }}
-              >
-                <UserCircle2 size={15} />
-              </div>
-              <div style={{ flex: 1, minWidth: 0, textAlign: "left" }}>
-                <div style={{ fontSize: 13.5, fontWeight: 700 }}>Use Character</div>
-                <div
-                  style={{
-                    fontSize: 11.5,
-                    color: C.textMuted,
-                    whiteSpace: "nowrap",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                  }}
-                >
-                  Select a saved character from Consistency
-                </div>
-              </div>
-              <ChevronRight size={14} color={C.textMuted} />
-            </motion.button>
+  whileTap={{ scale: 0.97 }}
+  onClick={() => setShowCharacterModal(true)}
+  style={{
+    width: "100%",
+    padding: "10px 12px",
+    borderRadius: radius.md,
+    border: `1px solid ${C.border}`,
+    background: C.surface,
+    color: C.text,
+    display: "flex",
+    alignItems: "center",
+    gap: 10,
+    cursor: "pointer",
+    fontFamily: "inherit",
+    transition: "all 0.16s ease",
+    flexShrink: 0,
+  }}
+>
+  <div
+    style={{
+      width: 30,
+      height: 30,
+      borderRadius: 10,
+      flexShrink: 0,
+      background: "rgba(255,255,255,0.03)",
+      border: `1px solid ${C.border}`,
+      display: "grid",
+      placeItems: "center",
+    }}
+  >
+    <UserCircle2 size={15} />
+  </div>
+
+  <div style={{ flex: 1, minWidth: 0, textAlign: "left" }}>
+    <div style={{ fontSize: 13.5, fontWeight: 700 }}>Use Character</div>
+    <div
+      style={{
+        fontSize: 11.5,
+        color: C.textMuted,
+        whiteSpace: "nowrap",
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+      }}
+    >
+      Select a saved character from Consistency
+    </div>
+  </div>
+
+  <ChevronRight size={14} color={C.textMuted} />
+</motion.button>
 
             <div style={{ flexShrink: 0 }}>
               <DropZone files={refImages} onFiles={setRefImages} />
