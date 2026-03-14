@@ -26,40 +26,33 @@ const radius = { sm: "10px", md: "14px", lg: "18px", xl: "22px", full: "999px" }
 
 // ─── Sidebar ──────────────────────────────────────────────────────────────────
 const SIDEBAR_ITEMS = [
-  { label: "Home",       icon: Compass,      href: "/" },
-  { label: "Explore",    icon: Compass,      href: "/explore" },
-  { label: "Story",      icon: Clapperboard, href: "/story" },
-  { label: "Image",      icon: ImageIcon,    href: "/image" },
-  { label: "Video",      icon: Video,        href: "#" },
+  { label: "Home",        icon: Compass,      href: "/" },
+  { label: "Explore",     icon: Compass,      href: "/explore" },
+  { label: "Story",       icon: Clapperboard, href: "/story" },
+  { label: "Image",       icon: ImageIcon,    href: "/image" },
+  { label: "Video",       icon: Video,        href: "#" },
   { label: "Consistency", icon: UserCircle2,  href: "/consistency", active: true },
-  { label: "Motion",     icon: Orbit,        href: "#" },
-  { label: "Projects",   icon: FolderKanban, href: "/story" },
-  { label: "Settings",   icon: Settings,     href: "#" },
+  { label: "Motion",      icon: Orbit,        href: "#" },
+  { label: "Projects",    icon: FolderKanban, href: "/story" },
+  { label: "Settings",    icon: Settings,     href: "#" },
 ];
 
 // ─── Data ─────────────────────────────────────────────────────────────────────
-const GENDERS   = ["Female", "Male", "Non-binary", "Unspecified"];
-const AGE_RANGE = ["Teen (13–17)", "Young Adult (18–30)", "Adult (30–50)", "Senior (50+)", "Unspecified"];
+const GENDERS     = ["Female", "Male", "Non-binary", "Unspecified"];
+const AGE_RANGE   = ["Teen (13–17)", "Young Adult (18–30)", "Adult (30–50)", "Senior (50+)", "Unspecified"];
 const ETHNICITIES = ["Unspecified", "East Asian", "South Asian", "Black / African", "Latino / Hispanic", "Middle Eastern", "White / European", "Mixed"];
 const HAIR_STYLES = ["Short", "Medium", "Long", "Curly", "Wavy", "Braided", "Bald", "Ponytail"];
 const HAIR_COLORS = ["Black", "Brown", "Blonde", "Red", "White", "Silver", "Blue", "Pink", "Green"];
 const EYE_COLORS  = ["Brown", "Blue", "Green", "Hazel", "Grey", "Amber"];
 const BUILD_TYPES = ["Slim", "Athletic", "Average", "Muscular", "Stocky", "Curvy"];
-const SCENE_TYPES = [
-  "Portrait / Close-up",
-  "Upper body",
-  "Full body standing",
-  "Full body action",
-  "Sitting / relaxed",
-  "Walking / moving",
-];
+const SCENE_TYPES = ["Portrait / Close-up", "Upper body", "Full body standing", "Full body action", "Sitting / relaxed", "Walking / moving"];
 const LIGHTING_PRESETS = [
-  { id: "cinematic",   label: "Cinematic",    color: "#6366f1" },
-  { id: "golden_hour", label: "Golden Hour",  color: "#f59e0b" },
-  { id: "dramatic",    label: "Dramatic",     color: "#ef4444" },
-  { id: "soft_studio", label: "Soft Studio",  color: "#14b8a6" },
-  { id: "neon",        label: "Neon Glow",    color: "#a855f7" },
-  { id: "natural",     label: "Natural",      color: "#84cc16" },
+  { id: "cinematic",   label: "Cinematic",   color: "#6366f1" },
+  { id: "golden_hour", label: "Golden Hour", color: "#f59e0b" },
+  { id: "dramatic",    label: "Dramatic",    color: "#ef4444" },
+  { id: "soft_studio", label: "Soft Studio", color: "#14b8a6" },
+  { id: "neon",        label: "Neon Glow",   color: "#a855f7" },
+  { id: "natural",     label: "Natural",     color: "#84cc16" },
 ];
 const CARD_GRADIENTS = [
   "linear-gradient(135deg, rgba(79,70,229,0.55), rgba(124,58,237,0.3))",
@@ -68,6 +61,16 @@ const CARD_GRADIENTS = [
   "linear-gradient(135deg, rgba(91,33,182,0.55), rgba(55,48,163,0.4))",
   "linear-gradient(135deg, rgba(67,56,202,0.6), rgba(124,58,237,0.3))",
 ];
+
+// ─── Helper: File → base64 data URL ──────────────────────────────────────────
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload  = () => resolve(reader.result); // "data:image/jpeg;base64,..."
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
 
 // ─── Sidebar Item ─────────────────────────────────────────────────────────────
 function SidebarItem({ item }) {
@@ -141,23 +144,57 @@ function Select({ label, options, value, onChange }) {
 }
 
 // ─── Ref Image Upload Zone ─────────────────────────────────────────────────────
-function RefUpload({ files, onFiles, label, hint, max = 5 }) {
+// FIX: Store files as {file, previewUrl} objects so URLs are stable across renders.
+// We create the objectURL once on add and revoke it on remove — no stale URL issues.
+function RefUpload({ entries, onEntries, label, hint, max = 5 }) {
   const [drag, setDrag] = useState(false);
   const inputRef = useRef(null);
+
+  function addFiles(fileList) {
+    const valid = Array.from(fileList).filter(f => f.type.startsWith("image/"));
+    if (!valid.length) return;
+    onEntries(prev => {
+      const slots = max - prev.length;
+      if (slots <= 0) return prev;
+      const newEntries = valid.slice(0, slots).map(file => ({
+        file,
+        previewUrl: URL.createObjectURL(file),
+      }));
+      return [...prev, ...newEntries];
+    });
+  }
+
+  function removeEntry(i) {
+    onEntries(prev => {
+      URL.revokeObjectURL(prev[i].previewUrl);
+      return prev.filter((_, j) => j !== i);
+    });
+  }
+
   const onDrop = useCallback(e => {
     e.preventDefault(); setDrag(false);
-    const dropped = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith("image/"));
-    onFiles(p => [...p, ...dropped].slice(0, max));
-  }, [onFiles, max]);
+    addFiles(e.dataTransfer.files);
+  }, [onEntries, max]);
+
+  const onInputChange = useCallback(e => {
+    // Capture array BEFORE clearing input value
+    const captured = Array.from(e.target.files || []);
+    e.target.value = "";
+    if (captured.length) addFiles(captured);
+  }, [onEntries, max]);
+
   return (
     <div style={{ display: "grid", gap: 8 }}>
-      <motion.div onDragOver={e => { e.preventDefault(); setDrag(true); }} onDragLeave={() => setDrag(false)}
-        onDrop={onDrop} onClick={() => inputRef.current?.click()}
+      <motion.div
+        onDragOver={e => { e.preventDefault(); setDrag(true); }}
+        onDragLeave={() => setDrag(false)}
+        onDrop={onDrop}
+        onClick={() => inputRef.current?.click()}
         animate={{ borderColor: drag ? C.accent : "rgba(255,255,255,0.09)", background: drag ? C.accentSoft : C.surface }}
         style={{ borderRadius: radius.md, border: "1.5px dashed rgba(255,255,255,0.09)", padding: "14px",
           cursor: "pointer", display: "flex", alignItems: "center", gap: 12 }}>
         <input ref={inputRef} type="file" accept="image/*" multiple style={{ display: "none" }}
-          onChange={e => { onFiles(p => [...p, ...Array.from(e.target.files)].slice(0, max)); e.target.value = ""; }} />
+          onChange={onInputChange} />
         <div style={{ width: 36, height: 36, borderRadius: radius.sm, flexShrink: 0,
           background: C.accentSoft, border: `1px solid ${C.accentBorder}`, display: "grid", placeItems: "center" }}>
           <Camera size={14} color="#a78bfa" />
@@ -166,21 +203,29 @@ function RefUpload({ files, onFiles, label, hint, max = 5 }) {
           <div style={{ fontSize: 12.5, color: C.text, fontWeight: 600 }}>{label}</div>
           <div style={{ fontSize: 11, color: C.textMuted, marginTop: 2 }}>{hint}</div>
         </div>
-        <div style={{ fontSize: 11.5, color: files.length > 0 ? "#a78bfa" : C.textDim, fontWeight: 600 }}>{files.length}/{max}</div>
+        <div style={{ fontSize: 11.5, color: entries.length > 0 ? "#a78bfa" : C.textDim, fontWeight: 600 }}>
+          {entries.length}/{max}
+        </div>
       </motion.div>
-      {files.length > 0 && (
+
+      {entries.length > 0 && (
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-          {files.map((file, i) => (
-            <div key={i} style={{ position: "relative", width: 46, height: 46, borderRadius: 9,
-              overflow: "hidden", border: `1px solid ${C.accentBorder}` }}>
-              <img src={URL.createObjectURL(file)} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-              <button onClick={e => { e.stopPropagation(); onFiles(p => p.filter((_, j) => j !== i)); }}
+          {entries.map((entry, i) => (
+            <motion.div key={entry.previewUrl}
+              initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }}
+              style={{ position: "relative", width: 52, height: 52, borderRadius: 9,
+                overflow: "hidden", border: `1.5px solid ${C.accentBorder}`, flexShrink: 0 }}>
+              {/* stable previewUrl — created once, never re-created */}
+              <img src={entry.previewUrl} alt=""
+                style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+              <button
+                onClick={e => { e.stopPropagation(); removeEntry(i); }}
                 style={{ position: "absolute", top: 2, right: 2, width: 16, height: 16, borderRadius: 999,
-                  background: "rgba(0,0,0,0.75)", border: "none", color: "white",
+                  background: "rgba(0,0,0,0.8)", border: "none", color: "white",
                   display: "grid", placeItems: "center", cursor: "pointer" }}>
                 <X size={9} />
               </button>
-            </div>
+            </motion.div>
           ))}
         </div>
       )}
@@ -193,17 +238,17 @@ function CharacterCard({ char, isActive, onClick, onDelete }) {
   const [hovered, setHovered] = useState(false);
   const gradient = CARD_GRADIENTS[char.id % CARD_GRADIENTS.length];
   return (
-    <motion.div whileHover={{ y: -2 }} onHoverStart={() => setHovered(true)} onHoverEnd={() => setHovered(false)}
+    <motion.div whileHover={{ y: -2 }}
+      onHoverStart={() => setHovered(true)} onHoverEnd={() => setHovered(false)}
       onClick={onClick}
       style={{ borderRadius: radius.lg, border: `1px solid ${isActive ? C.accentBorder : hovered ? C.borderHover : C.border}`,
         background: isActive ? "rgba(124,58,237,0.06)" : C.surface, cursor: "pointer",
         overflow: "hidden", transition: "all 0.18s ease",
         boxShadow: isActive ? `0 0 0 1px rgba(124,58,237,0.12) inset` : "none" }}>
-      {/* Avatar strip */}
       <div style={{ height: 80, background: gradient, position: "relative", overflow: "hidden" }}>
         <div style={{ position: "absolute", inset: 0, background: "linear-gradient(135deg,rgba(255,255,255,0.05),transparent)" }} />
-        {char.refImages.length > 0 ? (
-          <img src={URL.createObjectURL(char.refImages[0])} alt=""
+        {char.refEntries.length > 0 ? (
+          <img src={char.refEntries[0].previewUrl} alt=""
             style={{ width: "100%", height: "100%", objectFit: "cover", opacity: 0.85 }} />
         ) : (
           <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center" }}>
@@ -228,6 +273,12 @@ function CharacterCard({ char, isActive, onClick, onDelete }) {
             border: `1px solid ${C.border}`, background: "rgba(255,255,255,0.04)", color: C.textMuted }}>
             {char.generations} images
           </div>
+          {char.refEntries.length > 0 && (
+            <div style={{ fontSize: 10.5, padding: "2px 7px", borderRadius: radius.full,
+              border: `1px solid ${C.accentBorder}`, background: C.accentSoft, color: "#c4b5fd" }}>
+              {char.refEntries.length} ref{char.refEntries.length > 1 ? "s" : ""}
+            </div>
+          )}
           {char.locked && (
             <div style={{ fontSize: 10.5, padding: "2px 7px", borderRadius: radius.full,
               border: `1px solid rgba(34,197,94,0.25)`, background: "rgba(34,197,94,0.08)", color: "#86efac" }}>
@@ -251,8 +302,13 @@ function OutputCard({ item, onDelete }) {
         background: CARD_GRADIENTS[item.id % CARD_GRADIENTS.length],
         aspectRatio: "2/3", transition: "border-color 0.16s ease" }}>
       {item.url
-        ? <img src={item.url} alt={item.prompt} style={{ width: "100%", height: "100%", objectFit: "cover", position: "absolute", inset: 0 }} />
-        : <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center" }}><User size={32} color="rgba(255,255,255,0.2)" /></div>
+        ? <img src={item.url} alt={item.scene} style={{ width: "100%", height: "100%", objectFit: "cover", position: "absolute", inset: 0 }} />
+        : (
+          <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", flexDirection: "column", gap: 10 }}>
+            <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 2, ease: "linear" }}
+              style={{ width: 32, height: 32, borderRadius: 999, border: `2px solid ${C.accent}`, borderTopColor: "transparent" }} />
+          </div>
+        )
       }
       <div style={{ position: "absolute", inset: 0, background: "linear-gradient(135deg,rgba(255,255,255,0.04),transparent 50%)", pointerEvents: "none" }} />
       <AnimatePresence>
@@ -279,67 +335,65 @@ function OutputCard({ item, onDelete }) {
 }
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
-export default function ConsistentPage() {
-  // View
-  const [activeView,    setActiveView]    = useState("generate"); // "generate" | "characters"
-  const [outputView,    setOutputView]    = useState("grid");
+export default function ConsistencyPage() {
+  const [activeView,   setActiveView]   = useState("generate");
+  const [outputView,   setOutputView]   = useState("grid");
 
-  // Characters list
-  const [characters,    setCharacters]    = useState([]);
-  const [activeCharId,  setActiveCharId]  = useState(null);
+  const [characters,   setCharacters]   = useState([]);
+  const [activeCharId, setActiveCharId] = useState(null);
 
-  // ── Character form ────────────────────────────────────────────────────────
-  const [charName,      setCharName]      = useState("");
-  const [charDesc,      setCharDesc]      = useState("");
-  const [gender,        setGender]        = useState("");
-  const [ageRange,      setAgeRange]      = useState("");
-  const [ethnicity,     setEthnicity]     = useState("");
-  const [hairStyle,     setHairStyle]     = useState("");
-  const [hairColor,     setHairColor]     = useState("");
-  const [eyeColor,      setEyeColor]      = useState("");
-  const [build,         setBuild]         = useState("");
-  const [refImages,     setRefImages]     = useState([]);
-  const [charLocked,    setCharLocked]    = useState(false);
+  // Character form state
+  const [charName,     setCharName]     = useState("");
+  const [charDesc,     setCharDesc]     = useState("");
+  const [gender,       setGender]       = useState("");
+  const [ageRange,     setAgeRange]     = useState("");
+  const [ethnicity,    setEthnicity]    = useState("");
+  const [hairStyle,    setHairStyle]    = useState("");
+  const [hairColor,    setHairColor]    = useState("");
+  const [eyeColor,     setEyeColor]     = useState("");
+  const [build,        setBuild]        = useState("");
+  // FIX: Store {file, previewUrl} entries instead of raw File objects
+  const [refEntries,   setRefEntries]   = useState([]);
+  const [charLocked,   setCharLocked]   = useState(false);
 
-  // ── Generation form ───────────────────────────────────────────────────────
-  const [scene,         setScene]         = useState("");
-  const [lighting,      setLighting]      = useState(null);
-  const [extraPrompt,   setExtraPrompt]   = useState("");
+  // Generation form
+  const [scene,        setScene]        = useState("");
+  const [lighting,     setLighting]     = useState(null);
+  const [extraPrompt,  setExtraPrompt]  = useState("");
   const charLimit = 300;
 
-  // ── Output ────────────────────────────────────────────────────────────────
-  const [outputs,       setOutputs]       = useState([]);
-  const [generating,    setGenerating]    = useState(false);
-
-  // Panels
-  const [formSection,   setFormSection]   = useState("traits"); // "traits" | "refs" | "generate"
+  const [outputs,      setOutputs]      = useState([]);
+  const [generating,   setGenerating]   = useState(false);
+  const [formSection,  setFormSection]  = useState("traits");
 
   const canvasRef = useRef(null);
 
-  const activeChar = characters.find(c => c.id === activeCharId) || null;
+  const activeChar  = characters.find(c => c.id === activeCharId) || null;
   const charOutputs = outputs.filter(o => o.charId === activeCharId);
 
-  // ── Save / update active character ────────────────────────────────────────
+  // ── Save character ────────────────────────────────────────────────────────
   function saveCharacter() {
     if (!charName.trim()) return;
     const newChar = {
-      id:         Date.now(),
-      name:       charName.trim(),
-      desc:       charDesc.trim(),
+      id: Date.now(),
+      name: charName.trim(), desc: charDesc.trim(),
       gender, ageRange, ethnicity,
       hairStyle, hairColor, eyeColor, build,
-      refImages:  [...refImages],
-      locked:     charLocked,
+      refEntries: [...refEntries], // {file, previewUrl}[]
+      locked: charLocked,
       generations: 0,
-      createdAt:  new Date().toISOString(),
+      createdAt: new Date().toISOString(),
     };
     setCharacters(p => [newChar, ...p]);
     setActiveCharId(newChar.id);
-    // Reset form
+    resetForm();
+    setFormSection("generate");
+  }
+
+  function resetForm() {
     setCharName(""); setCharDesc(""); setGender(""); setAgeRange(""); setEthnicity("");
     setHairStyle(""); setHairColor(""); setEyeColor(""); setBuild("");
-    setRefImages([]); setCharLocked(false);
-    setFormSection("generate");
+    setRefEntries([]); setCharLocked(false);
   }
 
   function deleteCharacter(id) {
@@ -353,7 +407,8 @@ export default function ConsistentPage() {
     setGender(char.gender); setAgeRange(char.ageRange); setEthnicity(char.ethnicity);
     setHairStyle(char.hairStyle); setHairColor(char.hairColor);
     setEyeColor(char.eyeColor); setBuild(char.build);
-    setRefImages([...char.refImages]); setCharLocked(char.locked);
+    setRefEntries([...char.refEntries]);
+    setCharLocked(char.locked);
     setActiveCharId(char.id);
     setFormSection("generate");
   }
@@ -366,8 +421,8 @@ export default function ConsistentPage() {
     const traitDesc = [
       activeChar.gender, activeChar.ageRange, activeChar.ethnicity,
       activeChar.hairColor && activeChar.hairStyle ? `${activeChar.hairColor} ${activeChar.hairStyle} hair` : null,
-      activeChar.eyeColor ? `${activeChar.eyeColor} eyes` : null,
-      activeChar.build ? `${activeChar.build} build` : null,
+      activeChar.eyeColor  ? `${activeChar.eyeColor} eyes` : null,
+      activeChar.build     ? `${activeChar.build} build` : null,
     ].filter(Boolean).join(", ");
 
     const lightLabel = lighting ? LIGHTING_PRESETS.find(l => l.id === lighting)?.label : null;
@@ -376,25 +431,44 @@ export default function ConsistentPage() {
       `Character portrait of ${activeChar.name}`,
       traitDesc ? `— ${traitDesc}` : null,
       activeChar.desc || null,
-      scene ? `Scene: ${scene}` : null,
-      lightLabel ? `Lighting: ${lightLabel}` : null,
+      scene       ? `Scene: ${scene}` : null,
+      lightLabel  ? `Lighting: ${lightLabel}` : null,
       extraPrompt.trim() || null,
+      activeChar.refEntries.length > 0
+        ? `Use the provided reference images to maintain consistent facial features, skin tone, and appearance.`
+        : null,
       "Consistent character design, photorealistic, ultra detailed, no text, no watermark.",
     ].filter(Boolean).join(". ");
 
     const outputId = Date.now();
-    // Optimistic placeholder
-    const placeholder = { id: outputId, charId: activeCharId, prompt: fullPrompt, scene: scene || "Portrait", url: null, createdAt: new Date().toISOString() };
+    const placeholder = {
+      id: outputId, charId: activeCharId,
+      prompt: fullPrompt, scene: scene || "Portrait",
+      url: null, createdAt: new Date().toISOString(),
+    };
     setOutputs(p => [placeholder, ...p]);
-    setGenerating(false);
     canvasRef.current?.scrollTo({ top: 0, behavior: "smooth" });
 
     try {
-      const res  = await fetch("/api/generate-image", {
+      // Convert reference images to base64 so the API can use them
+      const refBase64 = await Promise.all(
+        activeChar.refEntries.map(entry => fileToBase64(entry.file))
+      );
+
+      const res = await fetch("/api/generate-image", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: fullPrompt, size: "1024x1536", quality: "high", n: 1 }),
+        body: JSON.stringify({
+          prompt:        fullPrompt,
+          size:          "1024x1536",
+          quality:       "high",
+          n:             1,
+          // Reference images passed as base64 data URLs
+          // Your API route should forward these to the model if it supports it
+          referenceImages: refBase64,
+        }),
       });
+
       const data = await res.json();
       const url  = Array.isArray(data?.images) ? data.images[0] : data?.image ?? null;
 
@@ -402,6 +476,8 @@ export default function ConsistentPage() {
       setCharacters(p => p.map(c => c.id === activeCharId ? { ...c, generations: c.generations + 1 } : c));
     } catch (err) {
       console.error("Generate failed:", err);
+    } finally {
+      setGenerating(false);
     }
   }
 
@@ -436,7 +512,6 @@ export default function ConsistentPage() {
         <div style={{ borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center",
           justifyContent: "space-between", padding: "0 18px", background: "rgba(255,255,255,0.01)" }}>
           <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-            {/* Badge */}
             <div style={{ height: 30, padding: "0 12px", borderRadius: radius.full,
               border: `1px solid ${C.accentBorder}`, background: C.accentSoft, color: "#c4b5fd",
               fontSize: 13, display: "inline-flex", alignItems: "center", gap: 7, fontWeight: 600 }}>
@@ -445,7 +520,7 @@ export default function ConsistentPage() {
             </div>
             <div style={{ width: 1, height: 20, background: C.border, margin: "0 2px" }} />
             {[
-              { label: "Generate", id: "generate", icon: Wand2 },
+              { label: "Generate",   id: "generate",   icon: Wand2 },
               { label: "Characters", id: "characters", icon: Users },
             ].map(({ label, id, icon: Icon }) => (
               <motion.button key={id} whileTap={{ scale: 0.95 }} onClick={() => setActiveView(id)}
@@ -483,8 +558,7 @@ export default function ConsistentPage() {
           {/* ══ LEFT PANEL ══ */}
           <div style={{ borderRight: `1px solid ${C.border}`,
             background: "linear-gradient(180deg,rgba(7,9,15,0.98),rgba(9,11,17,0.98))",
-            height: "100%", overflow: "hidden", display: "flex", flexDirection: "column",
-            boxSizing: "border-box" }}>
+            height: "100%", overflow: "hidden", display: "flex", flexDirection: "column", boxSizing: "border-box" }}>
 
             {/* Section tabs */}
             <div style={{ padding: "12px 16px 0", flexShrink: 0 }}>
@@ -498,7 +572,8 @@ export default function ConsistentPage() {
                   const active = formSection === id;
                   return (
                     <motion.button key={id} whileTap={{ scale: 0.96 }} onClick={() => setFormSection(id)}
-                      style={{ height: 34, borderRadius: radius.sm, border: active ? `1px solid ${C.accentBorder}` : "1px solid transparent",
+                      style={{ height: 34, borderRadius: radius.sm,
+                        border: active ? `1px solid ${C.accentBorder}` : "1px solid transparent",
                         background: active ? "linear-gradient(160deg,rgba(79,70,229,0.18),rgba(124,58,237,0.13))" : "transparent",
                         color: active ? "white" : C.textMuted, fontSize: 12, cursor: "pointer",
                         fontFamily: "inherit", transition: "all 0.15s ease",
@@ -531,33 +606,27 @@ export default function ConsistentPage() {
               </div>
             </div>
 
-            {/* Scrollable form area */}
-            <div style={{ flex: 1, overflowY: "auto", padding: "14px 16px", minHeight: 0, display: "flex", flexDirection: "column", gap: 12 }}>
+            {/* Form area */}
+            <div style={{ flex: 1, overflowY: "auto", padding: "14px 16px", minHeight: 0,
+              display: "flex", flexDirection: "column", gap: 12 }}>
 
-              {/* ── TRAITS SECTION ── */}
+              {/* ── TRAITS ── */}
               {formSection === "traits" && (<>
-                {/* Name */}
                 <div>
                   <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: C.textMuted, marginBottom: 6 }}>Character Name *</div>
                   <input value={charName} onChange={e => setCharName(e.target.value)} placeholder="e.g. Aria Voss, Marcus Kane…"
                     style={{ width: "100%", height: 38, padding: "0 12px", borderRadius: radius.sm,
                       border: `1px solid ${charName ? C.accentBorder : C.border}`, background: charName ? C.accentSoft : C.surface,
-                      color: C.text, fontSize: 13, fontFamily: "inherit", outline: "none",
-                      boxSizing: "border-box", transition: "all 0.16s ease" }} />
+                      color: C.text, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box", transition: "all 0.16s ease" }} />
                 </div>
-
-                {/* Description */}
                 <div>
                   <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: C.textMuted, marginBottom: 6 }}>Description</div>
                   <textarea value={charDesc} onChange={e => setCharDesc(e.target.value)} rows={3}
                     placeholder="Scar above left eyebrow, always wears a silver necklace…"
                     style={{ width: "100%", padding: "8px 12px", borderRadius: radius.sm,
                       border: `1px solid ${C.border}`, background: C.surface, color: C.text, resize: "none",
-                      fontSize: 12.5, fontFamily: "inherit", lineHeight: 1.6, outline: "none",
-                      boxSizing: "border-box" }} />
+                      fontSize: 12.5, fontFamily: "inherit", lineHeight: 1.6, outline: "none", boxSizing: "border-box" }} />
                 </div>
-
-                {/* Demographics */}
                 <div>
                   <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: C.textMuted, marginBottom: 8 }}>Demographics</div>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
@@ -566,8 +635,6 @@ export default function ConsistentPage() {
                     <div style={{ gridColumn: "1/-1" }}><div style={{ fontSize: 11, color: C.textMuted, marginBottom: 4 }}>Ethnicity</div><Select label="Select" options={ETHNICITIES} value={ethnicity} onChange={setEthnicity} /></div>
                   </div>
                 </div>
-
-                {/* Physical */}
                 <div>
                   <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: C.textMuted, marginBottom: 8 }}>Physical Features</div>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
@@ -577,8 +644,6 @@ export default function ConsistentPage() {
                     <div><div style={{ fontSize: 11, color: C.textMuted, marginBottom: 4 }}>Build</div><Select label="Select" options={BUILD_TYPES} value={build} onChange={setBuild} /></div>
                   </div>
                 </div>
-
-                {/* Lock toggle */}
                 <motion.button whileTap={{ scale: 0.97 }} onClick={() => setCharLocked(p => !p)}
                   style={{ height: 36, padding: "0 14px", borderRadius: radius.sm, cursor: "pointer",
                     border: `1px solid ${charLocked ? "rgba(34,197,94,0.3)" : C.border}`,
@@ -588,8 +653,6 @@ export default function ConsistentPage() {
                   {charLocked ? <Lock size={13} /> : <Unlock size={13} />}
                   {charLocked ? "Character locked (consistent)" : "Lock character traits"}
                 </motion.button>
-
-                {/* Save character button */}
                 <motion.button whileHover={charName.trim() ? { boxShadow: "0 12px 32px rgba(124,58,237,0.35)" } : {}}
                   whileTap={charName.trim() ? { scale: 0.98 } : {}} onClick={saveCharacter}
                   style={{ height: 44, borderRadius: radius.md, border: "none", cursor: charName.trim() ? "pointer" : "default",
@@ -602,24 +665,34 @@ export default function ConsistentPage() {
                 </motion.button>
               </>)}
 
-              {/* ── REFS SECTION ── */}
+              {/* ── REFS ── */}
               {formSection === "refs" && (<>
                 <p style={{ margin: 0, fontSize: 12.5, color: C.textMuted, lineHeight: 1.65 }}>
-                  Upload reference photos of the character. More consistent references = more accurate generations.
+                  Upload reference photos. They'll be sent to the AI to keep the character consistent.
                 </p>
 
-                <RefUpload files={refImages} onFiles={setRefImages}
-                  label="Face references" hint="Clear, front-facing photos · best results" max={5} />
+                {/* FIX: use entries/onEntries props */}
+                <RefUpload
+                  entries={refEntries}
+                  onEntries={setRefEntries}
+                  label="Face references"
+                  hint="Clear front-facing photos for best results"
+                  max={5}
+                />
+
+                {refEntries.length > 0 && (
+                  <div style={{ padding: "10px 12px", borderRadius: radius.sm,
+                    border: `1px solid rgba(34,197,94,0.25)`, background: "rgba(34,197,94,0.06)",
+                    display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "#86efac" }}>
+                    <Check size={13} />
+                    {refEntries.length} reference image{refEntries.length > 1 ? "s" : ""} saved — will be used in generation.
+                  </div>
+                )}
 
                 <div style={{ padding: 14, borderRadius: radius.md, border: `1px solid ${C.border}`, background: C.surface }}>
                   <div style={{ fontSize: 12, fontWeight: 600, color: C.text, marginBottom: 8 }}>Tips for better consistency</div>
-                  {[
-                    "Use clear, well-lit photos",
-                    "Include front and 3/4 angles",
-                    "Avoid obscured faces or masks",
-                    "2–5 references works best",
-                  ].map((tip, i) => (
-                    <div key={i} style={{ display: "flex", gap: 8, alignItems: "flex-start", marginBottom: i < 3 ? 6 : 0 }}>
+                  {["Use clear, well-lit photos", "Include front and 3/4 angles", "Avoid obscured faces or masks", "2–5 references works best"].map((tip, i, arr) => (
+                    <div key={i} style={{ display: "flex", gap: 8, alignItems: "flex-start", marginBottom: i < arr.length - 1 ? 6 : 0 }}>
                       <div style={{ width: 5, height: 5, borderRadius: 999, background: C.accent, flexShrink: 0, marginTop: 5 }} />
                       <span style={{ fontSize: 11.5, color: C.textMuted, lineHeight: 1.5 }}>{tip}</span>
                     </div>
@@ -637,16 +710,14 @@ export default function ConsistentPage() {
                 )}
               </>)}
 
-              {/* ── GENERATE SECTION ── */}
+              {/* ── GENERATE ── */}
               {formSection === "generate" && (<>
-
-                {/* No character selected */}
                 {!activeChar && (
                   <div style={{ padding: 20, borderRadius: radius.md, border: `1px solid ${C.border}`,
                     background: C.surface, textAlign: "center" }}>
                     <User size={32} color={C.textDim} style={{ margin: "0 auto 12px" }} />
                     <div style={{ fontSize: 13, fontWeight: 600, color: C.text, marginBottom: 6 }}>No character selected</div>
-                    <div style={{ fontSize: 12, color: C.textMuted, marginBottom: 14, lineHeight: 1.6 }}>Create a character first, or select one from the Characters view.</div>
+                    <div style={{ fontSize: 12, color: C.textMuted, marginBottom: 14, lineHeight: 1.6 }}>Create a character first or select one from Characters.</div>
                     <motion.button whileTap={{ scale: 0.96 }} onClick={() => setFormSection("traits")}
                       style={{ height: 34, padding: "0 14px", borderRadius: radius.sm,
                         border: `1px solid ${C.accentBorder}`, background: C.accentSoft, color: "#c4b5fd",
@@ -658,7 +729,6 @@ export default function ConsistentPage() {
                 )}
 
                 {activeChar && (<>
-                  {/* Scene picker */}
                   <div>
                     <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: C.textMuted, marginBottom: 8 }}>Scene Type</div>
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
@@ -675,12 +745,12 @@ export default function ConsistentPage() {
                     </div>
                   </div>
 
-                  {/* Lighting */}
                   <div>
                     <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: C.textMuted, marginBottom: 8 }}>Lighting</div>
                     <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                       {LIGHTING_PRESETS.map(l => (
-                        <motion.button key={l.id} whileTap={{ scale: 0.94 }} onClick={() => setLighting(lighting === l.id ? null : l.id)}
+                        <motion.button key={l.id} whileTap={{ scale: 0.94 }}
+                          onClick={() => setLighting(lighting === l.id ? null : l.id)}
                           style={{ height: 30, padding: "0 11px", borderRadius: radius.full, cursor: "pointer",
                             border: `1px solid ${lighting === l.id ? l.color + "60" : C.border}`,
                             background: lighting === l.id ? l.color + "18" : C.surface,
@@ -692,13 +762,11 @@ export default function ConsistentPage() {
                     </div>
                   </div>
 
-                  {/* Extra prompt */}
                   <div>
                     <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: C.textMuted, marginBottom: 6 }}>Additional Details</div>
                     <div style={{ position: "relative" }}>
                       <textarea value={extraPrompt} onChange={e => setExtraPrompt(e.target.value.slice(0, charLimit))}
-                        placeholder="wearing a leather jacket, rainy city background, 2049…"
-                        rows={4}
+                        placeholder="wearing a leather jacket, rainy city background, 2049…" rows={4}
                         style={{ width: "100%", padding: "10px 12px", borderRadius: radius.md,
                           border: `1px solid ${C.border}`, background: C.surface, color: C.text,
                           resize: "none", fontSize: 12.5, fontFamily: "inherit", lineHeight: 1.6,
@@ -710,32 +778,34 @@ export default function ConsistentPage() {
                     </div>
                   </div>
 
-                  {/* Char summary pill */}
+                  {/* Character summary + ref badge */}
                   <div style={{ padding: "10px 12px", borderRadius: radius.sm, border: `1px solid ${C.border}`,
                     background: "rgba(255,255,255,0.02)", display: "flex", alignItems: "center", gap: 10 }}>
-                    <div style={{ width: 32, height: 32, borderRadius: 9, overflow: "hidden", flexShrink: 0,
-                      background: CARD_GRADIENTS[activeChar.id % CARD_GRADIENTS.length],
-                      display: "grid", placeItems: "center" }}>
-                      {activeChar.refImages.length > 0
-                        ? <img src={URL.createObjectURL(activeChar.refImages[0])} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                    <div style={{ width: 34, height: 34, borderRadius: 9, overflow: "hidden", flexShrink: 0,
+                      background: CARD_GRADIENTS[activeChar.id % CARD_GRADIENTS.length], display: "grid", placeItems: "center" }}>
+                      {activeChar.refEntries.length > 0
+                        ? <img src={activeChar.refEntries[0].previewUrl} alt=""
+                            style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                         : <User size={14} color="rgba(255,255,255,0.4)" />}
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 12.5, fontWeight: 700, color: C.text }}>{activeChar.name}</div>
-                      <div style={{ fontSize: 11, color: C.textMuted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {[activeChar.gender, activeChar.ageRange].filter(Boolean).join(" · ") || "No demographics set"}
+                      <div style={{ fontSize: 11, color: activeChar.refEntries.length > 0 ? "#86efac" : C.textMuted }}>
+                        {activeChar.refEntries.length > 0
+                          ? `${activeChar.refEntries.length} ref image${activeChar.refEntries.length > 1 ? "s" : ""} attached`
+                          : "No reference images — add in Refs tab"}
                       </div>
                     </div>
-                    <button onClick={() => setFormSection("traits")}
+                    <button onClick={() => setFormSection("refs")}
                       style={{ border: "none", background: "transparent", color: C.textMuted, cursor: "pointer", display: "grid", placeItems: "center" }}>
-                      <Sliders size={13} />
+                      <Camera size={13} />
                     </button>
                   </div>
                 </>)}
               </>)}
             </div>
 
-            {/* Generate button — pinned at bottom */}
+            {/* Generate button — pinned */}
             {formSection === "generate" && activeChar && (
               <div style={{ padding: "12px 16px", borderTop: `1px solid ${C.border}`, flexShrink: 0 }}>
                 <motion.button
@@ -770,10 +840,8 @@ export default function ConsistentPage() {
           {/* ══ RIGHT PANEL ══ */}
           <div style={{ background: "rgba(4,5,12,0.95)", display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
 
-            {/* ── GENERATE VIEW ── */}
             {activeView === "generate" && (
               <>
-                {/* Output toolbar */}
                 <div style={{ padding: "0 16px", borderBottom: `1px solid ${C.border}`, height: 48,
                   flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -802,9 +870,7 @@ export default function ConsistentPage() {
                   )}
                 </div>
 
-                {/* Canvas */}
                 <div ref={canvasRef} style={{ flex: 1, overflowY: "auto", padding: "16px" }}>
-                  {/* No character */}
                   {!activeChar && (
                     <div style={{ height: "80%", display: "grid", placeItems: "center" }}>
                       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
@@ -817,7 +883,7 @@ export default function ConsistentPage() {
                         <p style={{ margin: "0 0 22px", color: C.textMuted, fontSize: 13, lineHeight: 1.7 }}>
                           Create a character with traits and reference images, then generate consistent outputs.
                         </p>
-                        <motion.button whileTap={{ scale: 0.96 }} onClick={() => { setFormSection("traits"); }}
+                        <motion.button whileTap={{ scale: 0.96 }} onClick={() => setFormSection("traits")}
                           style={{ height: 40, padding: "0 20px", borderRadius: radius.md,
                             border: `1px solid ${C.accentBorder}`, background: C.accentSoft, color: "#c4b5fd",
                             fontSize: 13.5, fontWeight: 600, cursor: "pointer", fontFamily: "inherit",
@@ -828,7 +894,6 @@ export default function ConsistentPage() {
                     </div>
                   )}
 
-                  {/* Has character but no outputs */}
                   {activeChar && charOutputs.length === 0 && !generating && (
                     <div style={{ height: "80%", display: "grid", placeItems: "center" }}>
                       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
@@ -852,7 +917,6 @@ export default function ConsistentPage() {
                     </div>
                   )}
 
-                  {/* Outputs grid */}
                   {activeChar && charOutputs.length > 0 && (
                     <div style={{ display: "grid", gridTemplateColumns: outputView === "grid" ? "repeat(auto-fill,minmax(200px,1fr))" : "1fr", gap: 12 }}>
                       {charOutputs.map((item, i) => (
@@ -892,7 +956,6 @@ export default function ConsistentPage() {
               </>
             )}
 
-            {/* ── CHARACTERS VIEW ── */}
             {activeView === "characters" && (
               <>
                 <div style={{ padding: "0 16px", borderBottom: `1px solid ${C.border}`, height: 48,
@@ -900,7 +963,8 @@ export default function ConsistentPage() {
                   <span style={{ fontSize: 12, color: C.textMuted, fontWeight: 500 }}>
                     {characters.length} character{characters.length !== 1 ? "s" : ""} saved
                   </span>
-                  <motion.button whileTap={{ scale: 0.95 }} onClick={() => { setFormSection("traits"); setActiveView("generate"); }}
+                  <motion.button whileTap={{ scale: 0.95 }}
+                    onClick={() => { setFormSection("traits"); setActiveView("generate"); }}
                     style={{ height: 30, padding: "0 12px", borderRadius: 9,
                       border: `1px solid ${C.accentBorder}`, background: C.accentSoft, color: "#c4b5fd",
                       cursor: "pointer", fontSize: 12, fontFamily: "inherit",
