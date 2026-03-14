@@ -71,6 +71,34 @@ const CARD_GRADIENTS = [
   "linear-gradient(135deg, rgba(91,33,182,0.55), rgba(55,48,163,0.4))",
   "linear-gradient(135deg, rgba(67,56,202,0.6), rgba(124,58,237,0.3))",
 ];
+const CHARACTER_PACK_VIEWS = [
+  {
+    key: "front",
+    label: "Front Full-Body",
+    shot: "front full-body view, neutral standing pose, facing camera, plain studio background",
+  },
+  {
+    key: "left",
+    label: "Left Profile Full-Body",
+    shot: "left side full-body profile, neutral standing pose, plain studio background",
+  },
+  {
+    key: "right",
+    label: "Right Profile Full-Body",
+    shot: "right side full-body profile, neutral standing pose, plain studio background",
+  },
+  {
+    key: "back",
+    label: "Back Full-Body",
+    shot: "back full-body view, neutral standing pose, plain studio background",
+  },
+  {
+    key: "closeup",
+    label: "Upper-Body Close-Up",
+    shot: "upper-body close-up portrait, facing camera, plain studio background",
+  },
+];
+
 
 // ─── Helper: file → base64 ────────────────────────────────────────────────────
 function fileToBase64(file) {
@@ -505,16 +533,17 @@ export default function ConsistencyPage() {
           };
         });
 
-        const loadedOutputs = loaded.flatMap(char =>
-          (char.generatedImages || []).map((url, i) => ({
-            id: `${char.id}-${i}`,
-            charId: char.id,
-            prompt: "",
-            scene: "Saved output",
-            url,
-            createdAt: char.createdAt || new Date().toISOString(),
-          }))
-        );
+       const loadedOutputs = loaded.flatMap(char =>
+  (char.generatedImages || []).map((url, i) => ({
+    id: `${char.id}-${CHARACTER_PACK_VIEWS[i]?.key || i}`,
+    charId: char.id,
+    prompt: "",
+    scene: CHARACTER_PACK_VIEWS[i]?.label || `View ${i + 1}`,
+    url,
+    createdAt: char.createdAt || new Date().toISOString(),
+  }))
+);
+
 
         setCharacters(loaded);
         setOutputs(loadedOutputs);
@@ -672,124 +701,168 @@ export default function ConsistencyPage() {
 
   // ── Send to Image Gen ─────────────────────────────────────────────────────
   function sendToImageGen() {
-    if (!activeChar) return;
-    const traitDesc = [
-      activeChar.gender, activeChar.ageRange, activeChar.ethnicity,
-      activeChar.hairColor && activeChar.hairStyle ? `${activeChar.hairColor} ${activeChar.hairStyle} hair` : null,
-      activeChar.eyeColor ? `${activeChar.eyeColor} eyes` : null,
-      activeChar.build    ? `${activeChar.build} build` : null,
-    ].filter(Boolean).join(", ");
-    const charPrompt = [
-      `Character portrait of ${activeChar.name}`,
-      traitDesc ? `— ${traitDesc}` : null,
-      activeChar.desc || null,
-      activeChar.refEntries.length > 0
-        ? `Maintain exact facial features, skin tone, and distinguishing characteristics of this specific person.`
-        : null,
-      "Photorealistic, ultra detailed, cinematic quality.",
-    ].filter(Boolean).join(". ");
-    try { sessionStorage.setItem("kylor_prefill_prompt", charPrompt); } catch {}
-    router.push("/image");
-  }
+  if (!activeChar || charOutputs.length === 0) return;
+
+  const traitDesc = [
+    activeChar.gender,
+    activeChar.ageRange,
+    activeChar.ethnicity,
+    activeChar.hairColor && activeChar.hairStyle ? `${activeChar.hairColor} ${activeChar.hairStyle} hair` : null,
+    activeChar.eyeColor ? `${activeChar.eyeColor} eyes` : null,
+    activeChar.build ? `${activeChar.build} build` : null,
+  ].filter(Boolean).join(", ");
+
+  const charPrompt = [
+    `Use the saved character ${activeChar.name}`,
+    traitDesc ? `same identity and physical traits: ${traitDesc}` : null,
+    activeChar.desc || null,
+    activeChar.refEntries.length > 0
+      ? `Maintain exact facial features, skin tone, and distinguishing characteristics of this specific person.`
+      : null,
+  ].filter(Boolean).join(". ");
+
+  try {
+    sessionStorage.setItem("kylor_selected_character_id", String(activeChar.id));
+    sessionStorage.setItem("kylor_prefill_prompt", charPrompt);
+  } catch {}
+
+  router.push("/image");
+}
+
 
   // ── Generate ──────────────────────────────────────────────────────────────
   async function handleGenerate() {
-    if (!activeChar || generating) return;
-    setGenerating(true);
+  if (!activeChar || generating) return;
+  setGenerating(true);
 
-    const traitDesc = [
-      activeChar.gender, activeChar.ageRange, activeChar.ethnicity,
-      activeChar.hairColor && activeChar.hairStyle ? `${activeChar.hairColor} ${activeChar.hairStyle} hair` : null,
-      activeChar.eyeColor  ? `${activeChar.eyeColor} eyes` : null,
-      activeChar.build     ? `${activeChar.build} build` : null,
-    ].filter(Boolean).join(", ");
+  const traitDesc = [
+    activeChar.gender,
+    activeChar.ageRange,
+    activeChar.ethnicity,
+    activeChar.hairColor && activeChar.hairStyle ? `${activeChar.hairColor} ${activeChar.hairStyle} hair` : null,
+    activeChar.eyeColor ? `${activeChar.eyeColor} eyes` : null,
+    activeChar.build ? `${activeChar.build} build` : null,
+  ].filter(Boolean).join(", ");
 
-    const lightLabel = lighting ? LIGHTING_PRESETS.find(l => l.id === lighting)?.label : null;
-    const effectiveRefs = activeChar.refEntries.length > 0 ? activeChar.refEntries : refEntries;
-    const hasRefs = effectiveRefs.length > 0;
+  const lightLabel = lighting ? LIGHTING_PRESETS.find(l => l.id === lighting)?.label : null;
+  const effectiveRefs = activeChar.refEntries.length > 0 ? activeChar.refEntries : refEntries;
+  const hasRefs = effectiveRefs.length > 0;
 
-    const fullPrompt = [
-      hasRefs
-        ? `IMPORTANT: This is a specific real person named ${activeChar.name}. Preserve EXACTLY their unique facial bone structure, face shape, jawline, nose shape, lip shape, eye shape and color, eyebrow shape, skin tone. DO NOT change or idealise their face. Same person, same face, different scene only.`
-        : `Character portrait of ${activeChar.name}`,
-      traitDesc ? `Physical traits: ${traitDesc}` : null,
-      activeChar.desc ? `Additional features: ${activeChar.desc}` : null,
-      scene      ? `Scene: ${scene}` : null,
-      lightLabel ? `Lighting: ${lightLabel}` : null,
-      extraPrompt.trim() || null,
-      "Photorealistic, ultra detailed, cinematic quality, no text, no watermark.",
-    ].filter(Boolean).join(". ");
+  const basePrompt = [
+    hasRefs
+      ? `IMPORTANT: This is a specific real person named ${activeChar.name}. Preserve EXACTLY their unique facial bone structure, face shape, jawline, nose shape, lip shape, eye shape and color, eyebrow shape, skin tone. DO NOT change or idealise their face. Same person, same face, different reference angle only.`
+      : `Character reference sheet of the same person named ${activeChar.name}. Maintain the exact same identity, face, hairstyle, outfit, body type, and proportions across all views.`,
+    traitDesc ? `Physical traits: ${traitDesc}` : null,
+    activeChar.desc ? `Additional features: ${activeChar.desc}` : null,
+    lightLabel ? `Lighting: ${lightLabel}` : "Lighting: soft studio",
+    extraPrompt.trim() || null,
+    "Photorealistic, ultra detailed, neutral pose, reference-sheet style, plain studio background, no text, no watermark.",
+  ].filter(Boolean).join(". ");
 
-    const outputId = Date.now();
-    setOutputs(p => [{
-      id: outputId, charId: activeCharId,
-      prompt: fullPrompt, scene: scene || "Portrait",
-      url: null, createdAt: new Date().toISOString(),
-    }, ...p]);
-    canvasRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+  const createdAt = new Date().toISOString();
 
-    try {
-      const refBase64 = hasRefs
-        ? (await Promise.all(
-            effectiveRefs.map(async e => {
-              if (e.file) return fileToBase64(e.file);
-              if (e.previewUrl) return e.previewUrl;
-              return null;
-            })
-          )).filter(Boolean)
-        : [];
+  const placeholderOutputs = CHARACTER_PACK_VIEWS.map(view => ({
+    id: `${activeCharId}-${view.key}-${Date.now()}`,
+    charId: activeCharId,
+    prompt: `${basePrompt}. ${view.shot}.`,
+    scene: view.label,
+    url: null,
+    createdAt,
+  }));
+
+  setOutputs(prev => [
+    ...placeholderOutputs,
+    ...prev.filter(o => o.charId !== activeCharId),
+  ]);
+
+  canvasRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+
+  try {
+    const refBase64 = hasRefs
+      ? (await Promise.all(
+          effectiveRefs.map(async e => {
+            if (e.file) return fileToBase64(e.file);
+            if (e.previewUrl) return e.previewUrl;
+            return null;
+          })
+        )).filter(Boolean)
+      : [];
+
+    const generatedUrls = [];
+
+    for (let i = 0; i < CHARACTER_PACK_VIEWS.length; i++) {
+      const view = CHARACTER_PACK_VIEWS[i];
+      const finalPrompt = `${basePrompt}. View requirement: ${view.shot}. Same character, same outfit, same identity, only the camera angle changes.`;
 
       const res = await fetch("/api/generate-image", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          prompt: fullPrompt, size: "1024x1536", quality: "high", n: 1,
-          referenceImages: refBase64, characterSeed: String(activeChar.id),
+          prompt: finalPrompt,
+          size: view.key === "closeup" ? "1024x1024" : "1024x1536",
+          quality: "high",
+          n: 1,
+          referenceImages: refBase64,
+          characterSeed: String(activeChar.id),
         }),
       });
 
       const data = await res.json();
-      const url  = Array.isArray(data?.images) ? data.images[0] : data?.image ?? null;
+      const url = Array.isArray(data?.images) ? data.images[0] : data?.image ?? null;
+      generatedUrls.push(url || null);
 
-      setOutputs(p => p.map(o => o.id === outputId ? { ...o, url } : o));
-
-      const updatedChar = {
-        ...activeChar,
-        generations: (activeChar.generations || 0) + 1,
-        generatedImages: [...(activeChar.generatedImages || []), ...(url ? [url] : [])],
-      };
-
-      setCharacters(p => p.map(c => c.id === activeCharId ? updatedChar : c));
-
-      if (userId && url && !String(activeCharId).startsWith("local-")) {
-        await supabase.from("characters")
-          .update({
-            generated_images: updatedChar.generatedImages,
-            cover_image: updatedChar.generatedImages[0] || activeChar.refEntries?.[0]?.previewUrl || null,
-            style: lighting || activeChar.style || null,
-            prompt: buildTraitsPayload({
-              charDesc: activeChar.desc,
-              gender: activeChar.gender,
-              ageRange: activeChar.ageRange,
-              ethnicity: activeChar.ethnicity,
-              hairStyle: activeChar.hairStyle,
-              hairColor: activeChar.hairColor,
-              eyeColor: activeChar.eyeColor,
-              build: activeChar.build,
-              charLocked: activeChar.locked,
-              extraPrompt,
-              lighting,
-            }),
-          })
-          .eq("id", activeCharId)
-          .eq("user_id", userId);
-      }
-    } catch (err) {
-      console.error("Generate failed:", err);
-    } finally {
-      setGenerating(false);
+      setOutputs(prev =>
+        prev.map((o, idx) =>
+          o.id === placeholderOutputs[i].id ? { ...o, url } : o
+        )
+      );
     }
+
+    const cleanUrls = generatedUrls.filter(Boolean);
+
+    const updatedChar = {
+      ...activeChar,
+      generations: cleanUrls.length,
+      generatedImages: cleanUrls,
+      style: lighting || activeChar.style || null,
+      extraPrompt: extraPrompt || activeChar.extraPrompt || "",
+    };
+
+    setCharacters(prev =>
+      prev.map(c => (c.id === activeCharId ? updatedChar : c))
+    );
+
+    if (userId && !String(activeCharId).startsWith("local-")) {
+      await supabase
+        .from("characters")
+        .update({
+          generated_images: cleanUrls,
+          cover_image: cleanUrls[4] || cleanUrls[0] || activeChar.refEntries?.[0]?.previewUrl || null,
+          style: lighting || activeChar.style || null,
+          prompt: buildTraitsPayload({
+            charDesc: activeChar.desc,
+            gender: activeChar.gender,
+            ageRange: activeChar.ageRange,
+            ethnicity: activeChar.ethnicity,
+            hairStyle: activeChar.hairStyle,
+            hairColor: activeChar.hairColor,
+            eyeColor: activeChar.eyeColor,
+            build: activeChar.build,
+            charLocked: activeChar.locked,
+            extraPrompt,
+            lighting,
+          }),
+        })
+        .eq("id", activeCharId)
+        .eq("user_id", userId);
+    }
+  } catch (err) {
+    console.error("Generate failed:", err);
+  } finally {
+    setGenerating(false);
   }
+}
+
 
   const canGenerate = !!activeChar && !generating;
 
@@ -844,16 +917,24 @@ export default function ConsistencyPage() {
             ))}
           </div>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            {activeChar && (
-              <motion.button whileHover={{ borderColor: C.accentBorder }} whileTap={{ scale: 0.96 }}
-                onClick={sendToImageGen}
-                style={{ height: 34, padding: "0 14px", borderRadius: radius.sm,
-                  border: `1px solid ${C.border}`, background: C.surface,
-                  color: C.textMuted, display: "inline-flex", alignItems: "center", gap: 6,
-                  cursor: "pointer", fontSize: 12.5, fontFamily: "inherit", transition: "all 0.15s ease" }}>
-                <ImageIcon size={13} /> Send to Image Gen <ExternalLink size={11} />
-              </motion.button>
-            )}
+{activeChar && (
+  <motion.button
+    whileHover={charOutputs.length > 0 ? { borderColor: C.accentBorder } : {}}
+    whileTap={charOutputs.length > 0 ? { scale: 0.96 } : {}}
+    onClick={sendToImageGen}
+    disabled={charOutputs.length === 0}
+    style={{ height: 34, padding: "0 14px", borderRadius: radius.sm,
+      border: `1px solid ${charOutputs.length > 0 ? C.accentBorder : C.border}`,
+      background: charOutputs.length > 0 ? C.accentSoft : C.surface,
+      color: charOutputs.length > 0 ? "#c4b5fd" : C.textMuted,
+      display: "inline-flex", alignItems: "center", gap: 6,
+      cursor: charOutputs.length > 0 ? "pointer" : "default",
+      fontSize: 12.5, fontFamily: "inherit", transition: "all 0.15s ease",
+      opacity: charOutputs.length > 0 ? 1 : 0.7 }}>
+    <ImageIcon size={13} /> Use This Character in Image <ExternalLink size={11} />
+  </motion.button>
+)}
+
             {[{ icon: Grid3X3, val: "grid" }, { icon: List, val: "list" }].map(({ icon: Icon, val }) => (
               <motion.button key={val} whileTap={{ scale: 0.94 }} onClick={() => setOutputView(val)}
                 style={{ width: 34, height: 34, borderRadius: radius.sm, border: `1px solid ${C.border}`,
@@ -1159,7 +1240,8 @@ export default function ConsistencyPage() {
                     ) : (
                       <motion.span key="idle" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
                         style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <Wand2 size={16} /> Generate Character <ChevronRight size={15} />
+                       <Wand2 size={16} /> Generate Character Pack <ChevronRight size={15} />
+
                       </motion.span>
                     )}
                   </AnimatePresence>
@@ -1236,7 +1318,8 @@ export default function ConsistencyPage() {
                         </div>
                         <p style={{ margin: "0 0 6px", color: C.text, fontSize: 15, fontWeight: 700 }}>Ready to generate</p>
                         <p style={{ margin: "0 0 18px", color: C.textMuted, fontSize: 12.5, lineHeight: 1.7 }}>
-                          Choose a scene and lighting, then hit Generate Character.
+                          Generate the 5-view character pack, then send it to the Image section.
+
                         </p>
                         <motion.button whileTap={{ scale: 0.96 }} onClick={() => setFormSection("generate")}
                           style={{ height: 36, padding: "0 16px", borderRadius: radius.md,
