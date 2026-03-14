@@ -64,7 +64,7 @@ const SIDEBAR_ITEMS = [
   { label: "Story", icon: Clapperboard, href: "/story", active: true },
   { label: "Image", icon: ImageIcon, href: "/image" },
   { label: "Video", icon: Video, href: "#" },
- { label: "Consistency", icon: UserCircle2, href: "/consistency" },
+ { label: "Consistent", icon: UserCircle2, href: "/consistency" },
   { label: "Motion", icon: Orbit, href: "#" },
   { label: "Projects", icon: FolderKanban, href: "/story" },
   { label: "Settings", icon: Settings, href: "#" },
