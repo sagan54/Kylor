@@ -413,15 +413,29 @@ function OutputCard({ item, onDelete, onOpen }) {
         overflow: "hidden", cursor: item.url ? "zoom-in" : "default", position: "relative",
         background: CARD_GRADIENTS[getIdNumber(item.id) % CARD_GRADIENTS.length],
         aspectRatio: "2/3", transition: "border-color 0.16s ease" }}>
-      {item.url
-        ? <img src={item.url} alt={item.scene} style={{ width: "100%", height: "100%", objectFit: "cover", position: "absolute", inset: 0 }} />
-        : (
-          <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center" }}>
-            <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 2, ease: "linear" }}
-              style={{ width: 32, height: 32, borderRadius: 999, border: `2px solid ${C.accent}`, borderTopColor: "transparent" }} />
-          </div>
-        )
-      }
+      {item.url && item.url !== "__FAILED__" ? (
+  <img
+    src={item.url}
+    alt={item.scene}
+    style={{ width: "100%", height: "100%", objectFit: "cover", position: "absolute", inset: 0 }}
+  />
+) : item.url === "__FAILED__" ? (
+  <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", padding: 16, textAlign: "center" }}>
+    <div>
+      <div style={{ fontSize: 13, fontWeight: 700, color: "white", marginBottom: 6 }}>Failed</div>
+      <div style={{ fontSize: 11.5, color: C.textMuted }}>{item.scene}</div>
+    </div>
+  </div>
+) : (
+  <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center" }}>
+    <motion.div
+      animate={{ rotate: 360 }}
+      transition={{ repeat: Infinity, duration: 2, ease: "linear" }}
+      style={{ width: 32, height: 32, borderRadius: 999, border: `2px solid ${C.accent}`, borderTopColor: "transparent" }}
+    />
+  </div>
+)}
+
       <div style={{ position: "absolute", inset: 0, background: "linear-gradient(135deg,rgba(255,255,255,0.04),transparent 50%)", pointerEvents: "none" }} />
       <AnimatePresence>
         {hovered && item.url && (
@@ -448,6 +462,13 @@ function OutputCard({ item, onDelete, onOpen }) {
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function ConsistencyPage() {
+  function autoResizeTextarea(e) {
+  const el = e.target;
+  el.style.height = "auto";
+  el.style.height = el.scrollHeight + "px";
+}
+
+
   const router = useRouter();
 
   const [activeView,   setActiveView]   = useState("generate");
@@ -470,7 +491,7 @@ export default function ConsistencyPage() {
 
   // Generation
   const [extraPrompt, setExtraPrompt] = useState("");
-  const charLimit = 300;
+  const charLimit = 1000;
 
   const [outputs,     setOutputs]     = useState([]);
   const [generating,  setGenerating]  = useState(false);
@@ -845,20 +866,30 @@ const uid = user?.id ?? null;
         ...(primaryFrontReference && view.key !== "front" ? [primaryFrontReference] : []),
       ];
 
-      const res = await fetch("/api/generate-image", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          prompt: finalPrompt,
-          size: view.size,
-          quality: "high",
-          n: 1,
-          referenceImages: referenceImagesForThisView,
-          characterSeed: String(activeChar.id),
-        }),
-      });
+     const controller = new AbortController();
+const timeout = setTimeout(() => controller.abort(), 45000);
 
-      const data = await res.json();
+let data = null;
+
+try {
+  const res = await fetch("/api/generate-image", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    signal: controller.signal,
+    body: JSON.stringify({
+      prompt: finalPrompt,
+      size: view.size,
+      n: 1,
+      referenceImages: referenceImagesForThisView,
+      characterSeed: String(activeChar.id),
+    }),
+  });
+
+  data = await res.json();
+} finally {
+  clearTimeout(timeout);
+}
+
       const url = Array.isArray(data?.images) ? data.images[0] : data?.image ?? null;
 
       if (!url) {
@@ -872,10 +903,13 @@ const uid = user?.id ?? null;
       generatedUrls.push(url || null);
 
       setOutputs(prev =>
-        prev.map(o =>
-          o.id === placeholderOutputs[i].id ? { ...o, url } : o
-        )
-      );
+  prev.map(o =>
+    o.id === placeholderOutputs[i].id
+      ? { ...o, url: url || "__FAILED__" }
+      : o
+  )
+);
+
     }
 
     const cleanUrls = generatedUrls.filter(Boolean);
@@ -1205,13 +1239,33 @@ const uid = user?.id ?? null;
                     <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: C.textMuted, marginBottom: 6 }}>Reference Notes
 </div>
                     <div style={{ position: "relative" }}>
-                      <textarea value={extraPrompt} onChange={e => setExtraPrompt(e.target.value.slice(0, charLimit))}
-                        placeholder="outfit details, facial details, accessories, exact look notes…
-" rows={4}
-                        style={{ width: "100%", padding: "10px 12px", borderRadius: radius.md,
-                          border: `1px solid ${C.border}`, background: C.surface, color: C.text,
-                          resize: "none", fontSize: 12.5, fontFamily: "inherit", lineHeight: 1.6,
-                          outline: "none", boxSizing: "border-box" }} />
+                      <textarea
+  value={extraPrompt}
+  onChange={e => {
+    setExtraPrompt(e.target.value.slice(0, charLimit));
+    autoResizeTextarea(e);
+  }}
+  onInput={autoResizeTextarea}
+  placeholder="outfit details, facial details, accessories, exact look notes…"
+  rows={1}
+  style={{
+    width: "100%",
+    minHeight: 110,
+    padding: "10px 12px",
+    borderRadius: radius.md,
+    border: `1px solid ${C.border}`,
+    background: C.surface,
+    color: C.text,
+    resize: "none",
+    overflow: "hidden",
+    fontSize: 12.5,
+    fontFamily: "inherit",
+    lineHeight: 1.6,
+    outline: "none",
+    boxSizing: "border-box",
+  }}
+/>
+
                       <div style={{ position: "absolute", bottom: 8, right: 10, fontSize: 10.5,
                         color: extraPrompt.length > charLimit * 0.9 ? "#f87171" : C.textDim }}>
                         {extraPrompt.length}/{charLimit}
