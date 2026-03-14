@@ -82,6 +82,79 @@ function fileToBase64(file) {
   });
 }
 
+// ─── Helper: stable numeric index from id ─────────────────────────────────────
+function getIdNumber(id) {
+  const s = String(id ?? "");
+  let hash = 0;
+  for (let i = 0; i < s.length; i++) {
+    hash = (hash << 5) - hash + s.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash);
+}
+
+// ─── Helper: traits metadata serialization ────────────────────────────────────
+function buildTraitsPayload({
+  charDesc,
+  gender,
+  ageRange,
+  ethnicity,
+  hairStyle,
+  hairColor,
+  eyeColor,
+  build,
+  charLocked,
+  extraPrompt,
+  lighting,
+}) {
+  return JSON.stringify({
+    charDesc: charDesc || "",
+    gender: gender || "",
+    ageRange: ageRange || "",
+    ethnicity: ethnicity || "",
+    hairStyle: hairStyle || "",
+    hairColor: hairColor || "",
+    eyeColor: eyeColor || "",
+    build: build || "",
+    charLocked: !!charLocked,
+    extraPrompt: extraPrompt || "",
+    lighting: lighting || null,
+  });
+}
+
+function parseTraitsPayload(value) {
+  try {
+    const parsed = JSON.parse(value || "{}");
+    return {
+      charDesc: parsed.charDesc || "",
+      gender: parsed.gender || "",
+      ageRange: parsed.ageRange || "",
+      ethnicity: parsed.ethnicity || "",
+      hairStyle: parsed.hairStyle || "",
+      hairColor: parsed.hairColor || "",
+      eyeColor: parsed.eyeColor || "",
+      build: parsed.build || "",
+      charLocked: !!parsed.charLocked,
+      extraPrompt: parsed.extraPrompt || "",
+      lighting: parsed.lighting || null,
+    };
+  } catch {
+    return {
+      charDesc: "",
+      gender: "",
+      ageRange: "",
+      ethnicity: "",
+      hairStyle: "",
+      hairColor: "",
+      eyeColor: "",
+      build: "",
+      charLocked: false,
+      extraPrompt: "",
+      lighting: null,
+    };
+  }
+}
+
 // ─── Sidebar Item ─────────────────────────────────────────────────────────────
 function SidebarItem({ item }) {
   const Icon = item.icon;
@@ -242,7 +315,7 @@ function RefUpload({ entries, onEntries, label, hint, max = 5 }) {
 // ─── Character Card ──────────────────────────────────────────────────────────
 function CharacterCard({ char, isActive, onClick, onDelete }) {
   const [hovered, setHovered] = useState(false);
-  const gradient = CARD_GRADIENTS[char.id % CARD_GRADIENTS.length];
+  const gradient = CARD_GRADIENTS[getIdNumber(char.id) % CARD_GRADIENTS.length];
   return (
     <motion.div whileHover={{ y: -2 }}
       onHoverStart={() => setHovered(true)} onHoverEnd={() => setHovered(false)}
@@ -306,7 +379,7 @@ function OutputCard({ item, onDelete, onOpen }) {
       onClick={() => item.url && onOpen?.(item)}
       style={{ borderRadius: radius.lg, border: `1px solid ${hovered ? C.borderHover : C.border}`,
         overflow: "hidden", cursor: item.url ? "zoom-in" : "default", position: "relative",
-        background: CARD_GRADIENTS[item.id % CARD_GRADIENTS.length],
+        background: CARD_GRADIENTS[getIdNumber(item.id) % CARD_GRADIENTS.length],
         aspectRatio: "2/3", transition: "border-color 0.16s ease" }}>
       {item.url
         ? <img src={item.url} alt={item.scene} style={{ width: "100%", height: "100%", objectFit: "cover", position: "absolute", inset: 0 }} />
@@ -384,8 +457,6 @@ export default function ConsistencyPage() {
   const charOutputs = outputs.filter(o => o.charId === activeCharId);
 
   // ── Sync refEntries form state → active character in real-time ────────────
-  // This fixes: user uploads refs AFTER saving character — activeChar.refEntries
-  // would stay empty without this sync.
   useEffect(() => {
     if (!activeCharId) return;
     setCharacters(p => p.map(c =>
@@ -408,23 +479,45 @@ export default function ConsistencyPage() {
         .order("created_at", { ascending: false });
 
       if (!error && data && data.length > 0) {
-        const loaded = data.map(row => ({
-          id:          row.id,
-          name:        row.name,
-          desc:        row.description || "",
-          gender:      row.gender      || "",
-          ageRange:    row.age_range   || "",
-          ethnicity:   row.ethnicity   || "",
-          hairStyle:   row.hair_style  || "",
-          hairColor:   row.hair_color  || "",
-          eyeColor:    row.eye_color   || "",
-          build:       row.build       || "",
-          locked:      row.locked      || false,
-          generations: row.generations || 0,
-          createdAt:   row.created_at,
-          refEntries:  (row.ref_urls || []).map(url => ({ file: null, previewUrl: url })),
-        }));
+        const loaded = data.map(row => {
+          const traits = parseTraitsPayload(row.prompt);
+          const generatedImages = Array.isArray(row.generated_images) ? row.generated_images : [];
+          const refUrls = row.reference_image ? [row.reference_image] : [];
+
+          return {
+            id: row.id,
+            name: row.name,
+            desc: traits.charDesc || row.description || "",
+            gender: traits.gender || "",
+            ageRange: traits.ageRange || "",
+            ethnicity: traits.ethnicity || "",
+            hairStyle: traits.hairStyle || "",
+            hairColor: traits.hairColor || "",
+            eyeColor: traits.eyeColor || "",
+            build: traits.build || "",
+            locked: traits.charLocked || false,
+            generations: generatedImages.length,
+            generatedImages,
+            style: row.style || traits.lighting || null,
+            extraPrompt: traits.extraPrompt || "",
+            createdAt: row.created_at,
+            refEntries: refUrls.map(url => ({ file: null, previewUrl: url })),
+          };
+        });
+
+        const loadedOutputs = loaded.flatMap(char =>
+          (char.generatedImages || []).map((url, i) => ({
+            id: `${char.id}-${i}`,
+            charId: char.id,
+            prompt: "",
+            scene: "Saved output",
+            url,
+            createdAt: char.createdAt || new Date().toISOString(),
+          }))
+        );
+
         setCharacters(loaded);
+        setOutputs(loadedOutputs);
         setActiveCharId(loaded[0].id);
       }
     })();
@@ -435,70 +528,110 @@ export default function ConsistencyPage() {
     if (!charName.trim()) return;
     setSaving(true);
 
-    const charId  = Date.now();
-    let   refUrls = [];
+    let refUrls = [];
 
     // Upload ref images to Supabase Storage
     if (refEntries.length > 0 && userId) {
       const uploads = await Promise.all(
         refEntries.map(async (entry, i) => {
-          if (!entry.file) return entry.previewUrl; // already a stored URL
+          if (!entry.file) return entry.previewUrl;
           try {
             const ext  = entry.file.type === "image/webp" ? "webp"
                        : entry.file.type === "image/jpeg" ? "jpg" : "png";
-            const path = `${userId}/${charId}-ref${i}.${ext}`;
+            const path = `${userId}/${Date.now()}-ref${i}.${ext}`;
             const { error } = await supabase.storage
               .from(CHAR_BUCKET)
               .upload(path, entry.file, { contentType: entry.file.type, upsert: true });
             if (error) { console.error("Ref upload:", error.message); return null; }
             const { data } = supabase.storage.from(CHAR_BUCKET).getPublicUrl(path);
             return data?.publicUrl ?? null;
-          } catch { return null; }
+          } catch {
+            return null;
+          }
         })
       );
       refUrls = uploads.filter(Boolean);
     } else {
-      // Not logged in — keep blob URLs for current session only
       refUrls = refEntries.map(e => e.previewUrl);
     }
 
-    // Save to DB
+    const promptPayload = buildTraitsPayload({
+      charDesc,
+      gender,
+      ageRange,
+      ethnicity,
+      hairStyle,
+      hairColor,
+      eyeColor,
+      build,
+      charLocked,
+      extraPrompt,
+      lighting,
+    });
+
+    let savedId = `local-${Date.now()}`;
+    let createdAt = new Date().toISOString();
+
     if (userId) {
-      const { error } = await supabase.from("characters").insert({
-        id:          charId,
-        user_id:     userId,
-        name:        charName.trim(),
-        description: charDesc.trim(),
-        gender,
-        age_range:   ageRange,
-        ethnicity,
-        hair_style:  hairStyle,
-        hair_color:  hairColor,
-        eye_color:   eyeColor,
-        build,
-        locked:      charLocked,
-        generations: 0,
-        ref_urls:    refUrls,
-        created_at:  new Date().toISOString(),
-      });
-      if (error) console.error("Character save failed:", error.message);
+      const { data, error } = await supabase
+        .from("characters")
+        .insert({
+          user_id: userId,
+          name: charName.trim(),
+          description: charDesc.trim(),
+          prompt: promptPayload,
+          reference_image: refUrls[0] || null,
+          generated_images: [],
+          cover_image: refUrls[0] || null,
+          style: lighting || null,
+          seed: null,
+        })
+        .select()
+        .single();
+
+      if (error) {
+        console.error("Character save failed:", error.message);
+      } else if (data) {
+        savedId = data.id;
+        createdAt = data.created_at;
+      }
     }
 
     const newChar = {
-      id: charId, name: charName.trim(), desc: charDesc.trim(),
-      gender, ageRange, ethnicity, hairStyle, hairColor, eyeColor, build,
+      id: savedId,
+      name: charName.trim(),
+      desc: charDesc.trim(),
+      gender,
+      ageRange,
+      ethnicity,
+      hairStyle,
+      hairColor,
+      eyeColor,
+      build,
       refEntries: refUrls.map(url => ({ file: null, previewUrl: url })),
-      locked: charLocked, generations: 0,
-      createdAt: new Date().toISOString(),
+      locked: charLocked,
+      generations: 0,
+      generatedImages: [],
+      style: lighting || null,
+      extraPrompt: extraPrompt || "",
+      createdAt,
     };
 
     setCharacters(p => [newChar, ...p]);
-    setActiveCharId(charId);
+    setActiveCharId(savedId);
 
     // Reset form
-    setCharName(""); setCharDesc(""); setGender(""); setAgeRange(""); setEthnicity("");
-    setHairStyle(""); setHairColor(""); setEyeColor(""); setBuild("");
-    setRefEntries([]); setCharLocked(false);
+    setCharName("");
+    setCharDesc("");
+    setGender("");
+    setAgeRange("");
+    setEthnicity("");
+    setHairStyle("");
+    setHairColor("");
+    setEyeColor("");
+    setBuild("");
+    setRefEntries([]);
+    setCharLocked(false);
     setFormSection("generate");
     setActiveView("characters");
     setSaving(false);
@@ -507,20 +640,32 @@ export default function ConsistencyPage() {
   // ── Delete character ──────────────────────────────────────────────────────
   async function deleteCharacter(id) {
     setCharacters(p => p.filter(c => c.id !== id));
-    if (activeCharId === id) setActiveCharId(characters.find(c => c.id !== id)?.id ?? null);
     setOutputs(p => p.filter(o => o.charId !== id));
-    if (userId) {
+
+    if (activeCharId === id) {
+      const nextChar = characters.find(c => c.id !== id);
+      setActiveCharId(nextChar?.id ?? null);
+    }
+
+    if (userId && !String(id).startsWith("local-")) {
       await supabase.from("characters").delete().eq("id", id).eq("user_id", userId);
     }
   }
 
   function loadCharacterIntoForm(char) {
-    setCharName(char.name); setCharDesc(char.desc);
-    setGender(char.gender); setAgeRange(char.ageRange); setEthnicity(char.ethnicity);
-    setHairStyle(char.hairStyle); setHairColor(char.hairColor);
-    setEyeColor(char.eyeColor); setBuild(char.build);
+    setCharName(char.name);
+    setCharDesc(char.desc);
+    setGender(char.gender);
+    setAgeRange(char.ageRange);
+    setEthnicity(char.ethnicity);
+    setHairStyle(char.hairStyle);
+    setHairColor(char.hairColor);
+    setEyeColor(char.eyeColor);
+    setBuild(char.build);
     setRefEntries([...char.refEntries]);
     setCharLocked(char.locked);
+    setExtraPrompt(char.extraPrompt || "");
+    setLighting(char.style || null);
     setActiveCharId(char.id);
     setFormSection("generate");
   }
@@ -560,8 +705,6 @@ export default function ConsistencyPage() {
     ].filter(Boolean).join(", ");
 
     const lightLabel = lighting ? LIGHTING_PRESETS.find(l => l.id === lighting)?.label : null;
-    // Check both the saved character refs AND the current form refs state (in case
-    // the user uploaded refs without re-saving the character)
     const effectiveRefs = activeChar.refEntries.length > 0 ? activeChar.refEntries : refEntries;
     const hasRefs = effectiveRefs.length > 0;
 
@@ -586,12 +729,11 @@ export default function ConsistencyPage() {
     canvasRef.current?.scrollTo({ top: 0, behavior: "smooth" });
 
     try {
-      // Handle both File objects (new uploads) and URL strings (loaded from Supabase)
       const refBase64 = hasRefs
         ? (await Promise.all(
             effectiveRefs.map(async e => {
-              if (e.file) return fileToBase64(e.file);  // new local file → base64
-              if (e.previewUrl) return e.previewUrl;    // already a URL from Supabase
+              if (e.file) return fileToBase64(e.file);
+              if (e.previewUrl) return e.previewUrl;
               return null;
             })
           )).filter(Boolean)
@@ -610,13 +752,37 @@ export default function ConsistencyPage() {
       const url  = Array.isArray(data?.images) ? data.images[0] : data?.image ?? null;
 
       setOutputs(p => p.map(o => o.id === outputId ? { ...o, url } : o));
-      setCharacters(p => p.map(c => c.id === activeCharId ? { ...c, generations: c.generations + 1 } : c));
 
-      // Update generation count in DB
-      if (userId) {
+      const updatedChar = {
+        ...activeChar,
+        generations: (activeChar.generations || 0) + 1,
+        generatedImages: [...(activeChar.generatedImages || []), ...(url ? [url] : [])],
+      };
+
+      setCharacters(p => p.map(c => c.id === activeCharId ? updatedChar : c));
+
+      if (userId && url && !String(activeCharId).startsWith("local-")) {
         await supabase.from("characters")
-          .update({ generations: (activeChar.generations || 0) + 1 })
-          .eq("id", activeCharId).eq("user_id", userId);
+          .update({
+            generated_images: updatedChar.generatedImages,
+            cover_image: updatedChar.generatedImages[0] || activeChar.refEntries?.[0]?.previewUrl || null,
+            style: lighting || activeChar.style || null,
+            prompt: buildTraitsPayload({
+              charDesc: activeChar.desc,
+              gender: activeChar.gender,
+              ageRange: activeChar.ageRange,
+              ethnicity: activeChar.ethnicity,
+              hairStyle: activeChar.hairStyle,
+              hairColor: activeChar.hairColor,
+              eyeColor: activeChar.eyeColor,
+              build: activeChar.build,
+              charLocked: activeChar.locked,
+              extraPrompt,
+              lighting,
+            }),
+          })
+          .eq("id", activeCharId)
+          .eq("user_id", userId);
       }
     } catch (err) {
       console.error("Generate failed:", err);
@@ -948,7 +1114,7 @@ export default function ConsistencyPage() {
                   <div style={{ padding: "10px 12px", borderRadius: radius.sm, border: `1px solid ${C.border}`,
                     background: "rgba(255,255,255,0.02)", display: "flex", alignItems: "center", gap: 10 }}>
                     <div style={{ width: 32, height: 32, borderRadius: 9, overflow: "hidden", flexShrink: 0,
-                      background: CARD_GRADIENTS[activeChar.id % CARD_GRADIENTS.length], display: "grid", placeItems: "center" }}>
+                      background: CARD_GRADIENTS[getIdNumber(activeChar.id) % CARD_GRADIENTS.length], display: "grid", placeItems: "center" }}>
                       {activeChar.refEntries.length > 0
                         ? <img src={activeChar.refEntries[0].previewUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                         : <User size={14} color="rgba(255,255,255,0.4)" />}
@@ -1100,7 +1266,7 @@ export default function ConsistencyPage() {
                               cursor: item.url ? "zoom-in" : "default" }}>
                             <div style={{ width: 52, height: 52, borderRadius: radius.sm, flexShrink: 0,
                               overflow: "hidden", border: `1px solid ${C.border}`,
-                              background: CARD_GRADIENTS[item.id % CARD_GRADIENTS.length] }}>
+                              background: CARD_GRADIENTS[getIdNumber(item.id) % CARD_GRADIENTS.length] }}>
                               {item.url && <img src={item.url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />}
                             </div>
                             <div style={{ flex: 1, minWidth: 0 }}>
