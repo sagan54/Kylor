@@ -569,65 +569,66 @@ const uid = user?.id ?? null;
 
   setSaving(true);
 
-  let refUrls = [];
+  try {
+    let refUrls = [];
 
-  // Upload ref images to Supabase Storage
-  if (refEntries.length > 0) {
-    const uploads = await Promise.all(
-      refEntries.map(async (entry, i) => {
-        if (!entry.file) return entry.previewUrl;
-        try {
-          const ext =
-            entry.file.type === "image/webp"
-              ? "webp"
-              : entry.file.type === "image/jpeg"
-              ? "jpg"
-              : "png";
+    if (refEntries.length > 0) {
+      const uploads = await Promise.all(
+        refEntries.map(async (entry, i) => {
+          if (!entry.file) return entry.previewUrl;
 
-          const path = `${userId}/${Date.now()}-ref${i}.${ext}`;
+          try {
+            const ext =
+              entry.file.type === "image/webp"
+                ? "webp"
+                : entry.file.type === "image/jpeg"
+                ? "jpg"
+                : "png";
 
-          const { error } = await supabase.storage
-            .from(CHAR_BUCKET)
-            .upload(path, entry.file, {
-              contentType: entry.file.type,
-              upsert: true,
-            });
+            const path = `${userId}/${Date.now()}-ref${i}.${ext}`;
 
-          if (error) {
-            console.error("Ref upload:", error.message);
+            const { error: uploadError } = await supabase.storage
+              .from(CHAR_BUCKET)
+              .upload(path, entry.file, {
+                contentType: entry.file.type,
+                upsert: true,
+              });
+
+            if (uploadError) {
+              console.error("Ref upload failed:", uploadError);
+              return null;
+            }
+
+            const { data: publicUrlData } = supabase.storage
+              .from(CHAR_BUCKET)
+              .getPublicUrl(path);
+
+            return publicUrlData?.publicUrl ?? null;
+          } catch (err) {
+            console.error("Ref upload exception:", err);
             return null;
           }
+        })
+      );
 
-          const { data } = supabase.storage.from(CHAR_BUCKET).getPublicUrl(path);
-          return data?.publicUrl ?? null;
-        } catch {
-          return null;
-        }
-      })
-    );
+      refUrls = uploads.filter(Boolean);
+    }
 
-    refUrls = uploads.filter(Boolean);
-  } else {
-    refUrls = [];
-  }
+    const promptPayload = buildTraitsPayload({
+      charDesc,
+      gender,
+      ageRange,
+      ethnicity,
+      hairStyle,
+      hairColor,
+      eyeColor,
+      build,
+      charLocked,
+      extraPrompt,
+      lighting,
+    });
 
-  const promptPayload = buildTraitsPayload({
-    charDesc,
-    gender,
-    ageRange,
-    ethnicity,
-    hairStyle,
-    hairColor,
-    eyeColor,
-    build,
-    charLocked,
-    extraPrompt,
-    lighting,
-  });
-
-  const { data, error } = await supabase
-    .from("characters")
-    .insert({
+    const insertPayload = {
       user_id: userId,
       name: charName.trim(),
       description: charDesc.trim(),
@@ -637,56 +638,68 @@ const uid = user?.id ?? null;
       cover_image: refUrls[0] || null,
       style: lighting || null,
       seed: null,
-    })
-    .select()
-    .single();
+    };
 
-  if (error || !data) {
-    console.error("Character save failed:", error?.message);
+    console.log("Saving character payload:", insertPayload);
+
+    const { data, error } = await supabase
+      .from("characters")
+      .insert([insertPayload])
+      .select()
+      .single();
+
+    if (error || !data) {
+      console.error("Character save failed:", error);
+      alert(`Failed to save character: ${error?.message || "Unknown error"}`);
+      setSaving(false);
+      return;
+    }
+
+    const newChar = {
+      id: data.id,
+      name: charName.trim(),
+      desc: charDesc.trim(),
+      gender,
+      ageRange,
+      ethnicity,
+      hairStyle,
+      hairColor,
+      eyeColor,
+      build,
+      refEntries: refUrls.map(url => ({ file: null, previewUrl: url })),
+      locked: charLocked,
+      generations: 0,
+      generatedImages: [],
+      style: lighting || null,
+      extraPrompt: extraPrompt || "",
+      createdAt: data.created_at,
+    };
+
+    setCharacters(prev => [newChar, ...prev]);
+    setActiveCharId(data.id);
+
+    setCharName("");
+    setCharDesc("");
+    setGender("");
+    setAgeRange("");
+    setEthnicity("");
+    setHairStyle("");
+    setHairColor("");
+    setEyeColor("");
+    setBuild("");
+    setRefEntries([]);
+    setCharLocked(false);
+
+    setFormSection("generate");
+    setActiveView("characters");
+  } catch (err) {
+    console.error("Save character exception:", err);
     alert("Failed to save character.");
+  } finally {
     setSaving(false);
-    return;
   }
-
-  const newChar = {
-    id: data.id,
-    name: charName.trim(),
-    desc: charDesc.trim(),
-    gender,
-    ageRange,
-    ethnicity,
-    hairStyle,
-    hairColor,
-    eyeColor,
-    build,
-    refEntries: refUrls.map(url => ({ file: null, previewUrl: url })),
-    locked: charLocked,
-    generations: 0,
-    generatedImages: [],
-    style: lighting || null,
-    extraPrompt: extraPrompt || "",
-    createdAt: data.created_at,
-  };
-
-  setCharacters(p => [newChar, ...p]);
-  setActiveCharId(data.id);
-
-  // Reset form
-  setCharName("");
-  setCharDesc("");
-  setGender("");
-  setAgeRange("");
-  setEthnicity("");
-  setHairStyle("");
-  setHairColor("");
-  setEyeColor("");
-  setBuild("");
-  setRefEntries([]);
-  setCharLocked(false);
-  setFormSection("generate");
-  setActiveView("characters");
-  setSaving(false);
 }
+
 
 
   // ── Delete character ──────────────────────────────────────────────────────
