@@ -135,7 +135,6 @@ function buildTraitsPayload({
   build,
   charLocked,
   extraPrompt,
-  lighting,
 }) {
   return JSON.stringify({
     charDesc: charDesc || "",
@@ -148,9 +147,9 @@ function buildTraitsPayload({
     build: build || "",
     charLocked: !!charLocked,
     extraPrompt: extraPrompt || "",
-    lighting: lighting || null,
   });
 }
+
 
 function parseTraitsPayload(value) {
   try {
@@ -166,7 +165,6 @@ function parseTraitsPayload(value) {
       build: parsed.build || "",
       charLocked: !!parsed.charLocked,
       extraPrompt: parsed.extraPrompt || "",
-      lighting: parsed.lighting || null,
     };
   } catch {
     return {
@@ -180,10 +178,10 @@ function parseTraitsPayload(value) {
       build: "",
       charLocked: false,
       extraPrompt: "",
-      lighting: null,
     };
   }
 }
+
 
 // ─── Sidebar Item ─────────────────────────────────────────────────────────────
 function SidebarItem({ item }) {
@@ -467,8 +465,6 @@ export default function ConsistencyPage() {
   const [charLocked,  setCharLocked]  = useState(false);
 
   // Generation
-  const [scene,       setScene]       = useState("");
-  const [lighting,    setLighting]    = useState(null);
   const [extraPrompt, setExtraPrompt] = useState("");
   const charLimit = 300;
 
@@ -532,7 +528,7 @@ const uid = user?.id ?? null;
             locked: traits.charLocked || false,
             generations: generatedImages.length,
             generatedImages,
-            style: row.style || traits.lighting || null,
+            style: row.style || null,
             extraPrompt: traits.extraPrompt || "",
             createdAt: row.created_at,
             refEntries: refUrls.map(url => ({ file: null, previewUrl: url })),
@@ -615,18 +611,18 @@ const uid = user?.id ?? null;
     }
 
     const promptPayload = buildTraitsPayload({
-      charDesc,
-      gender,
-      ageRange,
-      ethnicity,
-      hairStyle,
-      hairColor,
-      eyeColor,
-      build,
-      charLocked,
-      extraPrompt,
-      lighting,
-    });
+  charDesc,
+  gender,
+  ageRange,
+  ethnicity,
+  hairStyle,
+  hairColor,
+  eyeColor,
+  build,
+  charLocked,
+  extraPrompt,
+});
+
 
     const insertPayload = {
       user_id: userId,
@@ -636,7 +632,7 @@ const uid = user?.id ?? null;
       reference_image: refUrls[0] || null,
       generated_images: [],
       cover_image: refUrls[0] || null,
-      style: lighting || null,
+      style: null,
       seed: null,
     };
 
@@ -670,7 +666,7 @@ const uid = user?.id ?? null;
       locked: charLocked,
       generations: 0,
       generatedImages: [],
-      style: lighting || null,
+      style: null,
       extraPrompt: extraPrompt || "",
       createdAt: data.created_at,
     };
@@ -730,7 +726,6 @@ const uid = user?.id ?? null;
     setRefEntries([...char.refEntries]);
     setCharLocked(char.locked);
     setExtraPrompt(char.extraPrompt || "");
-    setLighting(char.style || null);
     setActiveCharId(char.id);
     setFormSection("generate");
   }
@@ -780,7 +775,6 @@ const uid = user?.id ?? null;
     activeChar.build ? `${activeChar.build} build` : null,
   ].filter(Boolean).join(", ");
 
-  const lightLabel = lighting ? LIGHTING_PRESETS.find(l => l.id === lighting)?.label : null;
   const effectiveRefs = activeChar.refEntries.length > 0 ? activeChar.refEntries : refEntries;
   const hasRefs = effectiveRefs.length > 0;
 
@@ -790,7 +784,7 @@ const uid = user?.id ?? null;
       : `Character reference sheet of the same person named ${activeChar.name}. Maintain the exact same identity, face, hairstyle, outfit, body type, and proportions across all views.`,
     traitDesc ? `Physical traits: ${traitDesc}` : null,
     activeChar.desc ? `Additional features: ${activeChar.desc}` : null,
-    lightLabel ? `Lighting: ${lightLabel}` : "Lighting: soft studio",
+    "Lighting: soft studio",
     extraPrompt.trim() || null,
     "Photorealistic, ultra detailed, neutral pose, reference-sheet style, plain studio background, no text, no watermark.",
   ].filter(Boolean).join(". ");
@@ -874,20 +868,20 @@ const uid = user?.id ?? null;
         .update({
           generated_images: cleanUrls,
           cover_image: cleanUrls[4] || cleanUrls[0] || activeChar.refEntries?.[0]?.previewUrl || null,
-          style: lighting || activeChar.style || null,
-          prompt: buildTraitsPayload({
-            charDesc: activeChar.desc,
-            gender: activeChar.gender,
-            ageRange: activeChar.ageRange,
-            ethnicity: activeChar.ethnicity,
-            hairStyle: activeChar.hairStyle,
-            hairColor: activeChar.hairColor,
-            eyeColor: activeChar.eyeColor,
-            build: activeChar.build,
-            charLocked: activeChar.locked,
-            extraPrompt,
-            lighting,
-          }),
+          style: activeChar.style || null,
+prompt: buildTraitsPayload({
+  charDesc: activeChar.desc,
+  gender: activeChar.gender,
+  ageRange: activeChar.ageRange,
+  ethnicity: activeChar.ethnicity,
+  hairStyle: activeChar.hairStyle,
+  hairColor: activeChar.hairColor,
+  eyeColor: activeChar.eyeColor,
+  build: activeChar.build,
+  charLocked: activeChar.locked,
+  extraPrompt,
+}),
+
         })
         .eq("id", activeCharId)
         .eq("user_id", userId);
@@ -1181,41 +1175,12 @@ const uid = user?.id ?? null;
 
                 {activeChar && (<>
                   <div>
-                    <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: C.textMuted, marginBottom: 8 }}>Scene Type</div>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
-                      {SCENE_TYPES.map(s => (
-                        <motion.button key={s} whileTap={{ scale: 0.95 }} onClick={() => setScene(scene === s ? "" : s)}
-                          style={{ height: 34, borderRadius: radius.sm, cursor: "pointer",
-                            border: `1px solid ${scene === s ? C.accentBorder : C.border}`,
-                            background: scene === s ? "linear-gradient(160deg,rgba(79,70,229,0.18),rgba(124,58,237,0.12))" : C.surface,
-                            color: scene === s ? "white" : C.textMuted, fontSize: 11.5,
-                            fontFamily: "inherit", transition: "all 0.15s ease" }}>
-                          {s}
-                        </motion.button>
-                      ))}
-                    </div>
-                  </div>
-                  <div>
-                    <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: C.textMuted, marginBottom: 8 }}>Lighting</div>
-                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                      {LIGHTING_PRESETS.map(l => (
-                        <motion.button key={l.id} whileTap={{ scale: 0.94 }}
-                          onClick={() => setLighting(lighting === l.id ? null : l.id)}
-                          style={{ height: 30, padding: "0 11px", borderRadius: radius.full, cursor: "pointer",
-                            border: `1px solid ${lighting === l.id ? l.color + "60" : C.border}`,
-                            background: lighting === l.id ? l.color + "18" : C.surface,
-                            color: lighting === l.id ? l.color : C.textMuted,
-                            fontSize: 11.5, fontFamily: "inherit", transition: "all 0.14s ease" }}>
-                          {l.label}
-                        </motion.button>
-                      ))}
-                    </div>
-                  </div>
-                  <div>
-                    <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: C.textMuted, marginBottom: 6 }}>Additional Details</div>
+                    <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: C.textMuted, marginBottom: 6 }}>Reference Notes
+</div>
                     <div style={{ position: "relative" }}>
                       <textarea value={extraPrompt} onChange={e => setExtraPrompt(e.target.value.slice(0, charLimit))}
-                        placeholder="wearing a leather jacket, rainy city background, 2049…" rows={4}
+                        placeholder="outfit details, facial details, accessories, exact look notes…
+" rows={4}
                         style={{ width: "100%", padding: "10px 12px", borderRadius: radius.md,
                           border: `1px solid ${C.border}`, background: C.surface, color: C.text,
                           resize: "none", fontSize: 12.5, fontFamily: "inherit", lineHeight: 1.6,
@@ -1354,7 +1319,8 @@ const uid = user?.id ?? null;
                         </div>
                         <p style={{ margin: "0 0 6px", color: C.text, fontSize: 15, fontWeight: 700 }}>Ready to generate</p>
                         <p style={{ margin: "0 0 18px", color: C.textMuted, fontSize: 12.5, lineHeight: 1.7 }}>
-                          Generate the 5-view character pack, then send it to the Image section.
+                          Generate the fixed 5-view character pack, then use it in the Image section.
+
 
                         </p>
                         <motion.button whileTap={{ scale: 0.96 }} onClick={() => setFormSection("generate")}
