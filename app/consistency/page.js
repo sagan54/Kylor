@@ -7,20 +7,16 @@ import {
   Sparkles, Compass, Clapperboard, Image as ImageIcon, Video, UserCircle2,
   Orbit, FolderKanban, Settings, Wand2, ChevronRight, X, ChevronDown,
   Upload, Zap, Star, Download, Share2, Trash2, Plus, Check, Copy,
-  User, Users, Lock, Unlock, Grid3X3, List, Folder, Camera, Sliders,
-  ArrowRight, ExternalLink,
+  User, Users, Layers, RefreshCw, Eye, Lock, Unlock, Grid3X3,
+  List, Folder, Bell, BellOff, ChevronLeft, MoreHorizontal,
+  Shuffle, BookOpen, Camera, Sliders, ArrowRight, ExternalLink,
 } from "lucide-react";
-import { useEffect, useRef, useState, useCallback } from "react";
-import { createClient } from "@supabase/supabase-js";
+import { useEffect, useRef, useState, useCallback, useMemo } from "react";
+import { supabase } from "../../lib/supabase";
 
-// ─── Supabase client ──────────────────────────────────────────────────────────
-// Uses the same env vars as the rest of the app.
-// If your project already has a shared client at lib/supabase.js, replace these
-// two lines with: import { supabase } from "../../lib/supabase";
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-);
+// ─── Supabase bucket name ─────────────────────────────────────────────────────
+// Create this once in Supabase → Storage → New bucket
+// Name: "character-refs"  |  Public: true
 const CHAR_BUCKET = "character-refs";
 
 // ─── Tokens ───────────────────────────────────────────────────────────────────
@@ -35,6 +31,7 @@ const C = {
 };
 const radius = { sm: "10px", md: "14px", lg: "18px", xl: "22px", full: "999px" };
 
+// ─── Sidebar ──────────────────────────────────────────────────────────────────
 const SIDEBAR_ITEMS = [
   { label: "Home",        icon: Compass,      href: "/" },
   { label: "Explore",     icon: Compass,      href: "/explore" },
@@ -47,6 +44,7 @@ const SIDEBAR_ITEMS = [
   { label: "Settings",    icon: Settings,     href: "#" },
 ];
 
+// ─── Data ─────────────────────────────────────────────────────────────────────
 const GENDERS     = ["Female", "Male", "Non-binary", "Unspecified"];
 const AGE_RANGE   = ["Teen (13–17)", "Young Adult (18–30)", "Adult (30–50)", "Senior (50+)", "Unspecified"];
 const ETHNICITIES = ["Unspecified", "East Asian", "South Asian", "Black / African", "Latino / Hispanic", "Middle Eastern", "White / European", "Mixed"];
@@ -54,7 +52,10 @@ const HAIR_STYLES = ["Short", "Medium", "Long", "Curly", "Wavy", "Braided", "Bal
 const HAIR_COLORS = ["Black", "Brown", "Blonde", "Red", "White", "Silver", "Blue", "Pink", "Green"];
 const EYE_COLORS  = ["Brown", "Blue", "Green", "Hazel", "Grey", "Amber"];
 const BUILD_TYPES = ["Slim", "Athletic", "Average", "Muscular", "Stocky", "Curvy"];
-const SCENE_TYPES = ["Portrait / Close-up", "Upper body", "Full body standing", "Full body action", "Sitting / relaxed", "Walking / moving"];
+const SCENE_TYPES = [
+  "Portrait / Close-up", "Upper body", "Full body standing",
+  "Full body action", "Sitting / relaxed", "Walking / moving",
+];
 const LIGHTING_PRESETS = [
   { id: "cinematic",   label: "Cinematic",   color: "#6366f1" },
   { id: "golden_hour", label: "Golden Hour", color: "#f59e0b" },
@@ -71,7 +72,7 @@ const CARD_GRADIENTS = [
   "linear-gradient(135deg, rgba(67,56,202,0.6), rgba(124,58,237,0.3))",
 ];
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// ─── Helper: file → base64 ────────────────────────────────────────────────────
 function fileToBase64(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -79,36 +80,6 @@ function fileToBase64(file) {
     reader.onerror = reject;
     reader.readAsDataURL(file);
   });
-}
-
-// ─── Build a face-locked prompt ───────────────────────────────────────────────
-// FIX 1: Much more specific face-lock instructions so the AI preserves facial identity
-function buildFaceLockedPrompt({ char, scene, lightLabel, extraPrompt, hasRefs }) {
-  const traits = [
-    char.gender, char.ageRange, char.ethnicity,
-    char.hairColor && char.hairStyle ? `${char.hairColor} ${char.hairStyle} hair` : null,
-    char.eyeColor  ? `${char.eyeColor} eyes` : null,
-    char.build     ? `${char.build} build` : null,
-  ].filter(Boolean).join(", ");
-
-  const faceLockInstructions = hasRefs
-    ? [
-        `IMPORTANT: This is a specific real person named ${char.name}.`,
-        `Preserve EXACTLY: their unique facial bone structure, face shape, jawline, nose shape, lip shape, eye shape and color, eyebrow shape, skin tone, and all distinguishing facial features.`,
-        `DO NOT change or idealise their face. The face must be an exact match to the reference photos.`,
-        `Same person, same face, different scene only.`,
-      ].join(" ")
-    : `Character named ${char.name} with consistent appearance throughout all generations.`;
-
-  return [
-    hasRefs ? faceLockInstructions : `Portrait of ${char.name}`,
-    traits ? `Physical traits: ${traits}` : null,
-    char.desc ? `Additional features: ${char.desc}` : null,
-    scene       ? `Scene: ${scene}` : null,
-    lightLabel  ? `Lighting: ${lightLabel}` : null,
-    extraPrompt.trim() || null,
-    "Photorealistic, ultra detailed, cinematic quality, no text, no watermark.",
-  ].filter(Boolean).join(". ");
 }
 
 // ─── Sidebar Item ─────────────────────────────────────────────────────────────
@@ -182,7 +153,7 @@ function Select({ label, options, value, onChange }) {
   );
 }
 
-// ─── Ref Image Upload ─────────────────────────────────────────────────────────
+// ─── Ref Image Upload Zone ─────────────────────────────────────────────────────
 function RefUpload({ entries, onEntries, label, hint, max = 5 }) {
   const [drag, setDrag] = useState(false);
   const inputRef = useRef(null);
@@ -193,9 +164,11 @@ function RefUpload({ entries, onEntries, label, hint, max = 5 }) {
     onEntries(prev => {
       const slots = max - prev.length;
       if (slots <= 0) return prev;
-      return [...prev, ...valid.slice(0, slots).map(file => ({
-        file, previewUrl: URL.createObjectURL(file),
-      }))];
+      const newEntries = valid.slice(0, slots).map(file => ({
+        file,
+        previewUrl: URL.createObjectURL(file),
+      }));
+      return [...prev, ...newEntries];
     });
   }
 
@@ -221,12 +194,14 @@ function RefUpload({ entries, onEntries, label, hint, max = 5 }) {
     <div style={{ display: "grid", gap: 8 }}>
       <motion.div
         onDragOver={e => { e.preventDefault(); setDrag(true); }}
-        onDragLeave={() => setDrag(false)} onDrop={onDrop}
+        onDragLeave={() => setDrag(false)}
+        onDrop={onDrop}
         onClick={() => inputRef.current?.click()}
         animate={{ borderColor: drag ? C.accent : "rgba(255,255,255,0.09)", background: drag ? C.accentSoft : C.surface }}
-        style={{ borderRadius: radius.md, border: "1.5px dashed rgba(255,255,255,0.09)",
-          padding: "14px", cursor: "pointer", display: "flex", alignItems: "center", gap: 12 }}>
-        <input ref={inputRef} type="file" accept="image/*" multiple style={{ display: "none" }} onChange={onInputChange} />
+        style={{ borderRadius: radius.md, border: "1.5px dashed rgba(255,255,255,0.09)", padding: "14px",
+          cursor: "pointer", display: "flex", alignItems: "center", gap: 12 }}>
+        <input ref={inputRef} type="file" accept="image/*" multiple style={{ display: "none" }}
+          onChange={onInputChange} />
         <div style={{ width: 36, height: 36, borderRadius: radius.sm, flexShrink: 0,
           background: C.accentSoft, border: `1px solid ${C.accentBorder}`, display: "grid", placeItems: "center" }}>
           <Camera size={14} color="#a78bfa" />
@@ -239,14 +214,18 @@ function RefUpload({ entries, onEntries, label, hint, max = 5 }) {
           {entries.length}/{max}
         </div>
       </motion.div>
+
       {entries.length > 0 && (
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
           {entries.map((entry, i) => (
-            <motion.div key={entry.previewUrl} initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }}
+            <motion.div key={entry.previewUrl}
+              initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }}
               style={{ position: "relative", width: 52, height: 52, borderRadius: 9,
                 overflow: "hidden", border: `1.5px solid ${C.accentBorder}`, flexShrink: 0 }}>
-              <img src={entry.previewUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
-              <button onClick={e => { e.stopPropagation(); removeEntry(i); }}
+              <img src={entry.previewUrl} alt=""
+                style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+              <button
+                onClick={e => { e.stopPropagation(); removeEntry(i); }}
                 style={{ position: "absolute", top: 2, right: 2, width: 16, height: 16, borderRadius: 999,
                   background: "rgba(0,0,0,0.8)", border: "none", color: "white",
                   display: "grid", placeItems: "center", cursor: "pointer" }}>
@@ -263,22 +242,25 @@ function RefUpload({ entries, onEntries, label, hint, max = 5 }) {
 // ─── Character Card ──────────────────────────────────────────────────────────
 function CharacterCard({ char, isActive, onClick, onDelete }) {
   const [hovered, setHovered] = useState(false);
+  const gradient = CARD_GRADIENTS[char.id % CARD_GRADIENTS.length];
   return (
     <motion.div whileHover={{ y: -2 }}
       onHoverStart={() => setHovered(true)} onHoverEnd={() => setHovered(false)}
       onClick={onClick}
-      style={{ borderRadius: radius.lg,
-        border: `1px solid ${isActive ? C.accentBorder : hovered ? C.borderHover : C.border}`,
+      style={{ borderRadius: radius.lg, border: `1px solid ${isActive ? C.accentBorder : hovered ? C.borderHover : C.border}`,
         background: isActive ? "rgba(124,58,237,0.06)" : C.surface, cursor: "pointer",
         overflow: "hidden", transition: "all 0.18s ease",
         boxShadow: isActive ? `0 0 0 1px rgba(124,58,237,0.12) inset` : "none" }}>
-      <div style={{ height: 80, background: CARD_GRADIENTS[char.id % CARD_GRADIENTS.length],
-        position: "relative", overflow: "hidden" }}>
+      <div style={{ height: 80, background: gradient, position: "relative", overflow: "hidden" }}>
         <div style={{ position: "absolute", inset: 0, background: "linear-gradient(135deg,rgba(255,255,255,0.05),transparent)" }} />
-        {char.refEntries.length > 0
-          ? <img src={char.refEntries[0].previewUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", opacity: 0.85 }} />
-          : <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center" }}><User size={28} color="rgba(255,255,255,0.25)" /></div>
-        }
+        {char.refEntries.length > 0 ? (
+          <img src={char.refEntries[0].previewUrl} alt=""
+            style={{ width: "100%", height: "100%", objectFit: "cover", opacity: 0.85 }} />
+        ) : (
+          <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center" }}>
+            <User size={28} color="rgba(255,255,255,0.25)" />
+          </div>
+        )}
         {isActive && (
           <div style={{ position: "absolute", top: 8, right: 8, width: 20, height: 20, borderRadius: 999,
             background: C.accent, display: "grid", placeItems: "center" }}>
@@ -315,7 +297,7 @@ function CharacterCard({ char, isActive, onClick, onDelete }) {
   );
 }
 
-// ─── Output Card ──────────────────────────────────────────────────────────────
+// ─── Generation Output Card ───────────────────────────────────────────────────
 function OutputCard({ item, onDelete, onOpen }) {
   const [hovered, setHovered] = useState(false);
   return (
@@ -328,10 +310,12 @@ function OutputCard({ item, onDelete, onOpen }) {
         aspectRatio: "2/3", transition: "border-color 0.16s ease" }}>
       {item.url
         ? <img src={item.url} alt={item.scene} style={{ width: "100%", height: "100%", objectFit: "cover", position: "absolute", inset: 0 }} />
-        : <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center" }}>
+        : (
+          <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center" }}>
             <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 2, ease: "linear" }}
               style={{ width: 32, height: 32, borderRadius: 999, border: `2px solid ${C.accent}`, borderTopColor: "transparent" }} />
           </div>
+        )
       }
       <div style={{ position: "absolute", inset: 0, background: "linear-gradient(135deg,rgba(255,255,255,0.04),transparent 50%)", pointerEvents: "none" }} />
       <AnimatePresence>
@@ -366,7 +350,7 @@ export default function ConsistencyPage() {
   const [characters,   setCharacters]   = useState([]);
   const [activeCharId, setActiveCharId] = useState(null);
 
-  // Form
+  // Character form
   const [charName,    setCharName]    = useState("");
   const [charDesc,    setCharDesc]    = useState("");
   const [gender,      setGender]      = useState("");
@@ -388,19 +372,26 @@ export default function ConsistencyPage() {
   const [outputs,     setOutputs]     = useState([]);
   const [generating,  setGenerating]  = useState(false);
   const [formSection, setFormSection] = useState("traits");
-
-  // FIX 2: Lightbox state
   const [lightboxItem, setLightboxItem] = useState(null);
 
   // Supabase
-  const [userId,   setUserId]   = useState(null);
-  const [saving,   setSaving]   = useState(false);
-  const [dbLoaded, setDbLoaded] = useState(false);
+  const [userId,  setUserId]  = useState(null);
+  const [saving,  setSaving]  = useState(false);
 
   const canvasRef = useRef(null);
 
   const activeChar  = characters.find(c => c.id === activeCharId) || null;
   const charOutputs = outputs.filter(o => o.charId === activeCharId);
+
+  // ── Sync refEntries form state → active character in real-time ────────────
+  // This fixes: user uploads refs AFTER saving character — activeChar.refEntries
+  // would stay empty without this sync.
+  useEffect(() => {
+    if (!activeCharId) return;
+    setCharacters(p => p.map(c =>
+      c.id === activeCharId ? { ...c, refEntries } : c
+    ));
+  }, [refEntries, activeCharId]);
 
   // ── Load characters from Supabase on mount ────────────────────────────────
   useEffect(() => {
@@ -408,7 +399,7 @@ export default function ConsistencyPage() {
       const { data: { session } } = await supabase.auth.getSession();
       const uid = session?.user?.id ?? null;
       setUserId(uid);
-      if (!uid) { setDbLoaded(true); return; }
+      if (!uid) return;
 
       const { data, error } = await supabase
         .from("characters")
@@ -416,46 +407,45 @@ export default function ConsistencyPage() {
         .eq("user_id", uid)
         .order("created_at", { ascending: false });
 
-      if (!error && data) {
-        // Map DB rows → app shape; ref_urls become {file:null, previewUrl} entries
+      if (!error && data && data.length > 0) {
         const loaded = data.map(row => ({
           id:          row.id,
           name:        row.name,
-          desc:        row.description,
-          gender:      row.gender,
-          ageRange:    row.age_range,
-          ethnicity:   row.ethnicity,
-          hairStyle:   row.hair_style,
-          hairColor:   row.hair_color,
-          eyeColor:    row.eye_color,
-          build:       row.build,
-          locked:      row.locked,
-          generations: row.generations,
+          desc:        row.description || "",
+          gender:      row.gender      || "",
+          ageRange:    row.age_range   || "",
+          ethnicity:   row.ethnicity   || "",
+          hairStyle:   row.hair_style  || "",
+          hairColor:   row.hair_color  || "",
+          eyeColor:    row.eye_color   || "",
+          build:       row.build       || "",
+          locked:      row.locked      || false,
+          generations: row.generations || 0,
           createdAt:   row.created_at,
-          // Stored refs as public URLs — wrap as entries (no file object, just URL)
           refEntries:  (row.ref_urls || []).map(url => ({ file: null, previewUrl: url })),
         }));
         setCharacters(loaded);
-        if (loaded.length > 0) setActiveCharId(loaded[0].id);
+        setActiveCharId(loaded[0].id);
       }
-      setDbLoaded(true);
     })();
   }, []);
 
-  // ── Save character to Supabase ────────────────────────────────────────────
+  // ── Save character ────────────────────────────────────────────────────────
   async function saveCharacter() {
     if (!charName.trim()) return;
     setSaving(true);
 
-    const charId = Date.now();
-    let refUrls = [];
+    const charId  = Date.now();
+    let   refUrls = [];
 
+    // Upload ref images to Supabase Storage
     if (refEntries.length > 0 && userId) {
       const uploads = await Promise.all(
         refEntries.map(async (entry, i) => {
-          if (!entry.file) return entry.previewUrl;
+          if (!entry.file) return entry.previewUrl; // already a stored URL
           try {
-            const ext  = entry.file.type === "image/webp" ? "webp" : entry.file.type === "image/jpeg" ? "jpg" : "png";
+            const ext  = entry.file.type === "image/webp" ? "webp"
+                       : entry.file.type === "image/jpeg" ? "jpg" : "png";
             const path = `${userId}/${charId}-ref${i}.${ext}`;
             const { error } = await supabase.storage
               .from(CHAR_BUCKET)
@@ -468,8 +458,30 @@ export default function ConsistencyPage() {
       );
       refUrls = uploads.filter(Boolean);
     } else {
-      // Not logged in — keep object URLs for this session
+      // Not logged in — keep blob URLs for current session only
       refUrls = refEntries.map(e => e.previewUrl);
+    }
+
+    // Save to DB
+    if (userId) {
+      const { error } = await supabase.from("characters").insert({
+        id:          charId,
+        user_id:     userId,
+        name:        charName.trim(),
+        description: charDesc.trim(),
+        gender,
+        age_range:   ageRange,
+        ethnicity,
+        hair_style:  hairStyle,
+        hair_color:  hairColor,
+        eye_color:   eyeColor,
+        build,
+        locked:      charLocked,
+        generations: 0,
+        ref_urls:    refUrls,
+        created_at:  new Date().toISOString(),
+      });
+      if (error) console.error("Character save failed:", error.message);
     }
 
     const newChar = {
@@ -480,26 +492,15 @@ export default function ConsistencyPage() {
       createdAt: new Date().toISOString(),
     };
 
-    if (userId) {
-      const { error } = await supabase.from("characters").insert({
-        id: charId, user_id: userId,
-        name: newChar.name, description: newChar.desc,
-        gender: newChar.gender, age_range: newChar.ageRange,
-        ethnicity: newChar.ethnicity, hair_style: newChar.hairStyle,
-        hair_color: newChar.hairColor, eye_color: newChar.eyeColor,
-        build: newChar.build, locked: newChar.locked,
-        generations: 0, ref_urls: refUrls, created_at: newChar.createdAt,
-      });
-      if (error) console.error("Character save failed:", error.message);
-    }
-
     setCharacters(p => [newChar, ...p]);
     setActiveCharId(charId);
+
+    // Reset form
     setCharName(""); setCharDesc(""); setGender(""); setAgeRange(""); setEthnicity("");
     setHairStyle(""); setHairColor(""); setEyeColor(""); setBuild("");
     setRefEntries([]); setCharLocked(false);
     setFormSection("generate");
-    setActiveView("generate");
+    setActiveView("characters");
     setSaving(false);
   }
 
@@ -524,17 +525,15 @@ export default function ConsistencyPage() {
     setFormSection("generate");
   }
 
-  // FIX 3: Send character to Image Generation page
+  // ── Send to Image Gen ─────────────────────────────────────────────────────
   function sendToImageGen() {
     if (!activeChar) return;
-    // Build a rich prompt and store it so the image page can pick it up
     const traitDesc = [
       activeChar.gender, activeChar.ageRange, activeChar.ethnicity,
       activeChar.hairColor && activeChar.hairStyle ? `${activeChar.hairColor} ${activeChar.hairStyle} hair` : null,
-      activeChar.eyeColor  ? `${activeChar.eyeColor} eyes` : null,
-      activeChar.build     ? `${activeChar.build} build` : null,
+      activeChar.eyeColor ? `${activeChar.eyeColor} eyes` : null,
+      activeChar.build    ? `${activeChar.build} build` : null,
     ].filter(Boolean).join(", ");
-
     const charPrompt = [
       `Character portrait of ${activeChar.name}`,
       traitDesc ? `— ${traitDesc}` : null,
@@ -544,28 +543,41 @@ export default function ConsistencyPage() {
         : null,
       "Photorealistic, ultra detailed, cinematic quality.",
     ].filter(Boolean).join(". ");
-
-    try {
-      sessionStorage.setItem("kylor_prefill_prompt", charPrompt);
-    } catch {}
-
+    try { sessionStorage.setItem("kylor_prefill_prompt", charPrompt); } catch {}
     router.push("/image");
   }
 
-  // FIX 1: Generate with face-locked prompt + reference images
+  // ── Generate ──────────────────────────────────────────────────────────────
   async function handleGenerate() {
     if (!activeChar || generating) return;
     setGenerating(true);
 
+    const traitDesc = [
+      activeChar.gender, activeChar.ageRange, activeChar.ethnicity,
+      activeChar.hairColor && activeChar.hairStyle ? `${activeChar.hairColor} ${activeChar.hairStyle} hair` : null,
+      activeChar.eyeColor  ? `${activeChar.eyeColor} eyes` : null,
+      activeChar.build     ? `${activeChar.build} build` : null,
+    ].filter(Boolean).join(", ");
+
     const lightLabel = lighting ? LIGHTING_PRESETS.find(l => l.id === lighting)?.label : null;
-    const hasRefs    = activeChar.refEntries.length > 0;
+    // Check both the saved character refs AND the current form refs state (in case
+    // the user uploaded refs without re-saving the character)
+    const effectiveRefs = activeChar.refEntries.length > 0 ? activeChar.refEntries : refEntries;
+    const hasRefs = effectiveRefs.length > 0;
 
-    const fullPrompt = buildFaceLockedPrompt({
-      char: activeChar, scene, lightLabel,
-      extraPrompt, hasRefs,
-    });
+    const fullPrompt = [
+      hasRefs
+        ? `IMPORTANT: This is a specific real person named ${activeChar.name}. Preserve EXACTLY their unique facial bone structure, face shape, jawline, nose shape, lip shape, eye shape and color, eyebrow shape, skin tone. DO NOT change or idealise their face. Same person, same face, different scene only.`
+        : `Character portrait of ${activeChar.name}`,
+      traitDesc ? `Physical traits: ${traitDesc}` : null,
+      activeChar.desc ? `Additional features: ${activeChar.desc}` : null,
+      scene      ? `Scene: ${scene}` : null,
+      lightLabel ? `Lighting: ${lightLabel}` : null,
+      extraPrompt.trim() || null,
+      "Photorealistic, ultra detailed, cinematic quality, no text, no watermark.",
+    ].filter(Boolean).join(". ");
 
-    const outputId  = Date.now();
+    const outputId = Date.now();
     setOutputs(p => [{
       id: outputId, charId: activeCharId,
       prompt: fullPrompt, scene: scene || "Portrait",
@@ -574,23 +586,23 @@ export default function ConsistencyPage() {
     canvasRef.current?.scrollTo({ top: 0, behavior: "smooth" });
 
     try {
-      // Convert reference images to base64
+      // Handle both File objects (new uploads) and URL strings (loaded from Supabase)
       const refBase64 = hasRefs
-        ? await Promise.all(activeChar.refEntries.map(e => fileToBase64(e.file)))
+        ? (await Promise.all(
+            effectiveRefs.map(async e => {
+              if (e.file) return fileToBase64(e.file);  // new local file → base64
+              if (e.previewUrl) return e.previewUrl;    // already a URL from Supabase
+              return null;
+            })
+          )).filter(Boolean)
         : [];
 
       const res = await fetch("/api/generate-image", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          prompt: fullPrompt,
-          size:   "1024x1536",
-          quality: "high",
-          n: 1,
-          // Pass refs so API can use them for face-lock
-          referenceImages: refBase64,
-          // Seed hint for consistency — pass character ID as seed string
-          characterSeed: String(activeChar.id),
+          prompt: fullPrompt, size: "1024x1536", quality: "high", n: 1,
+          referenceImages: refBase64, characterSeed: String(activeChar.id),
         }),
       });
 
@@ -599,6 +611,13 @@ export default function ConsistencyPage() {
 
       setOutputs(p => p.map(o => o.id === outputId ? { ...o, url } : o));
       setCharacters(p => p.map(c => c.id === activeCharId ? { ...c, generations: c.generations + 1 } : c));
+
+      // Update generation count in DB
+      if (userId) {
+        await supabase.from("characters")
+          .update({ generations: (activeChar.generations || 0) + 1 })
+          .eq("id", activeCharId).eq("user_id", userId);
+      }
     } catch (err) {
       console.error("Generate failed:", err);
     } finally {
@@ -619,7 +638,8 @@ export default function ConsistencyPage() {
       {/* ── Sidebar ── */}
       <aside style={{ borderRight: `1px solid ${C.border}`, background: C.sidebar,
         padding: "18px 10px", height: "100vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
-        <div style={{ width: 46, height: 46, borderRadius: 16, margin: "0 auto 22px", display: "grid", placeItems: "center",
+        <div style={{ width: 46, height: 46, borderRadius: 16, margin: "0 auto 22px",
+          display: "grid", placeItems: "center",
           background: "linear-gradient(135deg,rgba(79,70,229,0.28),rgba(124,58,237,0.18))",
           border: `1px solid ${C.border}`, boxShadow: `0 0 20px ${C.accentGlow}` }}>
           <Sparkles size={20} color="#a78bfa" />
@@ -658,17 +678,14 @@ export default function ConsistencyPage() {
             ))}
           </div>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            {/* FIX 3: Send to Image Gen button */}
             {activeChar && (
-              <motion.button whileHover={{ borderColor: C.accentBorder, color: "#c4b5fd" }}
-                whileTap={{ scale: 0.96 }} onClick={sendToImageGen}
+              <motion.button whileHover={{ borderColor: C.accentBorder }} whileTap={{ scale: 0.96 }}
+                onClick={sendToImageGen}
                 style={{ height: 34, padding: "0 14px", borderRadius: radius.sm,
                   border: `1px solid ${C.border}`, background: C.surface,
                   color: C.textMuted, display: "inline-flex", alignItems: "center", gap: 6,
                   cursor: "pointer", fontSize: 12.5, fontFamily: "inherit", transition: "all 0.15s ease" }}>
-                <ImageIcon size={13} />
-                Send to Image Gen
-                <ExternalLink size={11} />
+                <ImageIcon size={13} /> Send to Image Gen <ExternalLink size={11} />
               </motion.button>
             )}
             {[{ icon: Grid3X3, val: "grid" }, { icon: List, val: "list" }].map(({ icon: Icon, val }) => (
@@ -743,11 +760,10 @@ export default function ConsistencyPage() {
               </div>
             </div>
 
-            {/* Form */}
-            <div style={{ flex: 1, overflowY: "auto", padding: "14px 16px", minHeight: 0,
-              display: "flex", flexDirection: "column", gap: 12 }}>
+            {/* Scrollable form area */}
+            <div style={{ flex: 1, overflowY: "auto", padding: "14px 16px", minHeight: 0, display: "flex", flexDirection: "column", gap: 12 }}>
 
-              {/* TRAITS */}
+              {/* ── TRAITS ── */}
               {formSection === "traits" && (<>
                 <div>
                   <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: C.textMuted, marginBottom: 6 }}>Character Name *</div>
@@ -790,13 +806,18 @@ export default function ConsistencyPage() {
                   {charLocked ? <Lock size={13} /> : <Unlock size={13} />}
                   {charLocked ? "Character locked (consistent)" : "Lock character traits"}
                 </motion.button>
-                <motion.button whileHover={charName.trim() && !saving ? { boxShadow: "0 12px 32px rgba(124,58,237,0.35)" } : {}}
-                  whileTap={charName.trim() && !saving ? { scale: 0.98 } : {}} onClick={saveCharacter}
-                  disabled={saving}
+
+                {/* ── Save Character Button ── */}
+                <motion.button
+                  whileHover={charName.trim() && !saving ? { boxShadow: "0 12px 32px rgba(124,58,237,0.35)" } : {}}
+                  whileTap={charName.trim() && !saving ? { scale: 0.98 } : {}}
+                  onClick={saveCharacter}
+                  disabled={saving || !charName.trim()}
                   style={{ height: 44, borderRadius: radius.md, border: "none",
                     cursor: charName.trim() && !saving ? "pointer" : "default",
                     background: charName.trim() && !saving ? "linear-gradient(135deg,#4f46e5,#7c3aed)" : "rgba(255,255,255,0.06)",
-                    color: charName.trim() && !saving ? "white" : C.textMuted, fontSize: 13.5, fontWeight: 700,
+                    color: charName.trim() && !saving ? "white" : C.textMuted,
+                    fontSize: 13.5, fontWeight: 700,
                     display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8,
                     fontFamily: "inherit", transition: "all 0.2s ease",
                     boxShadow: charName.trim() && !saving ? "0 8px 24px rgba(124,58,237,0.25)" : "none" }}>
@@ -813,36 +834,39 @@ export default function ConsistencyPage() {
                 </motion.button>
               </>)}
 
-              {/* REFS */}
+              {/* ── REFS ── */}
               {formSection === "refs" && (<>
                 <p style={{ margin: 0, fontSize: 12.5, color: C.textMuted, lineHeight: 1.65 }}>
-                  Upload clear photos of the person. The AI uses these to lock their face identity for every generation.
+                  Upload reference photos of the character. More consistent references = more accurate generations.
                 </p>
-                <RefUpload entries={refEntries} onEntries={setRefEntries}
-                  label="Face reference photos" hint="Clear, well-lit, front-facing · best results" max={5} />
+
+                <RefUpload
+                  entries={refEntries}
+                  onEntries={setRefEntries}
+                  label="Face references"
+                  hint="Clear, front-facing photos · best results"
+                  max={5}
+                />
+
                 {refEntries.length > 0 && (
                   <div style={{ padding: "10px 12px", borderRadius: radius.sm,
                     border: `1px solid rgba(34,197,94,0.25)`, background: "rgba(34,197,94,0.06)",
                     display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "#86efac" }}>
                     <Check size={13} />
-                    {refEntries.length} photo{refEntries.length > 1 ? "s" : ""} uploaded — face will be locked in generation.
+                    {refEntries.length} reference image{refEntries.length > 1 ? "s" : ""} ready — will be saved with character.
                   </div>
                 )}
+
                 <div style={{ padding: 14, borderRadius: radius.md, border: `1px solid ${C.border}`, background: C.surface }}>
-                  <div style={{ fontSize: 12, fontWeight: 600, color: C.text, marginBottom: 8 }}>Tips for best face consistency</div>
-                  {[
-                    "Use clear, well-lit front-facing photos",
-                    "Include 3/4 angle shots if possible",
-                    "Avoid sunglasses, hats, or heavy shadows",
-                    "2–5 photos gives best results",
-                    "Higher resolution = more accurate face lock",
-                  ].map((tip, i, arr) => (
+                  <div style={{ fontSize: 12, fontWeight: 600, color: C.text, marginBottom: 8 }}>Tips for better consistency</div>
+                  {["Use clear, well-lit photos", "Include front and 3/4 angles", "Avoid obscured faces or masks", "2–5 references works best"].map((tip, i, arr) => (
                     <div key={i} style={{ display: "flex", gap: 8, alignItems: "flex-start", marginBottom: i < arr.length - 1 ? 6 : 0 }}>
                       <div style={{ width: 5, height: 5, borderRadius: 999, background: C.accent, flexShrink: 0, marginTop: 5 }} />
                       <span style={{ fontSize: 11.5, color: C.textMuted, lineHeight: 1.5 }}>{tip}</span>
                     </div>
                   ))}
                 </div>
+
                 {activeChar && (
                   <motion.button whileTap={{ scale: 0.97 }} onClick={() => setFormSection("generate")}
                     style={{ height: 40, borderRadius: radius.md, border: `1px solid ${C.accentBorder}`,
@@ -854,14 +878,14 @@ export default function ConsistencyPage() {
                 )}
               </>)}
 
-              {/* GENERATE */}
+              {/* ── GENERATE ── */}
               {formSection === "generate" && (<>
                 {!activeChar && (
                   <div style={{ padding: 20, borderRadius: radius.md, border: `1px solid ${C.border}`,
                     background: C.surface, textAlign: "center" }}>
                     <User size={32} color={C.textDim} style={{ margin: "0 auto 12px" }} />
                     <div style={{ fontSize: 13, fontWeight: 600, color: C.text, marginBottom: 6 }}>No character selected</div>
-                    <div style={{ fontSize: 12, color: C.textMuted, marginBottom: 14, lineHeight: 1.6 }}>Create a character first, or select one from Characters.</div>
+                    <div style={{ fontSize: 12, color: C.textMuted, marginBottom: 14, lineHeight: 1.6 }}>Create a character first, or select one from the Characters view.</div>
                     <motion.button whileTap={{ scale: 0.96 }} onClick={() => setFormSection("traits")}
                       style={{ height: 34, padding: "0 14px", borderRadius: radius.sm,
                         border: `1px solid ${C.accentBorder}`, background: C.accentSoft, color: "#c4b5fd",
@@ -920,10 +944,10 @@ export default function ConsistencyPage() {
                     </div>
                   </div>
 
-                  {/* Character summary */}
+                  {/* Char summary pill */}
                   <div style={{ padding: "10px 12px", borderRadius: radius.sm, border: `1px solid ${C.border}`,
                     background: "rgba(255,255,255,0.02)", display: "flex", alignItems: "center", gap: 10 }}>
-                    <div style={{ width: 34, height: 34, borderRadius: 9, overflow: "hidden", flexShrink: 0,
+                    <div style={{ width: 32, height: 32, borderRadius: 9, overflow: "hidden", flexShrink: 0,
                       background: CARD_GRADIENTS[activeChar.id % CARD_GRADIENTS.length], display: "grid", placeItems: "center" }}>
                       {activeChar.refEntries.length > 0
                         ? <img src={activeChar.refEntries[0].previewUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
@@ -931,10 +955,10 @@ export default function ConsistencyPage() {
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 12.5, fontWeight: 700, color: C.text }}>{activeChar.name}</div>
-                      <div style={{ fontSize: 11, color: activeChar.refEntries.length > 0 ? "#86efac" : "#fca5a5" }}>
+                      <div style={{ fontSize: 11, color: activeChar.refEntries.length > 0 ? "#86efac" : C.textMuted }}>
                         {activeChar.refEntries.length > 0
-                          ? `✓ ${activeChar.refEntries.length} ref photo${activeChar.refEntries.length > 1 ? "s" : ""} — face locked`
-                          : "⚠ No refs — add photos for face consistency"}
+                          ? `${activeChar.refEntries.length} ref image${activeChar.refEntries.length > 1 ? "s" : ""} attached`
+                          : "No reference images — add in Refs tab"}
                       </div>
                     </div>
                     <button onClick={() => setFormSection("refs")}
@@ -942,22 +966,11 @@ export default function ConsistencyPage() {
                       <Camera size={13} />
                     </button>
                   </div>
-
-                  {/* Send to Image Gen button — also in left panel */}
-                  <motion.button whileHover={{ borderColor: C.accentBorder, color: "#c4b5fd" }}
-                    whileTap={{ scale: 0.97 }} onClick={sendToImageGen}
-                    style={{ height: 36, borderRadius: radius.sm, cursor: "pointer",
-                      border: `1px solid ${C.border}`, background: C.surface,
-                      color: C.textMuted, fontSize: 12.5, fontFamily: "inherit",
-                      display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 7,
-                      transition: "all 0.15s ease" }}>
-                    <ImageIcon size={13} /> Send to Image Generation <ArrowRight size={12} />
-                  </motion.button>
                 </>)}
               </>)}
             </div>
 
-            {/* Generate button */}
+            {/* Generate button — pinned at bottom */}
             {formSection === "generate" && activeChar && (
               <div style={{ padding: "12px 16px", borderTop: `1px solid ${C.border}`, flexShrink: 0 }}>
                 <motion.button
@@ -992,6 +1005,7 @@ export default function ConsistencyPage() {
           {/* ══ RIGHT PANEL ══ */}
           <div style={{ background: "rgba(4,5,12,0.95)", display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
 
+            {/* ── GENERATE VIEW ── */}
             {activeView === "generate" && (
               <>
                 <div style={{ padding: "0 16px", borderBottom: `1px solid ${C.border}`, height: 48,
@@ -1004,7 +1018,9 @@ export default function ConsistencyPage() {
                       <div style={{ display: "flex", alignItems: "center", gap: 5, padding: "2px 9px",
                         borderRadius: radius.full, border: `1px solid ${C.accentBorder}`, background: C.accentSoft,
                         fontSize: 11, color: "#c4b5fd" }}>
-                        <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: "linear" }}><Zap size={10} /></motion.div>
+                        <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: "linear" }}>
+                          <Zap size={10} />
+                        </motion.div>
                         Generating…
                       </div>
                     )}
@@ -1031,9 +1047,9 @@ export default function ConsistencyPage() {
                         </div>
                         <p style={{ margin: "0 0 8px", color: C.text, fontSize: 17, fontWeight: 800, letterSpacing: "-0.02em" }}>No character yet</p>
                         <p style={{ margin: "0 0 22px", color: C.textMuted, fontSize: 13, lineHeight: 1.7 }}>
-                          Create a character, upload reference photos, then generate consistent portraits.
+                          Create a character with traits and reference images, then generate consistent outputs.
                         </p>
-                        <motion.button whileTap={{ scale: 0.96 }} onClick={() => setFormSection("traits")}
+                        <motion.button whileTap={{ scale: 0.96 }} onClick={() => { setFormSection("traits"); }}
                           style={{ height: 40, padding: "0 20px", borderRadius: radius.md,
                             border: `1px solid ${C.accentBorder}`, background: C.accentSoft, color: "#c4b5fd",
                             fontSize: 13.5, fontWeight: 600, cursor: "pointer", fontFamily: "inherit",
@@ -1110,6 +1126,7 @@ export default function ConsistencyPage() {
               </>
             )}
 
+            {/* ── CHARACTERS VIEW ── */}
             {activeView === "characters" && (
               <>
                 <div style={{ padding: "0 16px", borderBottom: `1px solid ${C.border}`, height: 48,
@@ -1117,8 +1134,7 @@ export default function ConsistencyPage() {
                   <span style={{ fontSize: 12, color: C.textMuted, fontWeight: 500 }}>
                     {characters.length} character{characters.length !== 1 ? "s" : ""} saved
                   </span>
-                  <motion.button whileTap={{ scale: 0.95 }}
-                    onClick={() => { setFormSection("traits"); setActiveView("generate"); }}
+                  <motion.button whileTap={{ scale: 0.95 }} onClick={() => { setFormSection("traits"); setActiveView("generate"); }}
                     style={{ height: 30, padding: "0 12px", borderRadius: 9,
                       border: `1px solid ${C.accentBorder}`, background: C.accentSoft, color: "#c4b5fd",
                       cursor: "pointer", fontSize: 12, fontFamily: "inherit",
@@ -1126,6 +1142,7 @@ export default function ConsistencyPage() {
                     <Plus size={12} /> New character
                   </motion.button>
                 </div>
+
                 <div style={{ flex: 1, overflowY: "auto", padding: 16, minHeight: 0 }}>
                   {characters.length === 0 ? (
                     <div style={{ height: "80%", display: "grid", placeItems: "center" }}>
@@ -1137,7 +1154,7 @@ export default function ConsistencyPage() {
                         </div>
                         <p style={{ margin: "0 0 6px", color: C.text, fontSize: 15, fontWeight: 700 }}>No characters yet</p>
                         <p style={{ margin: "0 0 16px", color: C.textMuted, fontSize: 12.5, lineHeight: 1.7 }}>
-                          Build your cast by defining characters with traits and reference photos.
+                          Build your cast by defining characters with traits and references.
                         </p>
                         <motion.button whileTap={{ scale: 0.96 }}
                           onClick={() => { setFormSection("traits"); setActiveView("generate"); }}
@@ -1175,14 +1192,13 @@ export default function ConsistencyPage() {
         </div>
       </div>
 
-      {/* FIX 2: Lightbox ── */}
+      {/* ── Lightbox ── */}
       <AnimatePresence>
         {lightboxItem && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             onClick={() => setLightboxItem(null)}
             style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,0.92)",
-              backdropFilter: "blur(14px)", display: "flex", alignItems: "center",
-              justifyContent: "center", padding: 24 }}>
+              backdropFilter: "blur(14px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
             <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }} transition={{ duration: 0.25, ease: [0.22,1,0.36,1] }}
               onClick={e => e.stopPropagation()}
@@ -1191,9 +1207,9 @@ export default function ConsistencyPage() {
               <img src={lightboxItem.url} alt={lightboxItem.scene}
                 style={{ display: "block", maxWidth: "90vw", maxHeight: "88vh", objectFit: "contain" }} />
               <div style={{ position: "absolute", top: 14, right: 14, display: "flex", gap: 8 }}>
-                {[Download, Share2, X].map((Icon, i) => (
+                {[Download, X].map((Icon, i) => (
                   <motion.button key={i} whileTap={{ scale: 0.9 }}
-                    onClick={() => { if (i === 2) setLightboxItem(null); }}
+                    onClick={() => { if (i === 1) setLightboxItem(null); }}
                     style={{ width: 40, height: 40, borderRadius: 12, border: "1px solid rgba(255,255,255,0.12)",
                       background: "rgba(0,0,0,0.6)", backdropFilter: "blur(8px)", color: "white",
                       display: "grid", placeItems: "center", cursor: "pointer" }}>
