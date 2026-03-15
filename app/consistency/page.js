@@ -13,9 +13,10 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { supabase } from "../../lib/supabase";
-
+// ─── Storage / Cache Keys ─────────────────────────────────────────────
 const CHAR_BUCKET = "character-refs";
-
+const CONSISTENCY_CACHE_KEY = "kylor_consistency_cache_v1";
+const CONSISTENCY_ACTIVE_KEY = "kylor_consistency_active_char_v1";
 const C = {
   accent: "#7c3aed", accentSoft: "rgba(124,58,237,0.15)",
   accentBorder: "rgba(124,58,237,0.35)", accentGlow: "rgba(124,58,237,0.25)",
@@ -99,7 +100,44 @@ function parseTraitsPayload(value) {
     return { charDesc: p.charDesc || "", gender: p.gender || "", ageRange: p.ageRange || "", ethnicity: p.ethnicity || "", hairStyle: p.hairStyle || "", hairColor: p.hairColor || "", eyeColor: p.eyeColor || "", build: p.build || "", charLocked: !!p.charLocked, extraPrompt: p.extraPrompt || "" };
   } catch { return { charDesc: "", gender: "", ageRange: "", ethnicity: "", hairStyle: "", hairColor: "", eyeColor: "", build: "", charLocked: false, extraPrompt: "" }; }
 }
+function saveConsistencyCache({ characters, outputs, activeCharId }) {
+  try {
+    localStorage.setItem(
+      CONSISTENCY_CACHE_KEY,
+      JSON.stringify({
+        characters,
+        outputs,
+      })
+    );
 
+    if (activeCharId) {
+      localStorage.setItem(CONSISTENCY_ACTIVE_KEY, String(activeCharId));
+    } else {
+      localStorage.removeItem(CONSISTENCY_ACTIVE_KEY);
+    }
+  } catch {}
+}
+
+function loadConsistencyCache() {
+  try {
+    const raw = localStorage.getItem(CONSISTENCY_CACHE_KEY);
+    const active = localStorage.getItem(CONSISTENCY_ACTIVE_KEY);
+
+    if (!raw) {
+      return { characters: [], outputs: [], activeCharId: active || null };
+    }
+
+    const parsed = JSON.parse(raw);
+
+    return {
+      characters: Array.isArray(parsed?.characters) ? parsed.characters : [],
+      outputs: Array.isArray(parsed?.outputs) ? parsed.outputs : [],
+      activeCharId: active || null,
+    };
+  } catch {
+    return { characters: [], outputs: [], activeCharId: null };
+  }
+}
 function SidebarItem({ item }) {
   const Icon = item.icon;
   const inner = (
@@ -320,8 +358,18 @@ export default function ConsistencyPage() {
 
   const canvasRef = useRef(null);
 
-  const activeChar  = characters.find(c => c.id === activeCharId) || null;
-  const charOutputs = outputs.filter(o => o.charId === activeCharId);
+  const activeChar = characters.find(c => c.id === activeCharId) || null;
+const charOutputs = outputs.filter(o => o.charId === activeCharId);
+
+useEffect(() => {
+  if (!characters.length && !outputs.length && !activeCharId) return;
+
+  saveConsistencyCache({
+    characters,
+    outputs,
+    activeCharId,
+  });
+}, [characters, outputs, activeCharId]);
   const visibleCharOutputs = charOutputs.filter(o => o.url && o.url !== "__FAILED__");
   const frontOutput = visibleCharOutputs.find(o => o.scene === "Front Full-Body");
   const otherOutputs = visibleCharOutputs.filter(o => o.scene !== "Front Full-Body");
@@ -331,7 +379,26 @@ export default function ConsistencyPage() {
     if (!activeCharId) return;
     setCharacters(p => p.map(c => c.id === activeCharId ? { ...c, refEntries } : c));
   }, [refEntries, activeCharId]);
+useEffect(() => {
+  const cached = loadConsistencyCache();
 
+  if (cached?.characters?.length > 0) {
+    setCharacters(cached.characters);
+    setOutputs(cached.outputs || []);
+
+    if (cached.activeCharId) {
+      const exists = cached.characters.some(
+        c => String(c.id) === String(cached.activeCharId)
+      );
+
+      setActiveCharId(
+        exists ? cached.activeCharId : cached.characters[0]?.id || null
+      );
+    } else {
+      setActiveCharId(cached.characters[0]?.id || null);
+    }
+  }
+}, []);
   // ── Load characters: cache-first, then Supabase in background ───────────
   useEffect(() => {
     const SESSION_KEY = "kylor_chars_cache";
