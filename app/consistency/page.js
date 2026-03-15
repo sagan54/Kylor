@@ -634,10 +634,13 @@ useEffect(() => {
     const charPrompt = [`Use the saved character ${activeChar.name}`, traitDesc ? `same identity and physical traits: ${traitDesc}` : null, activeChar.desc || null,
       activeChar.refEntries.length > 0 ? `Maintain exact facial features, skin tone, and distinguishing characteristics of this specific person.` : null,
     ].filter(Boolean).join(". ");
-    try { sessionStorage.setItem("kylor_selected_character_id", String(activeChar.id)); sessionStorage.setItem("kylor_prefill_prompt", charPrompt); } catch {}
-    router.push("/image");
+    try {
+  sessionStorage.setItem("kylor_prefill_prompt", charPrompt);
+  sessionStorage.setItem("kylor_selected_character_id", String(activeChar.id));
+  sessionStorage.setItem("kylor_selected_character_payload", JSON.stringify(activeChar));
+} catch {}
+router.push("/image");
   }
-
   async function generateOtherProfiles() {
     if (!activeChar || generatingMore) return;
     const existingFront = charOutputs.find(o => o.scene === "Front Full-Body" && o.url && o.url !== "__FAILED__");

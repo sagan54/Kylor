@@ -1133,21 +1133,34 @@ export default function ImagePage() {
   const canvasRef = useRef(null);
 
   const SESSION_KEY = "kylor_img_cache";
+function loadCharacterFromSessionPayload() {
+  try {
+    const raw = sessionStorage.getItem("kylor_selected_character_payload");
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+ async function loadSavedCharacters() {
+  try {
+    setLoadingCharacters(true);
 
-  async function loadSavedCharacters() {
-    try {
-      setLoadingCharacters(true);
+    const payloadCharacter = loadCharacterFromSessionPayload();
 
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
+    const { data: { session } } = await supabase.auth.getSession();
+    const uid = session?.user?.id ?? null;
 
-      const uid = session?.user?.id ?? null;
-      if (!uid) {
+    if (!uid) {
+      if (payloadCharacter) {
+        setSavedCharacters([payloadCharacter]);
+        setSelectedCharacter(payloadCharacter);
+      } else {
         setSavedCharacters([]);
         setSelectedCharacter(null);
-        return;
       }
+      return;
+    }
 
       const { data, error } = await supabase
         .from("characters")
@@ -1155,11 +1168,17 @@ export default function ImagePage() {
         .eq("user_id", uid)
         .order("created_at", { ascending: false });
 
-      if (error || !data) {
-        console.error("Failed to load saved characters:", error?.message);
-        setSavedCharacters([]);
-        return;
-      }
+ if (error || !data) {
+  console.error("Failed to load saved characters:", error?.message);
+
+  if (payloadCharacter) {
+    setSavedCharacters([payloadCharacter]);
+    setSelectedCharacter(payloadCharacter);
+  } else {
+    setSavedCharacters([]);
+  }
+  return;
+}
 
       const mapped = data.map((row) => {
         let traits = {};
@@ -1189,18 +1208,26 @@ export default function ImagePage() {
         };
       });
 
-      setSavedCharacters(mapped);
+      let finalCharacters = mapped;
 
-      const selectedId = sessionStorage.getItem("kylor_selected_character_id");
-      if (selectedId) {
-        const found = mapped.find((c) => String(c.id) === String(selectedId));
-        if (found) {
-          setSelectedCharacter(found);
-        }
-      } else if (!selectedCharacter && mapped.length > 0) {
-        // optional: auto select first character
-        // setSelectedCharacter(mapped[0]);
-      }
+if (payloadCharacter) {
+  const exists = mapped.some((c) => String(c.id) === String(payloadCharacter.id));
+  if (!exists) {
+    finalCharacters = [payloadCharacter, ...mapped];
+  }
+}
+
+setSavedCharacters(finalCharacters);
+
+const selectedId = sessionStorage.getItem("kylor_selected_character_id");
+if (selectedId) {
+  const found = finalCharacters.find((c) => String(c.id) === String(selectedId));
+  if (found) {
+    setSelectedCharacter(found);
+  }
+} else if (payloadCharacter) {
+  setSelectedCharacter(payloadCharacter);
+}
     } catch (err) {
       console.error("loadSavedCharacters error:", err);
       setSavedCharacters([]);
