@@ -334,43 +334,63 @@ export default function ConsistencyPage() {
 
   // ── CHANGE 1: No auto-select on load ──────────────────────────────────────
   useEffect(() => {
+    const SESSION_KEY = "kylor_chars_cache";
+
+    async function parseAndSetChars(data) {
+      const loaded = data.map(row => {
+        const traits = parseTraitsPayload(row.prompt);
+        const generatedImages = Array.isArray(row.generated_images) ? row.generated_images : [];
+        const refUrls = row.reference_image ? [row.reference_image] : [];
+        return {
+          id: row.id, name: row.name, desc: traits.charDesc || row.description || "",
+          gender: traits.gender || "", ageRange: traits.ageRange || "", ethnicity: traits.ethnicity || "",
+          hairStyle: traits.hairStyle || "", hairColor: traits.hairColor || "", eyeColor: traits.eyeColor || "",
+          build: traits.build || "", locked: traits.charLocked || false,
+          generations: generatedImages.length, generatedImages, style: row.style || null,
+          extraPrompt: traits.extraPrompt || "", createdAt: row.created_at,
+          refEntries: refUrls.map(url => ({ file: null, previewUrl: url })),
+        };
+      });
+      const loadedOutputs = loaded.flatMap(char =>
+        (char.generatedImages || []).map((url, i) => ({
+          id: `${char.id}-${CHARACTER_PACK_VIEWS[i]?.key || i}`,
+          charId: char.id, prompt: "",
+          scene: CHARACTER_PACK_VIEWS[i]?.label || `View ${i + 1}`,
+          url, createdAt: char.createdAt || new Date().toISOString(),
+        }))
+      );
+      return { loaded, loadedOutputs };
+    }
+
     (async () => {
       const { data: { user } } = await supabase.auth.getUser();
       const uid = user?.id ?? null;
       setUserId(uid);
       if (!uid) return;
 
+      // Step 1: Show cached data INSTANTLY
+      try {
+        const raw = sessionStorage.getItem(SESSION_KEY);
+        if (raw) {
+          const cached = JSON.parse(raw);
+          if (Array.isArray(cached) && cached.length > 0) {
+            const { loaded, loadedOutputs } = await parseAndSetChars(cached);
+            setCharacters(loaded);
+            setOutputs(loadedOutputs);
+          }
+        }
+      } catch {}
+
+      // Step 2: Fetch fresh from Supabase in background
       const { data, error } = await supabase
         .from("characters").select("*").eq("user_id", uid).order("created_at", { ascending: false });
 
       if (!error && data && data.length > 0) {
-        const loaded = data.map(row => {
-          const traits = parseTraitsPayload(row.prompt);
-          const generatedImages = Array.isArray(row.generated_images) ? row.generated_images : [];
-          const refUrls = row.reference_image ? [row.reference_image] : [];
-          return {
-            id: row.id, name: row.name, desc: traits.charDesc || row.description || "",
-            gender: traits.gender || "", ageRange: traits.ageRange || "", ethnicity: traits.ethnicity || "",
-            hairStyle: traits.hairStyle || "", hairColor: traits.hairColor || "", eyeColor: traits.eyeColor || "",
-            build: traits.build || "", locked: traits.charLocked || false,
-            generations: generatedImages.length, generatedImages, style: row.style || null,
-            extraPrompt: traits.extraPrompt || "", createdAt: row.created_at,
-            refEntries: refUrls.map(url => ({ file: null, previewUrl: url })),
-          };
-        });
-
-        const loadedOutputs = loaded.flatMap(char =>
-          (char.generatedImages || []).map((url, i) => ({
-            id: `${char.id}-${CHARACTER_PACK_VIEWS[i]?.key || i}`,
-            charId: char.id, prompt: "",
-            scene: CHARACTER_PACK_VIEWS[i]?.label || `View ${i + 1}`,
-            url, createdAt: char.createdAt || new Date().toISOString(),
-          }))
-        );
-
+        const { loaded, loadedOutputs } = await parseAndSetChars(data);
         setCharacters(loaded);
         setOutputs(loadedOutputs);
-        // ← NO setActiveCharId here — page opens blank
+        // Step 3: Update cache
+        try { sessionStorage.setItem(SESSION_KEY, JSON.stringify(data)); } catch {}
       }
     })();
   }, []);
@@ -413,7 +433,22 @@ export default function ConsistencyPage() {
         extraPrompt: extraPrompt || "", createdAt: data.created_at,
       };
 
-      setCharacters(prev => [newChar, ...prev]);
+      setCharacters(prev => {
+      const updated = [newChar, ...prev];
+      // keep cache in sync
+      try {
+        const SESSION_KEY = "kylor_chars_cache";
+        const raw = sessionStorage.getItem(SESSION_KEY);
+        const cached = raw ? JSON.parse(raw) : [];
+        sessionStorage.setItem(SESSION_KEY, JSON.stringify([{
+          id: data.id, user_id: userId, name: newChar.name, description: newChar.desc,
+          prompt: buildTraitsPayload({ charDesc: newChar.desc, gender: newChar.gender, ageRange: newChar.ageRange, ethnicity: newChar.ethnicity, hairStyle: newChar.hairStyle, hairColor: newChar.hairColor, eyeColor: newChar.eyeColor, build: newChar.build, charLocked: newChar.locked, extraPrompt: newChar.extraPrompt }),
+          reference_image: newChar.refEntries[0]?.previewUrl || null,
+          generated_images: [], cover_image: null, style: null, seed: null, created_at: newChar.createdAt,
+        }, ...cached]));
+      } catch {}
+      return updated;
+    });
       setActiveCharId(data.id);
       setCharName(""); setCharDesc(""); setGender(""); setAgeRange(""); setEthnicity("");
       setHairStyle(""); setHairColor(""); setEyeColor(""); setBuild("");
@@ -425,7 +460,18 @@ export default function ConsistencyPage() {
   }
 
   async function deleteCharacter(id) {
-    setCharacters(p => p.filter(c => c.id !== id));
+    setCharacters(p => {
+      const updated = p.filter(c => c.id !== id);
+      try {
+        const SESSION_KEY = "kylor_chars_cache";
+        const raw = sessionStorage.getItem(SESSION_KEY);
+        if (raw) {
+          const cached = JSON.parse(raw).filter(r => r.id !== id);
+          sessionStorage.setItem(SESSION_KEY, JSON.stringify(cached));
+        }
+      } catch {}
+      return updated;
+    });
     setOutputs(p => p.filter(o => o.charId !== id));
     if (activeCharId === id) { const next = characters.find(c => c.id !== id); setActiveCharId(next?.id ?? null); }
     if (userId && !String(id).startsWith("local-")) { await supabase.from("characters").delete().eq("id", id).eq("user_id", userId); }
@@ -599,18 +645,6 @@ export default function ConsistencyPage() {
             ))}
           </div>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            {activeChar && (
-              <motion.button whileHover={charOutputs.length > 0 ? { borderColor: C.accentBorder } : {}} whileTap={charOutputs.length > 0 ? { scale: 0.96 } : {}}
-                onClick={sendToImageGen} disabled={charOutputs.length === 0}
-                style={{ height: 34, padding: "0 14px", borderRadius: radius.sm,
-                  border: `1px solid ${charOutputs.length > 0 ? C.accentBorder : C.border}`,
-                  background: charOutputs.length > 0 ? C.accentSoft : C.surface,
-                  color: charOutputs.length > 0 ? "#c4b5fd" : C.textMuted,
-                  display: "inline-flex", alignItems: "center", gap: 6,
-                  cursor: charOutputs.length > 0 ? "pointer" : "default", fontSize: 12.5, fontFamily: "inherit", transition: "all 0.15s ease", opacity: charOutputs.length > 0 ? 1 : 0.7 }}>
-                <ImageIcon size={13} /> Use This Character in Image <ExternalLink size={11} />
-              </motion.button>
-            )}
             {[{ icon: Grid3X3, val: "grid" }, { icon: List, val: "list" }].map(({ icon: Icon, val }) => (
               <motion.button key={val} whileTap={{ scale: 0.94 }} onClick={() => setOutputView(val)}
                 style={{ width: 34, height: 34, borderRadius: radius.sm, border: `1px solid ${C.border}`,
