@@ -473,10 +473,12 @@ export default function ConsistencyPage() {
         const placeholder = { id: `${activeCharId}-${view.key}-${Date.now()}`, charId: activeCharId, prompt: view.shot, scene: view.label, url: null, createdAt: new Date().toISOString() };
         setOutputs(prev => [...prev.filter(o => !(o.charId === activeCharId && o.scene === view.label)), placeholder]);
         const finalPrompt = [
-          `This is the same exact character named ${activeChar.name}. Preserve the same identity, face, hairstyle, outfit, body type, and proportions.`,
-          traitDesc ? `Physical traits: ${traitDesc}.` : null, activeChar.desc ? `Character details: ${activeChar.desc}.` : null,
-          extraPrompt.trim() ? `Additional fixed details: ${extraPrompt.trim()}.` : null,
-          `View requirement: ${view.shot}.`, "Plain neutral studio background.", "Exactly one person only.", "No collage.", "No multiple people.", "No split screen.", "No character sheet.", "No text.", "No watermark.",
+          `CRITICAL: Generate the EXACT SAME person named ${activeChar.name} as in all previous images. Same face — identical facial bone structure, jawline, nose, lips, eye shape and color, eyebrow shape, skin tone, hairline, and hairstyle. Do NOT change any facial feature. Do NOT generate a similar-looking person — generate THIS exact person in a different pose.`,
+          traitDesc ? `Exact physical traits (must match precisely): ${traitDesc}.` : null,
+          activeChar.desc ? `Fixed character details: ${activeChar.desc}.` : null,
+          extraPrompt.trim() ? `Locked style notes: ${extraPrompt.trim()}.` : null,
+          `Shot type: ${view.shot}.`,
+          "Plain neutral studio background. Exactly one person only. No collage. No multiple people. No split screen. No character sheet. No text. No watermark.",
         ].filter(Boolean).join(" ");
         const res = await fetch("/api/generate-image", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt: finalPrompt, size: view.size, n: 1, characterSeed: String(activeChar.id) }) });
         const data = await res.json();
@@ -912,10 +914,32 @@ export default function ConsistencyPage() {
 
                 {activeChar && shouldShowGenerateMorePanel && (
                   <div style={{ display: "grid", gridTemplateColumns: "210px 1fr", gap: 16, alignItems: "stretch" }}>
-                    <div><OutputCard item={frontOutput} onDelete={() => setOutputs(p => p.filter(o => o.id !== frontOutput.id))} onOpen={setLightboxItem} /></div>
+                    {/* Left: front image + regenerate button below */}
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      <OutputCard item={frontOutput} onDelete={() => setOutputs(p => p.filter(o => o.id !== frontOutput.id))} onOpen={setLightboxItem} />
+                      <motion.button
+                        whileHover={!generating ? { borderColor: C.accentBorder, color: "#c4b5fd" } : {}}
+                        whileTap={!generating ? { scale: 0.97 } : {}}
+                        onClick={handleGenerate}
+                        disabled={generating}
+                        style={{ height: 36, borderRadius: radius.sm,
+                          border: `1px solid ${C.border}`, background: C.surface,
+                          color: C.textMuted, cursor: generating ? "default" : "pointer",
+                          fontSize: 12, fontWeight: 600, fontFamily: "inherit",
+                          display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6,
+                          transition: "all 0.15s ease" }}>
+                        {generating
+                          ? <><motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: "linear" }}><Zap size={13} /></motion.div>Regenerating…</>
+                          : <><RefreshCw size={13} /> Regenerate</>}
+                      </motion.button>
+                    </div>
+
+                    {/* Right: generate other 4 panel */}
                     <div style={{ borderRadius: radius.lg, border: `1px solid ${C.border}`, background: C.surface, padding: 20, display: "flex", flexDirection: "column", justifyContent: "center", minHeight: 280 }}>
                       <div style={{ fontSize: 18, fontWeight: 700, color: C.text, marginBottom: 10 }}>First profile ready</div>
-                      <div style={{ fontSize: 13, color: C.textMuted, lineHeight: 1.7, maxWidth: 500, marginBottom: 18 }}>Generate the remaining 4 profiles for this character: left profile, right profile, back view, and upper-body close-up.</div>
+                      <div style={{ fontSize: 13, color: C.textMuted, lineHeight: 1.7, maxWidth: 500, marginBottom: 18 }}>
+                        Happy with it? Generate the remaining 4 profiles: left profile, right profile, back view, and upper-body close-up.
+                      </div>
                       <motion.button whileHover={!generatingMore ? { boxShadow: "0 18px 40px rgba(124,58,237,0.32)" } : {}} whileTap={!generatingMore ? { scale: 0.98 } : {}}
                         onClick={generateOtherProfiles} disabled={generatingMore}
                         style={{ height: 46, padding: "0 18px", borderRadius: radius.md, border: "none",
