@@ -9,14 +9,8 @@ import {
   Share2, Trash2, Plus, Music, Check, Copy, CloudUpload,
 } from "lucide-react";
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
-import { createClient } from "@supabase/supabase-js";
 
-// ─── Supabase client ──────────────────────────────────────────────────────────
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-);
-
+import { supabase } from "../../lib/supabase";
 // ─── Supabase helpers ─────────────────────────────────────────────────────────
 async function sbLoadAll(userId) {
   if (!userId) return [];
