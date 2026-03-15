@@ -508,12 +508,21 @@ export default function ConsistencyPage() {
 
   const canvasRef = useRef(null);
 
-  const activeChar  = characters.find(c => c.id === activeCharId) || null;
-  const charOutputs = outputs.filter(o => o.charId === activeCharId);
+  const activeChar = characters.find(c => c.id === activeCharId) || null;
+const charOutputs = outputs.filter(o => o.charId === activeCharId);
 
-  const frontOutput = charOutputs.find(o => o.scene === "Front Full-Body");
-const otherOutputs = charOutputs.filter(o => o.scene !== "Front Full-Body");
+const visibleCharOutputs = charOutputs.filter(o => o.url !== "__FAILED__");
+
+const frontOutput = visibleCharOutputs.find(
+  o => o.scene === "Front Full-Body"
+);
+
+const otherOutputs = visibleCharOutputs.filter(
+  o => o.scene !== "Front Full-Body"
+);
+
 const hasOnlyFront = !!frontOutput && otherOutputs.length === 0;
+
 
 
   // ── Sync refEntries form state → active character in real-time ────────────
@@ -982,10 +991,10 @@ const uid = user?.id ?? null;
     createdAt,
   };
 
-  setOutputs(prev => [
-    frontOutput,
-    ...prev.filter(o => o.charId !== activeCharId),
-  ]);
+  setOutputs(prev => {
+  const withoutCurrentChar = prev.filter(o => o.charId !== activeCharId);
+  return [frontOutput, ...withoutCurrentChar];
+});
 
   canvasRef.current?.scrollTo({ top: 0, behavior: "smooth" });
 
