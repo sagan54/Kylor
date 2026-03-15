@@ -13,10 +13,10 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { supabase } from "../../lib/supabase";
-// ─── Storage / Cache Keys ─────────────────────────────────────────────
+
 const CHAR_BUCKET = "character-refs";
-const CONSISTENCY_CACHE_KEY = "kylor_consistency_cache_v1";
-const CONSISTENCY_ACTIVE_KEY = "kylor_consistency_active_char_v1";
+const SESSION_KEY = "kylor_chars_cache";
+
 const C = {
   accent: "#7c3aed", accentSoft: "rgba(124,58,237,0.15)",
   accentBorder: "rgba(124,58,237,0.35)", accentGlow: "rgba(124,58,237,0.25)",
@@ -47,17 +47,12 @@ const HAIR_STYLES = ["Short", "Medium", "Long", "Curly", "Wavy", "Braided", "Bal
 const HAIR_COLORS = ["Black", "Brown", "Blonde", "Red", "White", "Silver", "Blue", "Pink", "Green"];
 const EYE_COLORS  = ["Brown", "Blue", "Green", "Hazel", "Grey", "Amber"];
 const BUILD_TYPES = ["Slim", "Athletic", "Average", "Muscular", "Stocky", "Curvy"];
-const SCENE_TYPES = [
-  "Portrait / Close-up", "Upper body", "Full body standing",
-  "Full body action", "Sitting / relaxed", "Walking / moving",
-];
-const LIGHTING_PRESETS = [
-  { id: "cinematic",   label: "Cinematic",   color: "#6366f1" },
-  { id: "golden_hour", label: "Golden Hour", color: "#f59e0b" },
-  { id: "dramatic",    label: "Dramatic",    color: "#ef4444" },
-  { id: "soft_studio", label: "Soft Studio", color: "#14b8a6" },
-  { id: "neon",        label: "Neon Glow",   color: "#a855f7" },
-  { id: "natural",     label: "Natural",     color: "#84cc16" },
+const CHARACTER_PACK_VIEWS = [
+  { key: "front",   label: "Front Full-Body",        shot: "single person, front-facing, full-body, standing straight, arms relaxed, centered composition",                                                         size: "1024x1536" },
+  { key: "left",    label: "Left Profile Full-Body",  shot: "single person, strict left side profile, facing the left edge of the frame, full-body, standing straight, arms relaxed, centered composition",        size: "1024x1536" },
+  { key: "right",   label: "Right Profile Full-Body", shot: "single person, strict right side profile, facing the right edge of the frame, full-body, standing straight, arms relaxed, centered composition",      size: "1024x1536" },
+  { key: "back",    label: "Back Full-Body",           shot: "single person, full-body back view, facing away from camera, standing straight, arms relaxed, centered composition",                                  size: "1024x1536" },
+  { key: "closeup", label: "Upper-Body Close-Up",     shot: "single person, upper-body close-up portrait, facing camera, centered composition",                                                                    size: "1024x1024" },
 ];
 const CARD_GRADIENTS = [
   "linear-gradient(135deg, rgba(79,70,229,0.55), rgba(124,58,237,0.3))",
@@ -65,13 +60,6 @@ const CARD_GRADIENTS = [
   "linear-gradient(135deg, rgba(49,46,129,0.65), rgba(79,70,229,0.35))",
   "linear-gradient(135deg, rgba(91,33,182,0.55), rgba(55,48,163,0.4))",
   "linear-gradient(135deg, rgba(67,56,202,0.6), rgba(124,58,237,0.3))",
-];
-const CHARACTER_PACK_VIEWS = [
-  { key: "front",   label: "Front Full-Body",         shot: "single person, front-facing, full-body, standing straight, arms relaxed, centered composition",                                                                size: "1024x1536" },
-  { key: "left",    label: "Left Profile Full-Body",   shot: "single person, strict left side profile, facing the left edge of the frame, full-body, standing straight, arms relaxed, centered composition",               size: "1024x1536" },
-  { key: "right",   label: "Right Profile Full-Body",  shot: "single person, strict right side profile, facing the right edge of the frame, full-body, standing straight, arms relaxed, centered composition",             size: "1024x1536" },
-  { key: "back",    label: "Back Full-Body",            shot: "single person, full-body back view, facing away from camera, standing straight, arms relaxed, centered composition",                                         size: "1024x1536" },
-  { key: "closeup", label: "Upper-Body Close-Up",      shot: "single person, upper-body close-up portrait, facing camera, centered composition",                                                                           size: "1024x1024" },
 ];
 
 function fileToBase64(file) {
@@ -100,44 +88,7 @@ function parseTraitsPayload(value) {
     return { charDesc: p.charDesc || "", gender: p.gender || "", ageRange: p.ageRange || "", ethnicity: p.ethnicity || "", hairStyle: p.hairStyle || "", hairColor: p.hairColor || "", eyeColor: p.eyeColor || "", build: p.build || "", charLocked: !!p.charLocked, extraPrompt: p.extraPrompt || "" };
   } catch { return { charDesc: "", gender: "", ageRange: "", ethnicity: "", hairStyle: "", hairColor: "", eyeColor: "", build: "", charLocked: false, extraPrompt: "" }; }
 }
-function saveConsistencyCache({ characters, outputs, activeCharId }) {
-  try {
-    localStorage.setItem(
-      CONSISTENCY_CACHE_KEY,
-      JSON.stringify({
-        characters,
-        outputs,
-      })
-    );
 
-    if (activeCharId) {
-      localStorage.setItem(CONSISTENCY_ACTIVE_KEY, String(activeCharId));
-    } else {
-      localStorage.removeItem(CONSISTENCY_ACTIVE_KEY);
-    }
-  } catch {}
-}
-
-function loadConsistencyCache() {
-  try {
-    const raw = localStorage.getItem(CONSISTENCY_CACHE_KEY);
-    const active = localStorage.getItem(CONSISTENCY_ACTIVE_KEY);
-
-    if (!raw) {
-      return { characters: [], outputs: [], activeCharId: active || null };
-    }
-
-    const parsed = JSON.parse(raw);
-
-    return {
-      characters: Array.isArray(parsed?.characters) ? parsed.characters : [],
-      outputs: Array.isArray(parsed?.outputs) ? parsed.outputs : [],
-      activeCharId: active || null,
-    };
-  } catch {
-    return { characters: [], outputs: [], activeCharId: null };
-  }
-}
 function SidebarItem({ item }) {
   const Icon = item.icon;
   const inner = (
@@ -291,7 +242,6 @@ function OutputCard({ item, onDelete, onOpen }) {
       {item.url && item.url !== "__FAILED__" ? (
         <img src={item.url} alt={item.scene} style={{
           width: "100%", height: "100%", objectFit: "cover", position: "absolute", inset: 0,
-          // Flip right profile so it faces right instead of left
           transform: item.scene === "Right Profile Full-Body" ? "scaleX(-1)" : "none",
         }} />
       ) : item.url === "__FAILED__" ? (
@@ -326,8 +276,6 @@ function OutputCard({ item, onDelete, onOpen }) {
 }
 
 export default function ConsistencyPage() {
-  function autoResizeTextarea(e) { const el = e.target; el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; }
-
   const router = useRouter();
   const [activeView,     setActiveView]     = useState("generate");
   const [outputView,     setOutputView]     = useState("grid");
@@ -357,19 +305,11 @@ export default function ConsistencyPage() {
   const [saving,       setSaving]       = useState(false);
 
   const canvasRef = useRef(null);
+  // FIX: Track generating state in a ref so async callbacks can check it
+  const generatingRef = useRef(false);
 
-  const activeChar = characters.find(c => c.id === activeCharId) || null;
-const charOutputs = outputs.filter(o => o.charId === activeCharId);
-
-useEffect(() => {
-  if (!characters.length && !outputs.length && !activeCharId) return;
-
-  saveConsistencyCache({
-    characters,
-    outputs,
-    activeCharId,
-  });
-}, [characters, outputs, activeCharId]);
+  const activeChar  = characters.find(c => c.id === activeCharId) || null;
+  const charOutputs = outputs.filter(o => o.charId === activeCharId);
   const visibleCharOutputs = charOutputs.filter(o => o.url && o.url !== "__FAILED__");
   const frontOutput = visibleCharOutputs.find(o => o.scene === "Front Full-Body");
   const otherOutputs = visibleCharOutputs.filter(o => o.scene !== "Front Full-Body");
@@ -379,44 +319,13 @@ useEffect(() => {
     if (!activeCharId) return;
     setCharacters(p => p.map(c => c.id === activeCharId ? { ...c, refEntries } : c));
   }, [refEntries, activeCharId]);
-useEffect(() => {
-  const cached = loadConsistencyCache();
 
-  if (cached?.characters?.length > 0) {
-    setCharacters(cached.characters);
-    setOutputs(cached.outputs || []);
-
-    if (cached.activeCharId) {
-      const exists = cached.characters.some(
-        c => String(c.id) === String(cached.activeCharId)
-      );
-
-      setActiveCharId(
-        exists ? cached.activeCharId : cached.characters[0]?.id || null
-      );
-    } else {
-      setActiveCharId(cached.characters[0]?.id || null);
-    }
-  }
-}, []);
-  // ── Load characters: cache-first, then Supabase in background ───────────
+  // ── Single load effect: sessionStorage first, then Supabase in background ─
   useEffect(() => {
-    const SESSION_KEY = "kylor_chars_cache";
-    const DELETED_KEY = "kylor_deleted_outputs"; // Fix 2: track per-character deleted URLs
-
     function parseRows(data) {
-      // Load deleted URLs set from sessionStorage
-      let deletedSet = new Set();
-      try {
-        const d = sessionStorage.getItem(DELETED_KEY);
-        if (d) deletedSet = new Set(JSON.parse(d));
-      } catch {}
-
       const loaded = data.map(row => {
         const traits = parseTraitsPayload(row.prompt);
-        // Fix 2: filter out deleted images
-        const allImages = Array.isArray(row.generated_images) ? row.generated_images : [];
-        const generatedImages = allImages.filter(url => !deletedSet.has(url));
+        const generatedImages = Array.isArray(row.generated_images) ? row.generated_images : [];
         const refUrls = row.reference_image ? [row.reference_image] : [];
         return {
           id: row.id, name: row.name, desc: traits.charDesc || row.description || "",
@@ -439,7 +348,7 @@ useEffect(() => {
       return { loaded, loadedOutputs };
     }
 
-    // ── Step 1: Show cached data INSTANTLY (before any network call) ─────────
+    // Step 1: Show sessionStorage cache instantly (synchronous, 0ms)
     try {
       const raw = sessionStorage.getItem(SESSION_KEY);
       if (raw) {
@@ -448,11 +357,12 @@ useEffect(() => {
           const { loaded, loadedOutputs } = parseRows(cached);
           setCharacters(loaded);
           setOutputs(loadedOutputs);
+          // ← NO activeCharId set here — page opens on landing screen
         }
       }
     } catch {}
 
-    // ── Step 2: Auth + fresh Supabase fetch in background ───────────────────
+    // Step 2: Auth + Supabase in background
     (async () => {
       const { data: { user } } = await supabase.auth.getUser();
       const uid = user?.id ?? null;
@@ -463,6 +373,8 @@ useEffect(() => {
         .from("characters").select("*").eq("user_id", uid).order("created_at", { ascending: false });
 
       if (!error && data) {
+        // FIX: Don't overwrite state if user is currently generating
+        if (generatingRef.current) return;
         const { loaded, loadedOutputs } = parseRows(data);
         setCharacters(loaded);
         setOutputs(loadedOutputs);
@@ -510,21 +422,18 @@ useEffect(() => {
       };
 
       setCharacters(prev => {
-      const updated = [newChar, ...prev];
-      // keep cache in sync
-      try {
-        const SESSION_KEY = "kylor_chars_cache";
-        const raw = sessionStorage.getItem(SESSION_KEY);
-        const cached = raw ? JSON.parse(raw) : [];
-        sessionStorage.setItem(SESSION_KEY, JSON.stringify([{
-          id: data.id, user_id: userId, name: newChar.name, description: newChar.desc,
-          prompt: buildTraitsPayload({ charDesc: newChar.desc, gender: newChar.gender, ageRange: newChar.ageRange, ethnicity: newChar.ethnicity, hairStyle: newChar.hairStyle, hairColor: newChar.hairColor, eyeColor: newChar.eyeColor, build: newChar.build, charLocked: newChar.locked, extraPrompt: newChar.extraPrompt }),
-          reference_image: newChar.refEntries[0]?.previewUrl || null,
-          generated_images: [], cover_image: null, style: null, seed: null, created_at: newChar.createdAt,
-        }, ...cached]));
-      } catch {}
-      return updated;
-    });
+        const updated = [newChar, ...prev];
+        try {
+          const raw = sessionStorage.getItem(SESSION_KEY);
+          const cached = raw ? JSON.parse(raw) : [];
+          sessionStorage.setItem(SESSION_KEY, JSON.stringify([{
+            id: data.id, user_id: userId, name: newChar.name, description: newChar.desc,
+            prompt: promptPayload, reference_image: refUrls[0] || null,
+            generated_images: [], cover_image: null, style: null, seed: null, created_at: newChar.createdAt,
+          }, ...cached]));
+        } catch {}
+        return updated;
+      });
       setActiveCharId(data.id);
       setCharName(""); setCharDesc(""); setGender(""); setAgeRange(""); setEthnicity("");
       setHairStyle(""); setHairColor(""); setEyeColor(""); setBuild("");
@@ -535,38 +444,20 @@ useEffect(() => {
     finally { setSaving(false); }
   }
 
-  // ── Delete a single output image — persists to Supabase + cache ──────────
+  // ── Delete a single output (persists to Supabase + cache) ─────────────────
   async function deleteOutput(outputId) {
-    // Find the output to get its URL and charId
     const output = outputs.find(o => o.id === outputId);
     setOutputs(p => p.filter(o => o.id !== outputId));
-
-    if (!output || !userId) return;
+    if (!output?.url || output.url === "__FAILED__" || !userId) return;
     const char = characters.find(c => c.id === output.charId);
     if (!char) return;
-
-    // Remove this URL from generated_images in Supabase
     const updatedImages = (char.generatedImages || []).filter(url => url !== output.url);
-    await supabase.from("characters")
-      .update({ generated_images: updatedImages })
-      .eq("id", char.id).eq("user_id", userId);
-
-    // Update local characters state
-    setCharacters(p => p.map(c => c.id === char.id
-      ? { ...c, generatedImages: updatedImages, generations: updatedImages.length }
-      : c
-    ));
-
-    // Update cache
+    await supabase.from("characters").update({ generated_images: updatedImages }).eq("id", char.id).eq("user_id", userId);
+    setCharacters(p => p.map(c => c.id === char.id ? { ...c, generatedImages: updatedImages, generations: updatedImages.length } : c));
     try {
-      const SESSION_KEY = "kylor_chars_cache";
       const raw = sessionStorage.getItem(SESSION_KEY);
       if (raw) {
-        const cached = JSON.parse(raw).map(row =>
-          row.id === char.id
-            ? { ...row, generated_images: updatedImages }
-            : row
-        );
+        const cached = JSON.parse(raw).map(row => row.id === char.id ? { ...row, generated_images: updatedImages } : row);
         sessionStorage.setItem(SESSION_KEY, JSON.stringify(cached));
       }
     } catch {}
@@ -574,25 +465,14 @@ useEffect(() => {
 
   // ── Delete all outputs for current character ──────────────────────────────
   async function deleteAllOutputs() {
-    if (!activeCharId || !userId) {
-      setOutputs(p => p.filter(o => o.charId !== activeCharId));
-      return;
-    }
     setOutputs(p => p.filter(o => o.charId !== activeCharId));
-    await supabase.from("characters")
-      .update({ generated_images: [], cover_image: null })
-      .eq("id", activeCharId).eq("user_id", userId);
-    setCharacters(p => p.map(c => c.id === activeCharId
-      ? { ...c, generatedImages: [], generations: 0 }
-      : c
-    ));
+    if (!activeCharId || !userId) return;
+    await supabase.from("characters").update({ generated_images: [], cover_image: null }).eq("id", activeCharId).eq("user_id", userId);
+    setCharacters(p => p.map(c => c.id === activeCharId ? { ...c, generatedImages: [], generations: 0 } : c));
     try {
-      const SESSION_KEY = "kylor_chars_cache";
       const raw = sessionStorage.getItem(SESSION_KEY);
       if (raw) {
-        const cached = JSON.parse(raw).map(row =>
-          row.id === activeCharId ? { ...row, generated_images: [], cover_image: null } : row
-        );
+        const cached = JSON.parse(raw).map(row => row.id === activeCharId ? { ...row, generated_images: [], cover_image: null } : row);
         sessionStorage.setItem(SESSION_KEY, JSON.stringify(cached));
       }
     } catch {}
@@ -602,12 +482,8 @@ useEffect(() => {
     setCharacters(p => {
       const updated = p.filter(c => c.id !== id);
       try {
-        const SESSION_KEY = "kylor_chars_cache";
         const raw = sessionStorage.getItem(SESSION_KEY);
-        if (raw) {
-          const cached = JSON.parse(raw).filter(r => r.id !== id);
-          sessionStorage.setItem(SESSION_KEY, JSON.stringify(cached));
-        }
+        if (raw) sessionStorage.setItem(SESSION_KEY, JSON.stringify(JSON.parse(raw).filter(r => r.id !== id)));
       } catch {}
       return updated;
     });
@@ -628,37 +504,35 @@ useEffect(() => {
     if (!activeChar || charOutputs.length === 0) return;
     const traitDesc = [activeChar.gender, activeChar.ageRange, activeChar.ethnicity,
       activeChar.hairColor && activeChar.hairStyle ? `${activeChar.hairColor} ${activeChar.hairStyle} hair` : null,
-      activeChar.eyeColor ? `${activeChar.eyeColor} eyes` : null,
-      activeChar.build ? `${activeChar.build} build` : null,
+      activeChar.eyeColor ? `${activeChar.eyeColor} eyes` : null, activeChar.build ? `${activeChar.build} build` : null,
     ].filter(Boolean).join(", ");
     const charPrompt = [`Use the saved character ${activeChar.name}`, traitDesc ? `same identity and physical traits: ${traitDesc}` : null, activeChar.desc || null,
       activeChar.refEntries.length > 0 ? `Maintain exact facial features, skin tone, and distinguishing characteristics of this specific person.` : null,
     ].filter(Boolean).join(". ");
     try {
-  sessionStorage.setItem("kylor_prefill_prompt", charPrompt);
-  sessionStorage.setItem("kylor_selected_character_id", String(activeChar.id));
-  sessionStorage.setItem("kylor_selected_character_payload", JSON.stringify(activeChar));
-} catch {}
-router.push("/image");
+      sessionStorage.setItem("kylor_prefill_prompt", charPrompt);
+      sessionStorage.setItem("kylor_selected_character_id", String(activeChar.id));
+      sessionStorage.setItem("kylor_selected_character_payload", JSON.stringify(activeChar));
+    } catch {}
+    router.push("/image");
   }
+
   async function generateOtherProfiles() {
     if (!activeChar || generatingMore) return;
     const existingFront = charOutputs.find(o => o.scene === "Front Full-Body" && o.url && o.url !== "__FAILED__");
     if (!existingFront) { alert("Generate the first image first."); return; }
     setGeneratingMore(true);
     const views = [
-      { key: "left",  label: "Left Profile Full-Body",  shot: "single person, left side profile, full-body, facing left, standing straight, arms relaxed, centered composition",      size: "1024x1536" },
-      { key: "right", label: "Right Profile Full-Body", shot: "single person, right side profile, full-body, facing right, standing straight, arms relaxed, centered composition",     size: "1024x1536" },
-      { key: "back",  label: "Back Full-Body",           shot: "single person, back view, full-body, standing straight, arms relaxed, centered composition",                           size: "1024x1536" },
-      { key: "close", label: "Upper-Body Close-Up",      shot: "single person, upper body portrait, facing camera, shoulders visible, neutral expression",                             size: "1024x1024" },
+      { key: "left",  label: "Left Profile Full-Body",  shot: "single person, left side profile, full-body, facing left, standing straight, arms relaxed, centered composition",   size: "1024x1536" },
+      { key: "right", label: "Right Profile Full-Body", shot: "single person, right side profile, full-body, facing right, standing straight, arms relaxed, centered composition",  size: "1024x1536" },
+      { key: "back",  label: "Back Full-Body",           shot: "single person, back view, full-body, standing straight, arms relaxed, centered composition",                        size: "1024x1536" },
+      { key: "close", label: "Upper-Body Close-Up",      shot: "single person, upper body portrait, facing camera, shoulders visible, neutral expression",                          size: "1024x1024" },
     ];
     const traitDesc = [activeChar.gender, activeChar.ageRange, activeChar.ethnicity,
       activeChar.hairColor && activeChar.hairStyle ? `${activeChar.hairColor} ${activeChar.hairStyle} hair` : null,
       activeChar.eyeColor ? `${activeChar.eyeColor} eyes` : null, activeChar.build ? `${activeChar.build} build` : null,
     ].filter(Boolean).join(", ");
-    // ── Accumulate images locally across the loop — state is stale mid-loop ──
     let accumulatedImages = [...(activeChar.generatedImages || []).filter(Boolean)];
-
     try {
       for (const view of views) {
         const placeholder = { id: `${activeCharId}-${view.key}-${Date.now()}`, charId: activeCharId, prompt: view.shot, scene: view.label, url: null, createdAt: new Date().toISOString() };
@@ -676,11 +550,16 @@ router.push("/image");
         const url = Array.isArray(data?.images) ? data.images[0] : data?.image ?? null;
         setOutputs(prev => prev.map(o => o.id === placeholder.id ? { ...o, url: url || "__FAILED__" } : o));
         if (url) {
-          // Build on the running list — NOT stale activeChar.generatedImages
           accumulatedImages = [...accumulatedImages, url];
           await supabase.from("characters").update({ generated_images: accumulatedImages }).eq("id", activeCharId).eq("user_id", userId);
-          // Also keep local characters state in sync
           setCharacters(prev => prev.map(c => c.id === activeCharId ? { ...c, generatedImages: accumulatedImages, generations: accumulatedImages.length } : c));
+          try {
+            const raw = sessionStorage.getItem(SESSION_KEY);
+            if (raw) {
+              const cached = JSON.parse(raw).map(row => row.id === activeCharId ? { ...row, generated_images: accumulatedImages } : row);
+              sessionStorage.setItem(SESSION_KEY, JSON.stringify(cached));
+            }
+          } catch {}
         }
       }
     } catch (err) { console.error("Generate other profiles failed:", err); }
@@ -689,7 +568,10 @@ router.push("/image");
 
   async function handleGenerate() {
     if (!activeChar || generating) return;
+    // FIX: Set ref immediately so Supabase background fetch won't overwrite state
+    generatingRef.current = true;
     setGenerating(true);
+
     const frontView = CHARACTER_PACK_VIEWS[0];
     const traitDesc = [activeChar.gender, activeChar.ageRange, activeChar.ethnicity,
       activeChar.hairColor && activeChar.hairStyle ? `${activeChar.hairColor} ${activeChar.hairStyle} hair` : null,
@@ -697,9 +579,12 @@ router.push("/image");
     ].filter(Boolean).join(", ");
     const effectiveRefs = activeChar.refEntries.length > 0 ? activeChar.refEntries : refEntries;
     const hasRefs = effectiveRefs.length > 0;
-    const frontOutput = { id: `${activeCharId}-${frontView.key}-${Date.now()}`, charId: activeCharId, prompt: frontView.shot, scene: frontView.label, url: null, createdAt: new Date().toISOString() };
-    setOutputs(prev => [frontOutput, ...prev.filter(o => o.charId !== activeCharId)]);
+    const frontOutputItem = { id: `${activeCharId}-${frontView.key}-${Date.now()}`, charId: activeCharId, prompt: frontView.shot, scene: frontView.label, url: null, createdAt: new Date().toISOString() };
+
+    // Only replace outputs for this character, keep others
+    setOutputs(prev => [frontOutputItem, ...prev.filter(o => o.charId !== activeCharId)]);
     canvasRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+
     try {
       const uploadedRefs = hasRefs ? (await Promise.all(effectiveRefs.map(async e => { if (e.file) return fileToBase64(e.file); if (e.previewUrl) return e.previewUrl; return null; }))).filter(Boolean) : [];
       const finalPrompt = [
@@ -713,15 +598,18 @@ router.push("/image");
         "Plain light studio background. Neutral reference photo style.",
         "Exactly one person only. No duplicate person. No collage. No split screen. No multiple angles in one image. No character sheet. No contact sheet. No grid layout. No text. No watermark.",
       ].filter(Boolean).join(" ");
+
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 120000); // 2 min timeout
+      const timeout = setTimeout(() => controller.abort(), 120000);
       let data = null;
       try {
         const res = await fetch("/api/generate-image", { method: "POST", headers: { "Content-Type": "application/json" }, signal: controller.signal, body: JSON.stringify({ prompt: finalPrompt, size: frontView.size, n: 1, referenceImages: uploadedRefs, characterSeed: String(activeChar.id) }) });
         data = await res.json();
       } finally { clearTimeout(timeout); }
+
       const url = Array.isArray(data?.images) ? data.images[0] : data?.image ?? null;
-      setOutputs(prev => prev.map(o => o.id === frontOutput.id ? { ...o, url: url || "__FAILED__" } : o));
+      setOutputs(prev => prev.map(o => o.id === frontOutputItem.id ? { ...o, url: url || "__FAILED__" } : o));
+
       if (url) {
         const updatedChar = { ...activeChar, generations: 1, generatedImages: [url], extraPrompt: extraPrompt || activeChar.extraPrompt || "" };
         setCharacters(prev => prev.map(c => c.id === activeCharId ? updatedChar : c));
@@ -730,46 +618,25 @@ router.push("/image");
             generated_images: [url], cover_image: url,
             prompt: buildTraitsPayload({ charDesc: activeChar.desc, gender: activeChar.gender, ageRange: activeChar.ageRange, ethnicity: activeChar.ethnicity, hairStyle: activeChar.hairStyle, hairColor: activeChar.hairColor, eyeColor: activeChar.eyeColor, build: activeChar.build, charLocked: activeChar.locked, extraPrompt }),
           }).eq("id", activeCharId).eq("user_id", userId);
+          // Update sessionStorage cache with new image
+          try {
+            const raw = sessionStorage.getItem(SESSION_KEY);
+            if (raw) {
+              const cached = JSON.parse(raw).map(row => row.id === activeCharId ? { ...row, generated_images: [url], cover_image: url } : row);
+              sessionStorage.setItem(SESSION_KEY, JSON.stringify(cached));
+            }
+          } catch {}
         }
       }
     } catch (err) {
       console.error("Generate failed:", err);
-      setOutputs(prev => prev.map(o => o.id === frontOutput.id ? { ...o, url: "__FAILED__" } : o));
-    } finally { setGenerating(false); }
-  }
-
-  const canGenerate = !!activeChar && !generating;
-
-  // ── Delete output persistently (survives refresh) ─────────────────────────
-  function deleteOutput(itemId) {
-    // Find the URL of this item so we can remember it was deleted
-    const item = outputs.find(o => o.id === itemId);
-    if (item?.url && item.url !== "__FAILED__") {
-      try {
-        const DELETED_KEY = "kylor_deleted_outputs";
-        const raw = sessionStorage.getItem(DELETED_KEY);
-        const deleted = raw ? JSON.parse(raw) : [];
-        if (!deleted.includes(item.url)) {
-          sessionStorage.setItem(DELETED_KEY, JSON.stringify([...deleted, item.url]));
-        }
-      } catch {}
-
-      // Also update generated_images in Supabase for this character
-      if (userId && item.charId) {
-        const char = characters.find(c => c.id === item.charId);
-        if (char) {
-          const updatedImages = (char.generatedImages || []).filter(u => u !== item.url);
-          supabase.from("characters").update({ generated_images: updatedImages })
-            .eq("id", item.charId).eq("user_id", userId).then(() => {
-              setCharacters(prev => prev.map(c => c.id === item.charId ? { ...c, generatedImages: updatedImages, generations: updatedImages.length } : c));
-            });
-        }
-      }
+      setOutputs(prev => prev.map(o => o.id === frontOutputItem.id ? { ...o, url: "__FAILED__" } : o));
+    } finally {
+      generatingRef.current = false;
+      setGenerating(false);
     }
-    setOutputs(p => p.filter(o => o.id !== itemId));
   }
 
-  // ── Reset everything and go back to landing ───────────────────────────────
   function resetToLanding() {
     setActiveCharId(null);
     setCharName(""); setCharDesc(""); setGender(""); setAgeRange(""); setEthnicity("");
@@ -779,12 +646,13 @@ router.push("/image");
     setActiveView("generate");
   }
 
+  const canGenerate = !!activeChar && !generating;
+
   return (
     <main style={{ height: "100vh", overflow: "hidden",
       background: `radial-gradient(ellipse at 8% 12%,rgba(79,70,229,0.13),transparent 28%),radial-gradient(ellipse at 92% 8%,rgba(124,58,237,0.11),transparent 30%),${C.bg}`,
       color: C.text, fontFamily: "'Inter','SF Pro Display',sans-serif", display: "grid", gridTemplateColumns: "88px 1fr" }}>
 
-      {/* Sidebar */}
       <aside style={{ borderRight: `1px solid ${C.border}`, background: C.sidebar, padding: "18px 10px", height: "100vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
         <div style={{ width: 46, height: 46, borderRadius: 16, margin: "0 auto 22px", display: "grid", placeItems: "center",
           background: "linear-gradient(135deg,rgba(79,70,229,0.28),rgba(124,58,237,0.18))", border: `1px solid ${C.border}`, boxShadow: `0 0 20px ${C.accentGlow}` }}>
@@ -793,10 +661,8 @@ router.push("/image");
         <div style={{ display: "grid", gap: 8 }}>{SIDEBAR_ITEMS.map(item => <SidebarItem key={item.label} item={item} />)}</div>
       </aside>
 
-      {/* Main */}
       <div style={{ display: "grid", gridTemplateRows: "48px 1fr", height: "100vh", overflow: "hidden" }}>
 
-        {/* Top Nav */}
         <div style={{ borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 18px", background: "rgba(255,255,255,0.01)" }}>
           <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
             <div style={{ height: 30, padding: "0 12px", borderRadius: radius.full, border: `1px solid ${C.accentBorder}`, background: C.accentSoft, color: "#c4b5fd", fontSize: 13, display: "inline-flex", alignItems: "center", gap: 7, fontWeight: 600 }}>
@@ -832,13 +698,11 @@ router.push("/image");
           </div>
         </div>
 
-        {/* Content */}
         <div style={{ display: "grid", gridTemplateColumns: "380px 1fr", height: "100%", overflow: "hidden" }}>
 
           {/* LEFT PANEL */}
           <div style={{ borderRight: `1px solid ${C.border}`, background: "linear-gradient(180deg,rgba(7,9,15,0.98),rgba(9,11,17,0.98))", height: "100%", overflow: "hidden", display: "flex", flexDirection: "column", boxSizing: "border-box" }}>
 
-            {/* Section tabs */}
             <div style={{ padding: "12px 16px 0", flexShrink: 0 }}>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 4, padding: 4, borderRadius: radius.md, background: "rgba(255,255,255,0.03)", border: `1px solid ${C.border}` }}>
                 {[{ id: "traits", label: "Traits", icon: Sliders }, { id: "refs", label: "Refs", icon: Camera }, { id: "generate", label: "Generate", icon: Sparkles }].map(({ id, label, icon: Icon }) => {
@@ -856,17 +720,12 @@ router.push("/image");
               </div>
             </div>
 
-            {/* Heading */}
             <div style={{ padding: "14px 16px 0", flexShrink: 0 }}>
               <div style={{ borderBottom: `1px solid ${C.border}`, paddingBottom: 12 }}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    {/* Back button — resets form and returns to landing */}
-                    <motion.button whileTap={{ scale: 0.94 }} onClick={resetToLanding}
-                      title="Back to home"
-                      style={{ width: 28, height: 28, borderRadius: 8, border: `1px solid ${C.border}`,
-                        background: C.surface, color: C.textMuted, display: "grid", placeItems: "center",
-                        cursor: "pointer", flexShrink: 0, transition: "all 0.15s ease" }}
+                    <motion.button whileTap={{ scale: 0.94 }} onClick={resetToLanding} title="Back to home"
+                      style={{ width: 28, height: 28, borderRadius: 8, border: `1px solid ${C.border}`, background: C.surface, color: C.textMuted, display: "grid", placeItems: "center", cursor: "pointer", flexShrink: 0, transition: "all 0.15s ease" }}
                       onMouseEnter={e => { e.currentTarget.style.borderColor = C.accentBorder; e.currentTarget.style.color = "#c4b5fd"; }}
                       onMouseLeave={e => { e.currentTarget.style.borderColor = C.border; e.currentTarget.style.color = C.textMuted; }}>
                       <ChevronLeft size={14} />
@@ -885,10 +744,8 @@ router.push("/image");
               </div>
             </div>
 
-            {/* Form */}
             <div style={{ flex: 1, overflowY: "auto", padding: "14px 16px", minHeight: 0, display: "flex", flexDirection: "column", gap: 12 }}>
 
-              {/* TRAITS */}
               {formSection === "traits" && (<>
                 <div>
                   <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: C.textMuted, marginBottom: 6 }}>Character Name *</div>
@@ -897,20 +754,10 @@ router.push("/image");
                 </div>
                 <div>
                   <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: C.textMuted, marginBottom: 6 }}>Description</div>
-                  <textarea
-                    ref={el => { if (el) { el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; } }}
-                    value={charDesc}
-                    onChange={e => {
-                      setCharDesc(e.target.value.slice(0, 1000));
-                      e.target.style.height = "auto";
-                      e.target.style.height = e.target.scrollHeight + "px";
-                    }}
-                    placeholder="Scar above left eyebrow, always wears a silver necklace…"
-                    rows={3}
-                    style={{ width: "100%", padding: "8px 12px", borderRadius: radius.sm,
-                      border: `1px solid ${C.border}`, background: C.surface, color: C.text,
-                      resize: "none", overflow: "hidden", fontSize: 12.5, fontFamily: "inherit",
-                      lineHeight: 1.6, outline: "none", boxSizing: "border-box", minHeight: 80 }} />
+                  <textarea ref={el => { if (el) { el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; } }}
+                    value={charDesc} onChange={e => { setCharDesc(e.target.value.slice(0, 1000)); e.target.style.height = "auto"; e.target.style.height = e.target.scrollHeight + "px"; }}
+                    placeholder="Scar above left eyebrow, always wears a silver necklace…" rows={3}
+                    style={{ width: "100%", padding: "8px 12px", borderRadius: radius.sm, border: `1px solid ${C.border}`, background: C.surface, color: C.text, resize: "none", overflow: "hidden", fontSize: 12.5, fontFamily: "inherit", lineHeight: 1.6, outline: "none", boxSizing: "border-box", minHeight: 80 }} />
                 </div>
                 <div>
                   <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: C.textMuted, marginBottom: 8 }}>Demographics</div>
@@ -944,7 +791,6 @@ router.push("/image");
                 </motion.button>
               </>)}
 
-              {/* REFS */}
               {formSection === "refs" && (<>
                 <p style={{ margin: 0, fontSize: 12.5, color: C.textMuted, lineHeight: 1.65 }}>Upload reference photos of the character. More consistent references = more accurate generations.</p>
                 <RefUpload entries={refEntries} onEntries={setRefEntries} label="Face references" hint="Clear, front-facing photos · best results" max={5} />
@@ -970,7 +816,6 @@ router.push("/image");
                 )}
               </>)}
 
-              {/* GENERATE — unchanged from Document 5 */}
               {formSection === "generate" && (<>
                 {!activeChar && (
                   <div style={{ padding: 20, borderRadius: radius.md, border: `1px solid ${C.border}`, background: C.surface, textAlign: "center" }}>
@@ -988,29 +833,13 @@ router.push("/image");
                   <div>
                     <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: C.textMuted, marginBottom: 6 }}>Reference Notes</div>
                     <div style={{ position: "relative" }}>
-                      <textarea
-                        ref={el => {
-                          // Auto-resize on mount and whenever value changes
-                          if (el) { el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; }
-                        }}
-                        value={extraPrompt}
-                        onChange={e => {
-                          setExtraPrompt(e.target.value.slice(0, charLimit));
-                          // Resize immediately on every keystroke
-                          e.target.style.height = "auto";
-                          e.target.style.height = e.target.scrollHeight + "px";
-                        }}
-                        placeholder="outfit details, facial details, accessories, exact look notes…"
-                        rows={1}
-                        style={{ width: "100%", minHeight: 110, padding: "10px 12px", borderRadius: radius.md,
-                          border: `1px solid ${C.border}`, background: C.surface, color: C.text,
-                          resize: "none", overflow: "hidden", fontSize: 12.5, fontFamily: "inherit",
-                          lineHeight: 1.6, outline: "none", boxSizing: "border-box" }}
-                      />
+                      <textarea ref={el => { if (el) { el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; } }}
+                        value={extraPrompt} onChange={e => { setExtraPrompt(e.target.value.slice(0, charLimit)); e.target.style.height = "auto"; e.target.style.height = e.target.scrollHeight + "px"; }}
+                        placeholder="outfit details, facial details, accessories, exact look notes…" rows={1}
+                        style={{ width: "100%", minHeight: 110, padding: "10px 12px", borderRadius: radius.md, border: `1px solid ${C.border}`, background: C.surface, color: C.text, resize: "none", overflow: "hidden", fontSize: 12.5, fontFamily: "inherit", lineHeight: 1.6, outline: "none", boxSizing: "border-box" }} />
                       <div style={{ position: "absolute", bottom: 8, right: 10, fontSize: 10.5, color: extraPrompt.length > charLimit * 0.9 ? "#f87171" : C.textDim }}>{extraPrompt.length}/{charLimit}</div>
                     </div>
                   </div>
-
                   <div style={{ padding: "10px 12px", borderRadius: radius.sm, border: `1px solid ${C.border}`, background: "rgba(255,255,255,0.02)", display: "flex", alignItems: "center", gap: 10 }}>
                     <div style={{ width: 32, height: 32, borderRadius: 9, overflow: "hidden", flexShrink: 0, background: CARD_GRADIENTS[getIdNumber(activeChar.id) % CARD_GRADIENTS.length], display: "grid", placeItems: "center" }}>
                       {activeChar.refEntries.length > 0 ? <img src={activeChar.refEntries[0].previewUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <User size={14} color="rgba(255,255,255,0.4)" />}
@@ -1027,7 +856,6 @@ router.push("/image");
               </>)}
             </div>
 
-            {/* Generate button */}
             {formSection === "generate" && activeChar && (
               <div style={{ padding: "12px 16px", borderTop: `1px solid ${C.border}`, flexShrink: 0 }}>
                 <motion.button whileHover={canGenerate ? { boxShadow: "0 18px 40px rgba(124,58,237,0.42)" } : {}} whileTap={canGenerate ? { scale: 0.98 } : {}}
@@ -1073,7 +901,6 @@ router.push("/image");
 
               <div ref={canvasRef} style={{ flex: 1, overflowY: "auto", padding: "16px" }}>
 
-                {/* ── CHANGE 2: New landing screen ── */}
                 {!activeChar && (
                   <div style={{ height: "80%", display: "grid", placeItems: "center" }}>
                     <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, ease: [0.22,1,0.36,1] }}
@@ -1090,10 +917,7 @@ router.push("/image");
                       <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
                         <motion.button whileHover={{ borderColor: C.accentBorder, color: "#c4b5fd", boxShadow: "0 8px 24px rgba(124,58,237,0.18)" }} whileTap={{ scale: 0.97 }}
                           onClick={() => setActiveView("characters")}
-                          style={{ height: 46, padding: "0 22px", borderRadius: radius.md,
-                            border: `1px solid ${C.accentBorder}`, background: C.accentSoft,
-                            color: "#c4b5fd", fontSize: 14, fontWeight: 600,
-                            cursor: "pointer", fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: 8, transition: "all 0.18s ease" }}>
+                          style={{ height: 46, padding: "0 22px", borderRadius: radius.md, border: `1px solid ${C.accentBorder}`, background: C.accentSoft, color: "#c4b5fd", fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: 8, transition: "all 0.18s ease" }}>
                           <Users size={15} /> Open Saved Characters
                           {characters.length > 0 && (
                             <span style={{ padding: "1px 7px", borderRadius: radius.full, background: C.accent, color: "white", fontSize: 11, fontWeight: 700 }}>{characters.length}</span>
@@ -1149,19 +973,11 @@ router.push("/image");
                         )
                       ))}
                     </div>
-
-                    {/* Use This Character in Image — below the grid */}
                     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
                       style={{ display: "flex", justifyContent: "flex-end", paddingBottom: 8 }}>
-                      <motion.button
-                        whileHover={{ boxShadow: "0 12px 32px rgba(124,58,237,0.35)", borderColor: "#a78bfa" }}
-                        whileTap={{ scale: 0.97 }}
+                      <motion.button whileHover={{ boxShadow: "0 12px 32px rgba(124,58,237,0.35)", borderColor: "#a78bfa" }} whileTap={{ scale: 0.97 }}
                         onClick={sendToImageGen}
-                        style={{ height: 44, padding: "0 20px", borderRadius: radius.md,
-                          border: `1px solid ${C.accentBorder}`, background: "linear-gradient(135deg,#4f46e5,#7c3aed)",
-                          color: "white", fontSize: 13.5, fontWeight: 700, cursor: "pointer",
-                          fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: 8,
-                          boxShadow: "0 6px 20px rgba(124,58,237,0.3)", transition: "all 0.2s ease" }}>
+                        style={{ height: 44, padding: "0 20px", borderRadius: radius.md, border: `1px solid ${C.accentBorder}`, background: "linear-gradient(135deg,#4f46e5,#7c3aed)", color: "white", fontSize: 13.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: 8, boxShadow: "0 6px 20px rgba(124,58,237,0.3)", transition: "all 0.2s ease" }}>
                         <ImageIcon size={15} /> Use This Character in Image <ExternalLink size={12} />
                       </motion.button>
                     </motion.div>
@@ -1170,27 +986,16 @@ router.push("/image");
 
                 {activeChar && shouldShowGenerateMorePanel && (
                   <div style={{ display: "grid", gridTemplateColumns: "210px 1fr", gap: 16, alignItems: "stretch" }}>
-                    {/* Left: front image + regenerate button below */}
                     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                       <OutputCard item={frontOutput} onDelete={() => deleteOutput(frontOutput.id)} onOpen={setLightboxItem} />
-                      <motion.button
-                        whileHover={!generating ? { borderColor: C.accentBorder, color: "#c4b5fd" } : {}}
-                        whileTap={!generating ? { scale: 0.97 } : {}}
-                        onClick={handleGenerate}
-                        disabled={generating}
-                        style={{ height: 36, borderRadius: radius.sm,
-                          border: `1px solid ${C.border}`, background: C.surface,
-                          color: C.textMuted, cursor: generating ? "default" : "pointer",
-                          fontSize: 12, fontWeight: 600, fontFamily: "inherit",
-                          display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6,
-                          transition: "all 0.15s ease" }}>
+                      <motion.button whileHover={!generating ? { borderColor: C.accentBorder, color: "#c4b5fd" } : {}} whileTap={!generating ? { scale: 0.97 } : {}}
+                        onClick={handleGenerate} disabled={generating}
+                        style={{ height: 36, borderRadius: radius.sm, border: `1px solid ${C.border}`, background: C.surface, color: C.textMuted, cursor: generating ? "default" : "pointer", fontSize: 12, fontWeight: 600, fontFamily: "inherit", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, transition: "all 0.15s ease" }}>
                         {generating
                           ? <><motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: "linear" }}><Zap size={13} /></motion.div>Regenerating…</>
                           : <><RefreshCw size={13} /> Regenerate</>}
                       </motion.button>
                     </div>
-
-                    {/* Right: generate other 4 panel */}
                     <div style={{ borderRadius: radius.lg, border: `1px solid ${C.border}`, background: C.surface, padding: 20, display: "flex", flexDirection: "column", justifyContent: "center", minHeight: 280 }}>
                       <div style={{ fontSize: 18, fontWeight: 700, color: C.text, marginBottom: 10 }}>First profile ready</div>
                       <div style={{ fontSize: 13, color: C.textMuted, lineHeight: 1.7, maxWidth: 500, marginBottom: 18 }}>
@@ -1198,10 +1003,7 @@ router.push("/image");
                       </div>
                       <motion.button whileHover={!generatingMore ? { boxShadow: "0 18px 40px rgba(124,58,237,0.32)" } : {}} whileTap={!generatingMore ? { scale: 0.98 } : {}}
                         onClick={generateOtherProfiles} disabled={generatingMore}
-                        style={{ height: 46, padding: "0 18px", borderRadius: radius.md, border: "none",
-                          background: !generatingMore ? "linear-gradient(135deg,#4f46e5,#7c3aed)" : "rgba(255,255,255,0.06)",
-                          color: !generatingMore ? "white" : C.textMuted, cursor: !generatingMore ? "pointer" : "default",
-                          fontSize: 14, fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 8, width: "fit-content", fontFamily: "inherit" }}>
+                        style={{ height: 46, padding: "0 18px", borderRadius: radius.md, border: "none", background: !generatingMore ? "linear-gradient(135deg,#4f46e5,#7c3aed)" : "rgba(255,255,255,0.06)", color: !generatingMore ? "white" : C.textMuted, cursor: !generatingMore ? "pointer" : "default", fontSize: 14, fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 8, width: "fit-content", fontFamily: "inherit" }}>
                         {generatingMore
                           ? <><motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: "linear" }}><Zap size={15} /></motion.div>Generating Other 4 Profiles...</>
                           : <><Plus size={15} /> Generate Other 4 Profiles</>}
@@ -1256,7 +1058,6 @@ router.push("/image");
         </div>
       </div>
 
-      {/* Lightbox */}
       <AnimatePresence>
         {lightboxItem && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setLightboxItem(null)}

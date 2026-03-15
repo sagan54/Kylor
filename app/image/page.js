@@ -1044,7 +1044,7 @@ function GenerationCard({
                   key={v}
                   whileTap={{ scale: 0.95 }}
                   onClick={() => onVariation?.(group, i)}
-                  disabled={generating}
+                  disabled={!(selectedCharacter ? scenePrompt.trim() : prompt.trim()) || generating}
                   style={{
                     height: 34,
                     borderRadius: radius.sm,
@@ -1098,7 +1098,8 @@ export default function ImagePage() {
   const [favoritesOnly, setFavoritesOnly] = useState(false);
 
   const [prompt, setPrompt] = useState("");
-  const charLimit = 500;
+const [scenePrompt, setScenePrompt] = useState("");
+const charLimit = 500;
   const [negativeOpen, setNegativeOpen] = useState(false);
   const [negativePrompt, setNegativePrompt] = useState("");
 
@@ -1245,45 +1246,47 @@ if (selectedId) {
   }
 
   function clearSelectedCharacter() {
-    setSelectedCharacter(null);
-    try {
-      sessionStorage.removeItem("kylor_selected_character_id");
-    } catch {}
-  }
+  setSelectedCharacter(null);
+  setPrompt("");
+  setScenePrompt("");
+  try {
+    sessionStorage.removeItem("kylor_selected_character_id");
+    sessionStorage.removeItem("kylor_selected_character_payload");
+  } catch {}
+}
 
   useEffect(() => {
     loadSavedCharacters();
   }, []);
 
   useEffect(() => {
-    if (!selectedCharacter) return;
+  if (!selectedCharacter) {
+    setPrompt("");
+    return;
+  }
 
-    const traitParts = [
-      selectedCharacter.gender,
-      selectedCharacter.ageRange,
-      selectedCharacter.ethnicity,
-      selectedCharacter.hairColor && selectedCharacter.hairStyle
-        ? `${selectedCharacter.hairColor} ${selectedCharacter.hairStyle} hair`
-        : null,
-      selectedCharacter.eyeColor ? `${selectedCharacter.eyeColor} eyes` : null,
-      selectedCharacter.build ? `${selectedCharacter.build} build` : null,
-    ].filter(Boolean);
+  const traitParts = [
+    selectedCharacter.gender,
+    selectedCharacter.ageRange,
+    selectedCharacter.ethnicity,
+    selectedCharacter.hairColor && selectedCharacter.hairStyle
+      ? `${selectedCharacter.hairColor} ${selectedCharacter.hairStyle} hair`
+      : null,
+    selectedCharacter.eyeColor ? `${selectedCharacter.eyeColor} eyes` : null,
+    selectedCharacter.build ? `${selectedCharacter.build} build` : null,
+  ].filter(Boolean);
 
-    const characterPrompt = [
-      `Use the same character: ${selectedCharacter.name}`,
-      traitParts.length ? traitParts.join(", ") : null,
-      selectedCharacter.charDesc || null,
-      "Maintain the same facial features, hairstyle, skin tone, proportions, and identity.",
-    ]
-      .filter(Boolean)
-      .join(". ");
+  const characterPrompt = [
+    `Use the same character: ${selectedCharacter.name}`,
+    traitParts.length ? traitParts.join(", ") : null,
+    selectedCharacter.charDesc || null,
+    "Maintain the same facial features, hairstyle, skin tone, proportions, and identity.",
+  ]
+    .filter(Boolean)
+    .join(". ");
 
-    setPrompt((prev) => {
-      if (!prev?.trim()) return characterPrompt;
-      if (prev.includes(`Use the same character: ${selectedCharacter.name}`)) return prev;
-      return `${characterPrompt}. ${prev}`;
-    });
-  }, [selectedCharacter]);
+  setPrompt(characterPrompt);
+}, [selectedCharacter]);
 
   useEffect(() => {
     async function init() {
@@ -1427,20 +1430,22 @@ if (selectedId) {
   }
 
   async function handleGenerate() {
-    if (!prompt.trim() || generating) return;
+    const basePrompt = selectedCharacter ? scenePrompt.trim() : prompt.trim();
+if (!basePrompt || generating) return;
 
     setGenerating(true);
     canvasRef.current?.scrollTo({ top: 0, behavior: "smooth" });
 
     const styleLabel = activeStyle?.label ?? null;
-    const fullPrompt = [
-      prompt.trim(),
-      styleLabel ? `Style: ${styleLabel}` : null,
-      negativePrompt.trim() ? `Negative: ${negativePrompt.trim()}` : null,
-      "No text, no captions, no subtitles, no watermark.",
-    ]
-      .filter(Boolean)
-      .join(". ");
+  const fullPrompt = [
+  selectedCharacter ? prompt : null,
+  basePrompt,
+  styleLabel ? `Style: ${styleLabel}` : null,
+  negativePrompt.trim() ? `Negative: ${negativePrompt.trim()}` : null,
+  "No text, no captions, no subtitles, no watermark.",
+]
+  .filter(Boolean)
+  .join(". ");
 
     const n = Math.min(outputCount, 4);
     const groupId = Date.now();
@@ -1468,7 +1473,7 @@ if (selectedId) {
 
       const newGroup = {
         id: groupId,
-        prompt: prompt.trim(),
+        prompt: selectedCharacter ? `${prompt}. ${basePrompt}` : basePrompt,
         negativePrompt: negativePrompt.trim(),
         ratio,
         mode,
@@ -1515,7 +1520,7 @@ if (selectedId) {
 
       const placeholder = {
         id: groupId,
-        prompt: prompt.trim(),
+        prompt: selectedCharacter ? `${prompt}. ${basePrompt}` : basePrompt,
         negativePrompt: negativePrompt.trim(),
         ratio,
         mode,
@@ -2033,26 +2038,91 @@ if (selectedId) {
                 flexDirection: "column",
               }}
             >
-              <textarea
-                ref={textareaRef}
-                value={prompt}
-                onChange={(e) => setPrompt(e.target.value.slice(0, charLimit))}
-                placeholder="Describe the image you want to create..."
-                style={{
-                  flex: 1,
-                  width: "100%",
-                  border: "none",
-                  background: "transparent",
-                  color: C.text,
-                  resize: "none",
-                  fontFamily: "inherit",
-                  fontSize: 13.5,
-                  lineHeight: 1.7,
-                  outline: "none",
-                  minHeight: 0,
-                  boxSizing: "border-box",
-                }}
-              />
+              <div style={{ display: "flex", flexDirection: "column", gap: 10, flex: 1, minHeight: 0 }}>
+  {selectedCharacter && (
+    <div
+      style={{
+        border: `1px solid ${C.accentBorder}`,
+        background: "rgba(124,58,237,0.08)",
+        borderRadius: radius.md,
+        padding: 10,
+        flexShrink: 0,
+      }}
+    >
+      <div
+        style={{
+          fontSize: 10.5,
+          fontWeight: 700,
+          letterSpacing: "0.08em",
+          textTransform: "uppercase",
+          color: "#c4b5fd",
+          marginBottom: 6,
+        }}
+      >
+        Defined Character Prompt
+      </div>
+
+      <textarea
+        value={prompt}
+        readOnly
+        rows={6}
+        style={{
+          width: "100%",
+          border: "none",
+          background: "transparent",
+          color: "rgba(255,255,255,0.88)",
+          resize: "none",
+          fontFamily: "inherit",
+          fontSize: 13,
+          lineHeight: 1.65,
+          outline: "none",
+          boxSizing: "border-box",
+        }}
+      />
+    </div>
+  )}
+
+  <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+    <div
+      style={{
+        fontSize: 10.5,
+        fontWeight: 700,
+        letterSpacing: "0.08em",
+        textTransform: "uppercase",
+        color: C.textMuted,
+        marginBottom: 6,
+        flexShrink: 0,
+      }}
+    >
+      Scene Prompt
+    </div>
+
+    <textarea
+      ref={textareaRef}
+      value={scenePrompt}
+      onChange={(e) => setScenePrompt(e.target.value.slice(0, charLimit))}
+      placeholder={
+        selectedCharacter
+          ? "Describe the scene, action, camera angle, environment, outfit, lighting..."
+          : "Describe the image you want to create..."
+      }
+      style={{
+        flex: 1,
+        width: "100%",
+        border: "none",
+        background: "transparent",
+        color: C.text,
+        resize: "none",
+        fontFamily: "inherit",
+        fontSize: 13.5,
+        lineHeight: 1.7,
+        outline: "none",
+        minHeight: 0,
+        boxSizing: "border-box",
+      }}
+    />
+  </div>
+</div>
 
               <AnimatePresence>
                 {negativeOpen && (
@@ -2183,16 +2253,16 @@ if (selectedId) {
                       color: prompt.length > charLimit * 0.9 ? "#f87171" : C.textDim,
                     }}
                   >
-                    {prompt.length}/{charLimit}
+                    {scenePrompt.length}/{charLimit}
                   </span>
                   <motion.button
                     whileTap={{ scale: 0.92 }}
                     title="Enhance prompt"
                     onClick={() => {
-                      if (prompt.trim()) {
-                        setPrompt((p) => p.trim() + ", ultra detailed, cinematic lighting, 8K");
-                      }
-                    }}
+  if (scenePrompt.trim()) {
+    setScenePrompt((p) => p.trim() + ", ultra detailed, cinematic lighting, 8K");
+  }
+}}
                     style={{
                       width: 32,
                       height: 32,
@@ -2404,11 +2474,15 @@ if (selectedId) {
 
                   <motion.button
                     whileHover={
-                      prompt.trim() && !generating
-                        ? { boxShadow: "0 18px 40px rgba(124,58,237,0.42)" }
-                        : {}
-                    }
-                    whileTap={prompt.trim() && !generating ? { scale: 0.98 } : {}}
+  (selectedCharacter ? scenePrompt.trim() : prompt.trim()) && !generating
+    ? { boxShadow: "0 18px 40px rgba(124,58,237,0.42)" }
+    : {}
+}
+whileTap={
+  (selectedCharacter ? scenePrompt.trim() : prompt.trim()) && !generating
+    ? { scale: 0.98 }
+    : {}
+}
                     onClick={handleGenerate}
                     disabled={generating}
                     style={{
@@ -2417,18 +2491,21 @@ if (selectedId) {
                       borderRadius: radius.md,
                       border: "none",
                       background:
-                        prompt.trim() && !generating
-                          ? "linear-gradient(135deg,#4f46e5,#7c3aed)"
-                          : "rgba(255,255,255,0.06)",
-                      color: prompt.trim() && !generating ? "white" : C.textMuted,
-                      cursor:
-                        prompt.trim() && !generating ? "pointer" : "default",
-                      fontSize: 14,
-                      fontWeight: 700,
-                      boxShadow:
-                        prompt.trim() && !generating
-                          ? "0 10px 28px rgba(124,58,237,0.28)"
-                          : "none",
+  (selectedCharacter ? scenePrompt.trim() : prompt.trim()) && !generating
+    ? "linear-gradient(135deg,#4f46e5,#7c3aed)"
+    : "rgba(255,255,255,0.06)",
+color:
+  (selectedCharacter ? scenePrompt.trim() : prompt.trim()) && !generating
+    ? "white"
+    : C.textMuted,
+cursor:
+  (selectedCharacter ? scenePrompt.trim() : prompt.trim()) && !generating
+    ? "pointer"
+    : "default",
+boxShadow:
+  (selectedCharacter ? scenePrompt.trim() : prompt.trim()) && !generating
+    ? "0 10px 28px rgba(124,58,237,0.28)"
+    : "none",
                       display: "inline-flex",
                       alignItems: "center",
                       justifyContent: "center",
