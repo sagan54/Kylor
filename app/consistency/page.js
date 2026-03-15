@@ -520,7 +520,7 @@ export default function ConsistencyPage() {
         "Exactly one person only. No duplicate person. No collage. No split screen. No multiple angles in one image. No character sheet. No contact sheet. No grid layout. No text. No watermark.",
       ].filter(Boolean).join(" ");
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 45000);
+      const timeout = setTimeout(() => controller.abort(), 120000); // 2 min timeout
       let data = null;
       try {
         const res = await fetch("/api/generate-image", { method: "POST", headers: { "Content-Type": "application/json" }, signal: controller.signal, body: JSON.stringify({ prompt: finalPrompt, size: frontView.size, n: 1, referenceImages: uploadedRefs, characterSeed: String(activeChar.id) }) });
