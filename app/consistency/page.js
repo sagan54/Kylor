@@ -511,7 +511,9 @@ export default function ConsistencyPage() {
   const activeChar = characters.find(c => c.id === activeCharId) || null;
 const charOutputs = outputs.filter(o => o.charId === activeCharId);
 
-const visibleCharOutputs = charOutputs.filter(o => o.url !== "__FAILED__");
+const visibleCharOutputs = charOutputs.filter(
+  o => o.url && o.url !== "__FAILED__"
+);
 
 const frontOutput = visibleCharOutputs.find(
   o => o.scene === "Front Full-Body"
@@ -521,7 +523,8 @@ const otherOutputs = visibleCharOutputs.filter(
   o => o.scene !== "Front Full-Body"
 );
 
-const hasOnlyFront = !!frontOutput && otherOutputs.length === 0;
+const remainingProfilesCount = Math.max(0, 4 - otherOutputs.length);
+const shouldShowGenerateMorePanel = !!frontOutput && remainingProfilesCount > 0;
 
 
 
@@ -1558,7 +1561,8 @@ const uid = user?.id ?? null;
                     </div>
                   )}
 
-                  {activeChar && charOutputs.length > 0 && !hasOnlyFront && (
+                  {activeChar && charOutputs.length > 0 && !shouldShowGenerateMorePanel && (
+
   <div style={{ display: "grid", gridTemplateColumns: outputView === "grid" ? "repeat(auto-fill,minmax(200px,1fr))" : "1fr", gap: 12 }}>
     {charOutputs.map((item, i) => (
       outputView === "grid" ? (
@@ -1642,7 +1646,8 @@ const uid = user?.id ?? null;
   </div>
 )}
 
-{activeChar && hasOnlyFront && (
+{activeChar && shouldShowGenerateMorePanel && (
+
   <div style={{ display: "grid", gridTemplateColumns: "210px 1fr", gap: 16, alignItems: "stretch" }}>
     <div>
       <OutputCard
