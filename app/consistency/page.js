@@ -468,6 +468,9 @@ export default function ConsistencyPage() {
       activeChar.hairColor && activeChar.hairStyle ? `${activeChar.hairColor} ${activeChar.hairStyle} hair` : null,
       activeChar.eyeColor ? `${activeChar.eyeColor} eyes` : null, activeChar.build ? `${activeChar.build} build` : null,
     ].filter(Boolean).join(", ");
+    // ── Accumulate images locally across the loop — state is stale mid-loop ──
+    let accumulatedImages = [...(activeChar.generatedImages || []).filter(Boolean)];
+
     try {
       for (const view of views) {
         const placeholder = { id: `${activeCharId}-${view.key}-${Date.now()}`, charId: activeCharId, prompt: view.shot, scene: view.label, url: null, createdAt: new Date().toISOString() };
@@ -485,8 +488,11 @@ export default function ConsistencyPage() {
         const url = Array.isArray(data?.images) ? data.images[0] : data?.image ?? null;
         setOutputs(prev => prev.map(o => o.id === placeholder.id ? { ...o, url: url || "__FAILED__" } : o));
         if (url) {
-          const updatedImages = [...(activeChar.generatedImages || []).filter(Boolean), url];
-          await supabase.from("characters").update({ generated_images: updatedImages }).eq("id", activeCharId).eq("user_id", userId);
+          // Build on the running list — NOT stale activeChar.generatedImages
+          accumulatedImages = [...accumulatedImages, url];
+          await supabase.from("characters").update({ generated_images: accumulatedImages }).eq("id", activeCharId).eq("user_id", userId);
+          // Also keep local characters state in sync
+          setCharacters(prev => prev.map(c => c.id === activeCharId ? { ...c, generatedImages: accumulatedImages, generations: accumulatedImages.length } : c));
         }
       }
     } catch (err) { console.error("Generate other profiles failed:", err); }
