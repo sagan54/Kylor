@@ -11,12 +11,17 @@ import {
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 
 import { supabase } from "../../lib/supabase";
+
+// ─── Cache keys ───────────────────────────────────────────────────────────────
+const SESSION_KEY = "kylor_img_cache_v2";
+const CHAR_SESSION_KEY = "kylor_img_chars_cache_v2";
+
 // ─── Supabase helpers ─────────────────────────────────────────────────────────
 async function sbLoadAll(userId) {
   if (!userId) return [];
   const { data, error } = await supabase
     .from("image_generations")
-    .select("*")
+    .select("id, prompt, negative_prompt, ratio, mode, style, created_at, images")
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
 
@@ -244,6 +249,34 @@ function fmtDate(iso) {
       minute: "2-digit",
     })
   );
+}
+
+function mapCharacterRow(row) {
+  let traits = {};
+  try {
+    traits = JSON.parse(row.prompt || "{}");
+  } catch {}
+
+  return {
+    id: row.id,
+    name: row.name,
+    description: row.description || "",
+    referenceImage: row.reference_image || null,
+    generatedImages: Array.isArray(row.generated_images) ? row.generated_images : [],
+    coverImage:
+      row.cover_image ||
+      (Array.isArray(row.generated_images) && row.generated_images[0]) ||
+      row.reference_image ||
+      null,
+    gender: traits.gender || "",
+    ageRange: traits.ageRange || "",
+    ethnicity: traits.ethnicity || "",
+    hairStyle: traits.hairStyle || "",
+    hairColor: traits.hairColor || "",
+    eyeColor: traits.eyeColor || "",
+    build: traits.build || "",
+    charDesc: traits.charDesc || row.description || "",
+  };
 }
 
 // ─── Sidebar Item ─────────────────────────────────────────────────────────────
@@ -1038,7 +1071,7 @@ function GenerationCard({
                   key={v}
                   whileTap={{ scale: 0.95 }}
                   onClick={() => onVariation?.(group, i)}
-                  disabled={!(selectedCharacter ? scenePrompt.trim() : prompt.trim()) || generating}
+                  disabled={generating}
                   style={{
                     height: 34,
                     borderRadius: radius.sm,
@@ -1092,8 +1125,8 @@ export default function ImagePage() {
   const [favoritesOnly, setFavoritesOnly] = useState(false);
 
   const [prompt, setPrompt] = useState("");
-const [scenePrompt, setScenePrompt] = useState("");
-const charLimit = 500;
+  const [scenePrompt, setScenePrompt] = useState("");
+  const charLimit = 500;
   const [negativeOpen, setNegativeOpen] = useState(false);
   const [negativePrompt, setNegativePrompt] = useState("");
 
@@ -1127,102 +1160,110 @@ const charLimit = 500;
   const textareaRef = useRef(null);
   const canvasRef = useRef(null);
 
-  const SESSION_KEY = "kylor_img_cache";
-function loadCharacterFromSessionPayload() {
-  try {
-    const raw = sessionStorage.getItem("kylor_selected_character_payload");
-    if (!raw) return null;
-    return JSON.parse(raw);
-  } catch {
-    return null;
-  }
-}
- async function loadSavedCharacters() {
-  try {
-    setLoadingCharacters(true);
-
-    const payloadCharacter = loadCharacterFromSessionPayload();
-
-    const { data: { session } } = await supabase.auth.getSession();
-    const uid = session?.user?.id ?? null;
-
-    if (!uid) {
-      if (payloadCharacter) {
-        setSavedCharacters([payloadCharacter]);
-        setSelectedCharacter(payloadCharacter);
-      } else {
-        setSavedCharacters([]);
-        setSelectedCharacter(null);
-      }
-      return;
+  function loadCharacterFromSessionPayload() {
+    try {
+      const raw = sessionStorage.getItem("kylor_selected_character_payload");
+      if (!raw) return null;
+      return JSON.parse(raw);
+    } catch {
+      return null;
     }
+  }
+
+  async function loadSavedCharacters() {
+    try {
+      setLoadingCharacters(true);
+
+      const payloadCharacter = loadCharacterFromSessionPayload();
+
+      try {
+        const raw = localStorage.getItem(CHAR_SESSION_KEY);
+        if (raw) {
+          const cached = JSON.parse(raw);
+          if (Array.isArray(cached) && cached.length > 0) {
+            let cachedCharacters = cached.map(mapCharacterRow);
+
+            if (payloadCharacter) {
+              const exists = cachedCharacters.some((c) => String(c.id) === String(payloadCharacter.id));
+              if (!exists) cachedCharacters = [payloadCharacter, ...cachedCharacters];
+            }
+
+            setSavedCharacters(cachedCharacters);
+
+            const selectedId = sessionStorage.getItem("kylor_selected_character_id");
+            if (selectedId) {
+              const found = cachedCharacters.find((c) => String(c.id) === String(selectedId));
+              if (found) setSelectedCharacter(found);
+            } else if (payloadCharacter) {
+              setSelectedCharacter(payloadCharacter);
+            }
+          }
+        }
+      } catch {}
+
+      const { data: { session } } = await supabase.auth.getSession();
+      let uid = session?.user?.id ?? null;
+
+      if (!uid) {
+        const { data: { user } } = await supabase.auth.getUser();
+        uid = user?.id ?? null;
+      }
+
+      if (!uid) {
+        if (payloadCharacter) {
+          setSavedCharacters([payloadCharacter]);
+          setSelectedCharacter(payloadCharacter);
+        } else {
+          setSavedCharacters([]);
+          setSelectedCharacter(null);
+        }
+        return;
+      }
 
       const { data, error } = await supabase
         .from("characters")
-        .select("*")
+        .select("id, name, description, prompt, reference_image, generated_images, cover_image, created_at")
         .eq("user_id", uid)
         .order("created_at", { ascending: false });
 
- if (error || !data) {
-  console.error("Failed to load saved characters:", error?.message);
+      if (error || !data) {
+        console.error("Failed to load saved characters:", error?.message);
 
-  if (payloadCharacter) {
-    setSavedCharacters([payloadCharacter]);
-    setSelectedCharacter(payloadCharacter);
-  } else {
-    setSavedCharacters([]);
-  }
-  return;
-}
+        if (payloadCharacter) {
+          setSavedCharacters([payloadCharacter]);
+          setSelectedCharacter(payloadCharacter);
+        } else {
+          setSavedCharacters([]);
+        }
+        return;
+      }
 
-      const mapped = data.map((row) => {
-        let traits = {};
-        try {
-          traits = JSON.parse(row.prompt || "{}");
-        } catch {}
-
-        return {
-          id: row.id,
-          name: row.name,
-          description: row.description || "",
-          referenceImage: row.reference_image || null,
-          generatedImages: Array.isArray(row.generated_images) ? row.generated_images : [],
-          coverImage:
-            row.cover_image ||
-            (Array.isArray(row.generated_images) && row.generated_images[0]) ||
-            row.reference_image ||
-            null,
-          gender: traits.gender || "",
-          ageRange: traits.ageRange || "",
-          ethnicity: traits.ethnicity || "",
-          hairStyle: traits.hairStyle || "",
-          hairColor: traits.hairColor || "",
-          eyeColor: traits.eyeColor || "",
-          build: traits.build || "",
-          charDesc: traits.charDesc || row.description || "",
-        };
-      });
+      const mapped = data.map(mapCharacterRow);
 
       let finalCharacters = mapped;
 
-if (payloadCharacter) {
-  const exists = mapped.some((c) => String(c.id) === String(payloadCharacter.id));
-  if (!exists) {
-    finalCharacters = [payloadCharacter, ...mapped];
-  }
-}
+      if (payloadCharacter) {
+        const exists = mapped.some((c) => String(c.id) === String(payloadCharacter.id));
+        if (!exists) {
+          finalCharacters = [payloadCharacter, ...mapped];
+        }
+      }
 
-setSavedCharacters(finalCharacters);
+      setSavedCharacters(finalCharacters);
 
-const selectedId = sessionStorage.getItem("kylor_selected_character_id");
-if (selectedId) {
-  const found = finalCharacters.find((c) => String(c.id) === String(selectedId));
-  if (found) {
-    setSelectedCharacter(found);
-  }
-} else if (payloadCharacter) {
-  setSelectedCharacter(payloadCharacter);
-}
+      try {
+        localStorage.setItem(CHAR_SESSION_KEY, JSON.stringify(data));
+      } catch {}
+
+      const selectedId = sessionStorage.getItem("kylor_selected_character_id");
+      if (selectedId) {
+        const found = finalCharacters.find((c) => String(c.id) === String(selectedId));
+        if (found) {
+          setSelectedCharacter(found);
+        }
+      } else if (payloadCharacter) {
+        setSelectedCharacter(payloadCharacter);
+      }
     } catch (err) {
       console.error("loadSavedCharacters error:", err);
       setSavedCharacters([]);
@@ -1240,59 +1281,52 @@ if (selectedId) {
   }
 
   function clearSelectedCharacter() {
-  setSelectedCharacter(null);
-  setPrompt("");
-  setScenePrompt("");
-  try {
-    sessionStorage.removeItem("kylor_selected_character_id");
-    sessionStorage.removeItem("kylor_selected_character_payload");
-  } catch {}
-}
+    setSelectedCharacter(null);
+    setPrompt("");
+    setScenePrompt("");
+    try {
+      sessionStorage.removeItem("kylor_selected_character_id");
+      sessionStorage.removeItem("kylor_selected_character_payload");
+    } catch {}
+  }
 
   useEffect(() => {
     loadSavedCharacters();
   }, []);
 
   useEffect(() => {
-  if (!selectedCharacter) {
-    setPrompt("");
-    return;
-  }
+    if (!selectedCharacter) {
+      setPrompt("");
+      return;
+    }
 
-  const traitParts = [
-    selectedCharacter.gender,
-    selectedCharacter.ageRange,
-    selectedCharacter.ethnicity,
-    selectedCharacter.hairColor && selectedCharacter.hairStyle
-      ? `${selectedCharacter.hairColor} ${selectedCharacter.hairStyle} hair`
-      : null,
-    selectedCharacter.eyeColor ? `${selectedCharacter.eyeColor} eyes` : null,
-    selectedCharacter.build ? `${selectedCharacter.build} build` : null,
-  ].filter(Boolean);
+    const traitParts = [
+      selectedCharacter.gender,
+      selectedCharacter.ageRange,
+      selectedCharacter.ethnicity,
+      selectedCharacter.hairColor && selectedCharacter.hairStyle
+        ? `${selectedCharacter.hairColor} ${selectedCharacter.hairStyle} hair`
+        : null,
+      selectedCharacter.eyeColor ? `${selectedCharacter.eyeColor} eyes` : null,
+      selectedCharacter.build ? `${selectedCharacter.build} build` : null,
+    ].filter(Boolean);
 
-  const characterPrompt = [
-    `Use the same character: ${selectedCharacter.name}`,
-    traitParts.length ? traitParts.join(", ") : null,
-    selectedCharacter.charDesc || null,
-    "Maintain the same facial features, hairstyle, skin tone, proportions, and identity.",
-  ]
-    .filter(Boolean)
-    .join(". ");
+    const characterPrompt = [
+      `Use the same character: ${selectedCharacter.name}`,
+      traitParts.length ? traitParts.join(", ") : null,
+      selectedCharacter.charDesc || null,
+      "Maintain the same facial features, hairstyle, skin tone, proportions, and identity.",
+    ]
+      .filter(Boolean)
+      .join(". ");
 
-  setPrompt(characterPrompt);
-}, [selectedCharacter]);
+    setPrompt(characterPrompt);
+  }, [selectedCharacter]);
 
   useEffect(() => {
     async function init() {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-
-      const uid = session?.user?.id ?? null;
-      setUserId(uid);
-
       try {
-        const raw = sessionStorage.getItem(SESSION_KEY);
+        const raw = localStorage.getItem(SESSION_KEY);
         if (raw) {
           const cached = JSON.parse(raw);
           if (Array.isArray(cached) && cached.length > 0) {
@@ -1302,12 +1336,19 @@ if (selectedId) {
         }
       } catch {}
 
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      const uid = session?.user?.id ?? null;
+      setUserId(uid);
+
       const fresh = await sbLoadAll(uid);
       setGroups(fresh);
       setDbLoaded(true);
 
       try {
-        sessionStorage.setItem(SESSION_KEY, JSON.stringify(fresh));
+        localStorage.setItem(SESSION_KEY, JSON.stringify(fresh));
       } catch {}
     }
 
@@ -1322,7 +1363,7 @@ if (selectedId) {
       setGroups(fresh);
       setDbLoaded(true);
       try {
-        sessionStorage.setItem(SESSION_KEY, JSON.stringify(fresh));
+        localStorage.setItem(SESSION_KEY, JSON.stringify(fresh));
       } catch {}
     });
 
@@ -1345,7 +1386,7 @@ if (selectedId) {
 
   function syncCache(updatedGroups) {
     try {
-      sessionStorage.setItem(SESSION_KEY, JSON.stringify(updatedGroups));
+      localStorage.setItem(SESSION_KEY, JSON.stringify(updatedGroups));
     } catch {}
   }
 
@@ -1425,21 +1466,21 @@ if (selectedId) {
 
   async function handleGenerate() {
     const basePrompt = selectedCharacter ? scenePrompt.trim() : prompt.trim();
-if (!basePrompt || generating) return;
+    if (!basePrompt || generating) return;
 
     setGenerating(true);
     canvasRef.current?.scrollTo({ top: 0, behavior: "smooth" });
 
     const styleLabel = activeStyle?.label ?? null;
-  const fullPrompt = [
-  selectedCharacter ? prompt : null,
-  basePrompt,
-  styleLabel ? `Style: ${styleLabel}` : null,
-  negativePrompt.trim() ? `Negative: ${negativePrompt.trim()}` : null,
-  "No text, no captions, no subtitles, no watermark.",
-]
-  .filter(Boolean)
-  .join(". ");
+    const fullPrompt = [
+      selectedCharacter ? prompt : null,
+      basePrompt,
+      styleLabel ? `Style: ${styleLabel}` : null,
+      negativePrompt.trim() ? `Negative: ${negativePrompt.trim()}` : null,
+      "No text, no captions, no subtitles, no watermark.",
+    ]
+      .filter(Boolean)
+      .join(". ");
 
     const n = Math.min(outputCount, 4);
     const groupId = Date.now();
@@ -2033,90 +2074,90 @@ if (!basePrompt || generating) return;
               }}
             >
               <div style={{ display: "flex", flexDirection: "column", gap: 10, flex: 1, minHeight: 0 }}>
-  {selectedCharacter && (
-    <div
-      style={{
-        border: `1px solid ${C.accentBorder}`,
-        background: "rgba(124,58,237,0.08)",
-        borderRadius: radius.md,
-        padding: 10,
-        flexShrink: 0,
-      }}
-    >
-      <div
-        style={{
-          fontSize: 10.5,
-          fontWeight: 700,
-          letterSpacing: "0.08em",
-          textTransform: "uppercase",
-          color: "#c4b5fd",
-          marginBottom: 6,
-        }}
-      >
-        Defined Character Prompt
-      </div>
+                {selectedCharacter && (
+                  <div
+                    style={{
+                      border: `1px solid ${C.accentBorder}`,
+                      background: "rgba(124,58,237,0.08)",
+                      borderRadius: radius.md,
+                      padding: 10,
+                      flexShrink: 0,
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: 10.5,
+                        fontWeight: 700,
+                        letterSpacing: "0.08em",
+                        textTransform: "uppercase",
+                        color: "#c4b5fd",
+                        marginBottom: 6,
+                      }}
+                    >
+                      Defined Character Prompt
+                    </div>
 
-      <textarea
-        value={prompt}
-        readOnly
-        rows={6}
-        style={{
-          width: "100%",
-          border: "none",
-          background: "transparent",
-          color: "rgba(255,255,255,0.88)",
-          resize: "none",
-          fontFamily: "inherit",
-          fontSize: 13,
-          lineHeight: 1.65,
-          outline: "none",
-          boxSizing: "border-box",
-        }}
-      />
-    </div>
-  )}
+                    <textarea
+                      value={prompt}
+                      readOnly
+                      rows={6}
+                      style={{
+                        width: "100%",
+                        border: "none",
+                        background: "transparent",
+                        color: "rgba(255,255,255,0.88)",
+                        resize: "none",
+                        fontFamily: "inherit",
+                        fontSize: 13,
+                        lineHeight: 1.65,
+                        outline: "none",
+                        boxSizing: "border-box",
+                      }}
+                    />
+                  </div>
+                )}
 
-  <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
-    <div
-      style={{
-        fontSize: 10.5,
-        fontWeight: 700,
-        letterSpacing: "0.08em",
-        textTransform: "uppercase",
-        color: C.textMuted,
-        marginBottom: 6,
-        flexShrink: 0,
-      }}
-    >
-      Scene Prompt
-    </div>
+                <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+                  <div
+                    style={{
+                      fontSize: 10.5,
+                      fontWeight: 700,
+                      letterSpacing: "0.08em",
+                      textTransform: "uppercase",
+                      color: C.textMuted,
+                      marginBottom: 6,
+                      flexShrink: 0,
+                    }}
+                  >
+                    Scene Prompt
+                  </div>
 
-    <textarea
-      ref={textareaRef}
-      value={scenePrompt}
-      onChange={(e) => setScenePrompt(e.target.value.slice(0, charLimit))}
-      placeholder={
-        selectedCharacter
-          ? "Describe the scene, action, camera angle, environment, outfit, lighting..."
-          : "Describe the image you want to create..."
-      }
-      style={{
-        flex: 1,
-        width: "100%",
-        border: "none",
-        background: "transparent",
-        color: C.text,
-        resize: "none",
-        fontFamily: "inherit",
-        fontSize: 13.5,
-        lineHeight: 1.7,
-        outline: "none",
-        minHeight: 0,
-        boxSizing: "border-box",
-      }}
-    />
-  </div>
-</div>
+                  <textarea
+                    ref={textareaRef}
+                    value={scenePrompt}
+                    onChange={(e) => setScenePrompt(e.target.value.slice(0, charLimit))}
+                    placeholder={
+                      selectedCharacter
+                        ? "Describe the scene, action, camera angle, environment, outfit, lighting..."
+                        : "Describe the image you want to create..."
+                    }
+                    style={{
+                      flex: 1,
+                      width: "100%",
+                      border: "none",
+                      background: "transparent",
+                      color: C.text,
+                      resize: "none",
+                      fontFamily: "inherit",
+                      fontSize: 13.5,
+                      lineHeight: 1.7,
+                      outline: "none",
+                      minHeight: 0,
+                      boxSizing: "border-box",
+                    }}
+                  />
+                </div>
+              </div>
 
               <AnimatePresence>
                 {negativeOpen && (
@@ -2244,7 +2285,7 @@ if (!basePrompt || generating) return;
                   <span
                     style={{
                       fontSize: 11,
-                      color: prompt.length > charLimit * 0.9 ? "#f87171" : C.textDim,
+                      color: scenePrompt.length > charLimit * 0.9 ? "#f87171" : C.textDim,
                     }}
                   >
                     {scenePrompt.length}/{charLimit}
@@ -2253,10 +2294,10 @@ if (!basePrompt || generating) return;
                     whileTap={{ scale: 0.92 }}
                     title="Enhance prompt"
                     onClick={() => {
-  if (scenePrompt.trim()) {
-    setScenePrompt((p) => p.trim() + ", ultra detailed, cinematic lighting, 8K");
-  }
-}}
+                      if (scenePrompt.trim()) {
+                        setScenePrompt((p) => p.trim() + ", ultra detailed, cinematic lighting, 8K");
+                      }
+                    }}
                     style={{
                       width: 32,
                       height: 32,
@@ -2468,15 +2509,15 @@ if (!basePrompt || generating) return;
 
                   <motion.button
                     whileHover={
-  (selectedCharacter ? scenePrompt.trim() : prompt.trim()) && !generating
-    ? { boxShadow: "0 18px 40px rgba(124,58,237,0.42)" }
-    : {}
-}
-whileTap={
-  (selectedCharacter ? scenePrompt.trim() : prompt.trim()) && !generating
-    ? { scale: 0.98 }
-    : {}
-}
+                      (selectedCharacter ? scenePrompt.trim() : prompt.trim()) && !generating
+                        ? { boxShadow: "0 18px 40px rgba(124,58,237,0.42)" }
+                        : {}
+                    }
+                    whileTap={
+                      (selectedCharacter ? scenePrompt.trim() : prompt.trim()) && !generating
+                        ? { scale: 0.98 }
+                        : {}
+                    }
                     onClick={handleGenerate}
                     disabled={generating}
                     style={{
@@ -2485,21 +2526,21 @@ whileTap={
                       borderRadius: radius.md,
                       border: "none",
                       background:
-  (selectedCharacter ? scenePrompt.trim() : prompt.trim()) && !generating
-    ? "linear-gradient(135deg,#4f46e5,#7c3aed)"
-    : "rgba(255,255,255,0.06)",
-color:
-  (selectedCharacter ? scenePrompt.trim() : prompt.trim()) && !generating
-    ? "white"
-    : C.textMuted,
-cursor:
-  (selectedCharacter ? scenePrompt.trim() : prompt.trim()) && !generating
-    ? "pointer"
-    : "default",
-boxShadow:
-  (selectedCharacter ? scenePrompt.trim() : prompt.trim()) && !generating
-    ? "0 10px 28px rgba(124,58,237,0.28)"
-    : "none",
+                        (selectedCharacter ? scenePrompt.trim() : prompt.trim()) && !generating
+                          ? "linear-gradient(135deg,#4f46e5,#7c3aed)"
+                          : "rgba(255,255,255,0.06)",
+                      color:
+                        (selectedCharacter ? scenePrompt.trim() : prompt.trim()) && !generating
+                          ? "white"
+                          : C.textMuted,
+                      cursor:
+                        (selectedCharacter ? scenePrompt.trim() : prompt.trim()) && !generating
+                          ? "pointer"
+                          : "default",
+                      boxShadow:
+                        (selectedCharacter ? scenePrompt.trim() : prompt.trim()) && !generating
+                          ? "0 10px 28px rgba(124,58,237,0.28)"
+                          : "none",
                       display: "inline-flex",
                       alignItems: "center",
                       justifyContent: "center",
@@ -2802,7 +2843,6 @@ boxShadow:
               </div>
             </div>
 
-            {/* ── Scrollable feed / projects ── */}
             <div ref={canvasRef} style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
               {topTab === "Projects" ? (
                 <div style={{ padding: "16px 16px 64px" }}>
