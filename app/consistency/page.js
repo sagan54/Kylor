@@ -251,7 +251,11 @@ function OutputCard({ item, onDelete, onOpen }) {
         overflow: "hidden", cursor: item.url && item.url !== "__FAILED__" ? "zoom-in" : "default", position: "relative",
         background: CARD_GRADIENTS[getIdNumber(item.id) % CARD_GRADIENTS.length], aspectRatio: "2/3", transition: "border-color 0.16s ease" }}>
       {item.url && item.url !== "__FAILED__" ? (
-        <img src={item.url} alt={item.scene} style={{ width: "100%", height: "100%", objectFit: "cover", position: "absolute", inset: 0 }} />
+        <img src={item.url} alt={item.scene} style={{
+          width: "100%", height: "100%", objectFit: "cover", position: "absolute", inset: 0,
+          // Flip right profile so it faces right instead of left
+          transform: item.scene === "Right Profile Full-Body" ? "scaleX(-1)" : "none",
+        }} />
       ) : item.url === "__FAILED__" ? (
         <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", padding: 16, textAlign: "center" }}>
           <div><div style={{ fontSize: 13, fontWeight: 700, color: "white", marginBottom: 6 }}>Failed</div><div style={{ fontSize: 11.5, color: C.textMuted }}>{item.scene}</div></div>
@@ -503,12 +507,15 @@ export default function ConsistencyPage() {
     try {
       const uploadedRefs = hasRefs ? (await Promise.all(effectiveRefs.map(async e => { if (e.file) return fileToBase64(e.file); if (e.previewUrl) return e.previewUrl; return null; }))).filter(Boolean) : [];
       const finalPrompt = [
-        hasRefs ? `This is the same exact real person named ${activeChar.name}. Preserve the exact same identity, facial structure, skin tone, hairstyle, and proportions.`
-                : `This is the same exact character named ${activeChar.name}. Preserve the exact same identity, face, hairstyle, outfit, body type, and proportions.`,
-        traitDesc ? `Physical traits: ${traitDesc}.` : null, activeChar.desc ? `Character details: ${activeChar.desc}.` : null,
-        extraPrompt.trim() ? `Additional fixed details: ${extraPrompt.trim()}.` : null,
-        `View requirement: ${frontView.shot}.`, "Plain light studio background.", "Neutral reference photo style.",
-        "Exactly one person only.", "No duplicate person.", "No collage.", "No split screen.", "No multiple angles in one image.", "No character sheet.", "No contact sheet.", "No grid layout.", "No text.", "No watermark.",
+        hasRefs
+          ? `CRITICAL: You must generate the EXACT SAME real person named ${activeChar.name} from the reference photos. Copy their face exactly — same facial bone structure, same jawline shape, same nose shape and width, same lip shape, same eye shape and spacing, same eyebrow thickness and arch, same exact skin tone and texture, same hairline. This is a SPECIFIC REAL HUMAN — do NOT idealise, do NOT change any facial feature, do NOT generate a similar-looking person. Generate THIS exact person.`
+          : `Generate a character named ${activeChar.name} with completely consistent appearance. Lock all facial features and do not vary them.`,
+        traitDesc ? `Exact physical traits (must match precisely): ${traitDesc}.` : null,
+        activeChar.desc ? `Additional fixed character details: ${activeChar.desc}.` : null,
+        extraPrompt.trim() ? `Locked style notes: ${extraPrompt.trim()}.` : null,
+        `Shot type: ${frontView.shot}.`,
+        "Plain light studio background. Neutral reference photo style.",
+        "Exactly one person only. No duplicate person. No collage. No split screen. No multiple angles in one image. No character sheet. No contact sheet. No grid layout. No text. No watermark.",
       ].filter(Boolean).join(" ");
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 45000);
@@ -734,9 +741,25 @@ export default function ConsistencyPage() {
                   <div>
                     <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: C.textMuted, marginBottom: 6 }}>Reference Notes</div>
                     <div style={{ position: "relative" }}>
-                      <textarea value={extraPrompt} onChange={e => { setExtraPrompt(e.target.value.slice(0, charLimit)); autoResizeTextarea(e); }} onInput={autoResizeTextarea}
-                        placeholder="outfit details, facial details, accessories, exact look notes…" rows={1}
-                        style={{ width: "100%", minHeight: 110, padding: "10px 12px", borderRadius: radius.md, border: `1px solid ${C.border}`, background: C.surface, color: C.text, resize: "none", overflow: "hidden", fontSize: 12.5, fontFamily: "inherit", lineHeight: 1.6, outline: "none", boxSizing: "border-box" }} />
+                      <textarea
+                        ref={el => {
+                          // Auto-resize on mount and whenever value changes
+                          if (el) { el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; }
+                        }}
+                        value={extraPrompt}
+                        onChange={e => {
+                          setExtraPrompt(e.target.value.slice(0, charLimit));
+                          // Resize immediately on every keystroke
+                          e.target.style.height = "auto";
+                          e.target.style.height = e.target.scrollHeight + "px";
+                        }}
+                        placeholder="outfit details, facial details, accessories, exact look notes…"
+                        rows={1}
+                        style={{ width: "100%", minHeight: 110, padding: "10px 12px", borderRadius: radius.md,
+                          border: `1px solid ${C.border}`, background: C.surface, color: C.text,
+                          resize: "none", overflow: "hidden", fontSize: 12.5, fontFamily: "inherit",
+                          lineHeight: 1.6, outline: "none", boxSizing: "border-box" }}
+                      />
                       <div style={{ position: "absolute", bottom: 8, right: 10, fontSize: 10.5, color: extraPrompt.length > charLimit * 0.9 ? "#f87171" : C.textDim }}>{extraPrompt.length}/{charLimit}</div>
                     </div>
                   </div>
