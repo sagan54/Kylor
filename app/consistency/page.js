@@ -686,8 +686,20 @@ export default function ConsistencyPage() {
                 </div>
                 <div>
                   <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: C.textMuted, marginBottom: 6 }}>Description</div>
-                  <textarea value={charDesc} onChange={e => setCharDesc(e.target.value)} rows={3} placeholder="Scar above left eyebrow, always wears a silver necklace…"
-                    style={{ width: "100%", padding: "8px 12px", borderRadius: radius.sm, border: `1px solid ${C.border}`, background: C.surface, color: C.text, resize: "none", fontSize: 12.5, fontFamily: "inherit", lineHeight: 1.6, outline: "none", boxSizing: "border-box" }} />
+                  <textarea
+                    ref={el => { if (el) { el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; } }}
+                    value={charDesc}
+                    onChange={e => {
+                      setCharDesc(e.target.value.slice(0, 1000));
+                      e.target.style.height = "auto";
+                      e.target.style.height = e.target.scrollHeight + "px";
+                    }}
+                    placeholder="Scar above left eyebrow, always wears a silver necklace…"
+                    rows={3}
+                    style={{ width: "100%", padding: "8px 12px", borderRadius: radius.sm,
+                      border: `1px solid ${C.border}`, background: C.surface, color: C.text,
+                      resize: "none", overflow: "hidden", fontSize: 12.5, fontFamily: "inherit",
+                      lineHeight: 1.6, outline: "none", boxSizing: "border-box", minHeight: 80 }} />
                 </div>
                 <div>
                   <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: C.textMuted, marginBottom: 8 }}>Demographics</div>
