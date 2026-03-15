@@ -914,34 +914,52 @@ export default function ConsistencyPage() {
                 )}
 
                 {activeChar && charOutputs.length > 0 && !shouldShowGenerateMorePanel && (
-                  <div style={{ display: "grid", gridTemplateColumns: outputView === "grid" ? "repeat(auto-fill,minmax(200px,1fr))" : "1fr", gap: 12 }}>
-                    {charOutputs.map((item, i) => (
-                      outputView === "grid" ? (
-                        <motion.div key={item.id} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}>
-                          <OutputCard item={item} onDelete={() => setOutputs(p => p.filter(o => o.id !== item.id))} onOpen={setLightboxItem} />
-                        </motion.div>
-                      ) : (
-                        <motion.div key={item.id} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.04 }}
-                          onClick={() => item.url && item.url !== "__FAILED__" && setLightboxItem(item)}
-                          style={{ display: "flex", alignItems: "center", gap: 14, padding: "10px 14px", borderRadius: radius.md, border: `1px solid ${C.border}`, background: C.surface, cursor: item.url && item.url !== "__FAILED__" ? "zoom-in" : "default" }}>
-                          <div style={{ width: 52, height: 52, borderRadius: radius.sm, flexShrink: 0, overflow: "hidden", border: `1px solid ${C.border}`, background: CARD_GRADIENTS[getIdNumber(item.id) % CARD_GRADIENTS.length] }}>
-                            {item.url && item.url !== "__FAILED__" && <img src={item.url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />}
-                          </div>
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ fontSize: 13, fontWeight: 600, color: C.text, marginBottom: 2 }}>{item.scene || "Portrait"}</div>
-                            <div style={{ fontSize: 11, color: C.textMuted }}>{new Date(item.createdAt).toLocaleString()}</div>
-                          </div>
-                          <div style={{ display: "flex", gap: 5 }}>
-                            {[Download, Trash2].map((Icon, j) => (
-                              <button key={j} onClick={e => { e.stopPropagation(); if (j === 1) setOutputs(p => p.filter(o => o.id !== item.id)); }}
-                                style={{ width: 30, height: 30, borderRadius: 8, border: `1px solid ${C.border}`, background: C.surface, color: j === 1 ? "#f87171" : C.textMuted, display: "grid", placeItems: "center", cursor: "pointer" }}>
-                                <Icon size={13} />
-                              </button>
-                            ))}
-                          </div>
-                        </motion.div>
-                      )
-                    ))}
+                  <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                    <div style={{ display: "grid", gridTemplateColumns: outputView === "grid" ? "repeat(auto-fill,minmax(200px,1fr))" : "1fr", gap: 12 }}>
+                      {charOutputs.map((item, i) => (
+                        outputView === "grid" ? (
+                          <motion.div key={item.id} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}>
+                            <OutputCard item={item} onDelete={() => setOutputs(p => p.filter(o => o.id !== item.id))} onOpen={setLightboxItem} />
+                          </motion.div>
+                        ) : (
+                          <motion.div key={item.id} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.04 }}
+                            onClick={() => item.url && item.url !== "__FAILED__" && setLightboxItem(item)}
+                            style={{ display: "flex", alignItems: "center", gap: 14, padding: "10px 14px", borderRadius: radius.md, border: `1px solid ${C.border}`, background: C.surface, cursor: item.url && item.url !== "__FAILED__" ? "zoom-in" : "default" }}>
+                            <div style={{ width: 52, height: 52, borderRadius: radius.sm, flexShrink: 0, overflow: "hidden", border: `1px solid ${C.border}`, background: CARD_GRADIENTS[getIdNumber(item.id) % CARD_GRADIENTS.length] }}>
+                              {item.url && item.url !== "__FAILED__" && <img src={item.url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />}
+                            </div>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontSize: 13, fontWeight: 600, color: C.text, marginBottom: 2 }}>{item.scene || "Portrait"}</div>
+                              <div style={{ fontSize: 11, color: C.textMuted }}>{new Date(item.createdAt).toLocaleString()}</div>
+                            </div>
+                            <div style={{ display: "flex", gap: 5 }}>
+                              {[Download, Trash2].map((Icon, j) => (
+                                <button key={j} onClick={e => { e.stopPropagation(); if (j === 1) setOutputs(p => p.filter(o => o.id !== item.id)); }}
+                                  style={{ width: 30, height: 30, borderRadius: 8, border: `1px solid ${C.border}`, background: C.surface, color: j === 1 ? "#f87171" : C.textMuted, display: "grid", placeItems: "center", cursor: "pointer" }}>
+                                  <Icon size={13} />
+                                </button>
+                              ))}
+                            </div>
+                          </motion.div>
+                        )
+                      ))}
+                    </div>
+
+                    {/* Use This Character in Image — below the grid */}
+                    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
+                      style={{ display: "flex", justifyContent: "flex-end", paddingBottom: 8 }}>
+                      <motion.button
+                        whileHover={{ boxShadow: "0 12px 32px rgba(124,58,237,0.35)", borderColor: "#a78bfa" }}
+                        whileTap={{ scale: 0.97 }}
+                        onClick={sendToImageGen}
+                        style={{ height: 44, padding: "0 20px", borderRadius: radius.md,
+                          border: `1px solid ${C.accentBorder}`, background: "linear-gradient(135deg,#4f46e5,#7c3aed)",
+                          color: "white", fontSize: 13.5, fontWeight: 700, cursor: "pointer",
+                          fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: 8,
+                          boxShadow: "0 6px 20px rgba(124,58,237,0.3)", transition: "all 0.2s ease" }}>
+                        <ImageIcon size={15} /> Use This Character in Image <ExternalLink size={12} />
+                      </motion.button>
+                    </motion.div>
                   </div>
                 )}
 
