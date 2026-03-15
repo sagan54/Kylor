@@ -546,6 +546,16 @@ export default function ConsistencyPage() {
 
   const canGenerate = !!activeChar && !generating;
 
+  // ── Reset everything and go back to landing ───────────────────────────────
+  function resetToLanding() {
+    setActiveCharId(null);
+    setCharName(""); setCharDesc(""); setGender(""); setAgeRange(""); setEthnicity("");
+    setHairStyle(""); setHairColor(""); setEyeColor(""); setBuild("");
+    setRefEntries([]); setCharLocked(false); setExtraPrompt("");
+    setFormSection("traits");
+    setActiveView("generate");
+  }
+
   return (
     <main style={{ height: "100vh", overflow: "hidden",
       background: `radial-gradient(ellipse at 8% 12%,rgba(79,70,229,0.13),transparent 28%),radial-gradient(ellipse at 92% 8%,rgba(124,58,237,0.11),transparent 30%),${C.bg}`,
@@ -639,9 +649,21 @@ export default function ConsistencyPage() {
             <div style={{ padding: "14px 16px 0", flexShrink: 0 }}>
               <div style={{ borderBottom: `1px solid ${C.border}`, paddingBottom: 12 }}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                  <div style={{ color: C.text, fontWeight: 700, fontSize: 13.5, position: "relative", display: "inline-block", paddingBottom: 4 }}>
-                    {formSection === "traits" ? "Character Traits" : formSection === "refs" ? "Reference Images" : "Generate"}
-                    <span style={{ position: "absolute", left: 0, bottom: -13, width: "100%", height: 2, borderRadius: radius.full, background: `linear-gradient(90deg,${C.indigo},${C.accent})` }} />
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    {/* Back button — resets form and returns to landing */}
+                    <motion.button whileTap={{ scale: 0.94 }} onClick={resetToLanding}
+                      title="Back to home"
+                      style={{ width: 28, height: 28, borderRadius: 8, border: `1px solid ${C.border}`,
+                        background: C.surface, color: C.textMuted, display: "grid", placeItems: "center",
+                        cursor: "pointer", flexShrink: 0, transition: "all 0.15s ease" }}
+                      onMouseEnter={e => { e.currentTarget.style.borderColor = C.accentBorder; e.currentTarget.style.color = "#c4b5fd"; }}
+                      onMouseLeave={e => { e.currentTarget.style.borderColor = C.border; e.currentTarget.style.color = C.textMuted; }}>
+                      <ChevronLeft size={14} />
+                    </motion.button>
+                    <div style={{ color: C.text, fontWeight: 700, fontSize: 13.5, position: "relative", display: "inline-block", paddingBottom: 4 }}>
+                      {formSection === "traits" ? "Character Traits" : formSection === "refs" ? "Reference Images" : "Generate"}
+                      <span style={{ position: "absolute", left: 0, bottom: -13, width: "100%", height: 2, borderRadius: radius.full, background: `linear-gradient(90deg,${C.indigo},${C.accent})` }} />
+                    </div>
                   </div>
                   {activeChar && (
                     <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "3px 8px", borderRadius: radius.full, border: `1px solid ${C.accentBorder}`, background: C.accentSoft, fontSize: 11, color: "#c4b5fd", fontWeight: 600 }}>
@@ -843,24 +865,17 @@ export default function ConsistencyPage() {
                         Build characters with locked traits and reference photos for consistent AI generations.
                       </p>
                       <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
-                        <motion.button whileHover={{ boxShadow: "0 14px 36px rgba(124,58,237,0.35)", y: -1 }} whileTap={{ scale: 0.97 }}
-                          onClick={() => { setFormSection("traits"); setActiveView("generate"); }}
-                          style={{ height: 46, padding: "0 22px", borderRadius: radius.md, border: "none",
-                            background: "linear-gradient(135deg,#4f46e5,#7c3aed)", color: "white", fontSize: 14, fontWeight: 700,
-                            cursor: "pointer", fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: 8,
-                            boxShadow: "0 8px 24px rgba(124,58,237,0.28)", transition: "all 0.2s ease" }}>
-                          <Plus size={16} /> Create New Character
+                        <motion.button whileHover={{ borderColor: C.accentBorder, color: "#c4b5fd", boxShadow: "0 8px 24px rgba(124,58,237,0.18)" }} whileTap={{ scale: 0.97 }}
+                          onClick={() => setActiveView("characters")}
+                          style={{ height: 46, padding: "0 22px", borderRadius: radius.md,
+                            border: `1px solid ${C.accentBorder}`, background: C.accentSoft,
+                            color: "#c4b5fd", fontSize: 14, fontWeight: 600,
+                            cursor: "pointer", fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: 8, transition: "all 0.18s ease" }}>
+                          <Users size={15} /> Open Saved Characters
+                          {characters.length > 0 && (
+                            <span style={{ padding: "1px 7px", borderRadius: radius.full, background: C.accent, color: "white", fontSize: 11, fontWeight: 700 }}>{characters.length}</span>
+                          )}
                         </motion.button>
-                        {characters.length > 0 && (
-                          <motion.button whileHover={{ borderColor: C.accentBorder, color: "#c4b5fd" }} whileTap={{ scale: 0.97 }}
-                            onClick={() => setActiveView("characters")}
-                            style={{ height: 46, padding: "0 22px", borderRadius: radius.md, border: `1px solid ${C.border}`,
-                              background: C.surface, color: C.textMuted, fontSize: 14, fontWeight: 600,
-                              cursor: "pointer", fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: 8, transition: "all 0.18s ease" }}>
-                            <Users size={15} /> Open Saved Characters
-                            <span style={{ padding: "1px 7px", borderRadius: radius.full, background: C.accentSoft, border: `1px solid ${C.accentBorder}`, color: "#c4b5fd", fontSize: 11, fontWeight: 700 }}>{characters.length}</span>
-                          </motion.button>
-                        )}
                       </div>
                     </motion.div>
                   </div>
