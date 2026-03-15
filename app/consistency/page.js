@@ -81,13 +81,13 @@ const CHARACTER_PACK_VIEWS = [
   {
     key: "left",
     label: "Left Profile Full-Body",
-    shot: "single person, strict left side profile, full-body, facing the left edge of the frame, standing straight, arms relaxed, centered composition",
+    shot: "single person, strict left side profile, facing the left edge of the frame, full-body, standing straight, arms relaxed, centered composition",
     size: "1024x1536",
   },
   {
     key: "right",
     label: "Right Profile Full-Body",
-    shot: "single person, strict right side profile, full-body, facing the right edge of the frame, standing straight, arms relaxed, centered composition",
+    shot: "single person, strict right side profile, facing the right edge of the frame, full-body, standing straight, arms relaxed, centered composition",
     size: "1024x1536",
   },
   {
@@ -103,6 +103,7 @@ const CHARACTER_PACK_VIEWS = [
     size: "1024x1024",
   },
 ];
+
 
 
 
@@ -462,6 +463,7 @@ function OutputCard({ item, onDelete, onOpen }) {
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function ConsistencyPage() {
+  
   function autoResizeTextarea(e) {
   const el = e.target;
   el.style.height = "auto";
@@ -475,6 +477,8 @@ export default function ConsistencyPage() {
   const [outputView,   setOutputView]   = useState("grid");
   const [characters,   setCharacters]   = useState([]);
   const [activeCharId, setActiveCharId] = useState(null);
+  const [generatingMore, setGeneratingMore] = useState(false);
+
 
   // Character form
   const [charName,    setCharName]    = useState("");
@@ -506,6 +510,11 @@ export default function ConsistencyPage() {
 
   const activeChar  = characters.find(c => c.id === activeCharId) || null;
   const charOutputs = outputs.filter(o => o.charId === activeCharId);
+
+  const frontOutput = charOutputs.find(o => o.scene === "Front Full-Body");
+const otherOutputs = charOutputs.filter(o => o.scene !== "Front Full-Body");
+const hasOnlyFront = !!frontOutput && otherOutputs.length === 0;
+
 
   // ── Sync refEntries form state → active character in real-time ────────────
   useEffect(() => {
@@ -787,9 +796,18 @@ const uid = user?.id ?? null;
 
 
   // ── Generate ──────────────────────────────────────────────────────────────
-  async function handleGenerate() {
-  if (!activeChar || generating) return;
-  setGenerating(true);
+  async function generateOtherProfiles() {
+  if (!activeChar || generatingMore) return;
+
+  const existingFront = charOutputs.find(o => o.scene === "Front Full-Body" && o.url && o.url !== "__FAILED__");
+  if (!existingFront) {
+    alert("Generate the first image first.");
+    return;
+  }
+
+  setGeneratingMore(true);
+
+  const remainingViews = CHARACTER_PACK_VIEWS.slice(1);
 
   const traitDesc = [
     activeChar.gender,
@@ -803,24 +821,6 @@ const uid = user?.id ?? null;
   const effectiveRefs = activeChar.refEntries.length > 0 ? activeChar.refEntries : refEntries;
   const hasRefs = effectiveRefs.length > 0;
 
-  const createdAt = new Date().toISOString();
-
-  const placeholderOutputs = CHARACTER_PACK_VIEWS.map(view => ({
-    id: `${activeCharId}-${view.key}-${Date.now()}`,
-    charId: activeCharId,
-    prompt: view.shot,
-    scene: view.label,
-    url: null,
-    createdAt,
-  }));
-
-  setOutputs(prev => [
-    ...placeholderOutputs,
-    ...prev.filter(o => o.charId !== activeCharId),
-  ]);
-
-  canvasRef.current?.scrollTo({ top: 0, behavior: "smooth" });
-
   try {
     const uploadedRefs = hasRefs
       ? (await Promise.all(
@@ -832,11 +832,25 @@ const uid = user?.id ?? null;
         )).filter(Boolean)
       : [];
 
-    const generatedUrls = [];
-    let primaryFrontReference = null;
+    const placeholders = remainingViews.map(view => ({
+      id: `${activeCharId}-${view.key}-${Date.now()}-${Math.random()}`,
+      charId: activeCharId,
+      prompt: view.shot,
+      scene: view.label,
+      url: null,
+      createdAt: new Date().toISOString(),
+    }));
 
-    for (let i = 0; i < CHARACTER_PACK_VIEWS.length; i++) {
-      const view = CHARACTER_PACK_VIEWS[i];
+    setOutputs(prev => [
+      prev[0],
+      ...placeholders,
+      ...prev.filter(o => o.charId !== activeCharId && o.id !== prev[0]?.id),
+    ]);
+
+    const generatedMoreUrls = [];
+
+    for (let i = 0; i < remainingViews.length; i++) {
+      const view = remainingViews[i];
 
       const finalPrompt = [
         hasRefs
@@ -849,7 +863,6 @@ const uid = user?.id ?? null;
         "Plain light studio background.",
         "Neutral reference photo style.",
         "Exactly one person only.",
-        "Show only one version of the character.",
         "No duplicate person.",
         "No collage.",
         "No split screen.",
@@ -861,63 +874,49 @@ const uid = user?.id ?? null;
         "No watermark.",
       ].filter(Boolean).join(" ");
 
-      const referenceImagesForThisView = [
-        ...uploadedRefs,
-        ...(primaryFrontReference && view.key !== "front" ? [primaryFrontReference] : []),
-      ];
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 45000);
 
-     const controller = new AbortController();
-const timeout = setTimeout(() => controller.abort(), 45000);
+      let data = null;
 
-let data = null;
+      try {
+        const res = await fetch("/api/generate-image", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          signal: controller.signal,
+          body: JSON.stringify({
+            prompt: finalPrompt,
+            size: view.size,
+            n: 1,
+            referenceImages: [...uploadedRefs, existingFront.url],
+            characterSeed: String(activeChar.id),
+          }),
+        });
 
-try {
-  const res = await fetch("/api/generate-image", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    signal: controller.signal,
-    body: JSON.stringify({
-      prompt: finalPrompt,
-      size: view.size,
-      n: 1,
-      referenceImages: referenceImagesForThisView,
-      characterSeed: String(activeChar.id),
-    }),
-  });
-
-  data = await res.json();
-} finally {
-  clearTimeout(timeout);
-}
+        data = await res.json();
+      } finally {
+        clearTimeout(timeout);
+      }
 
       const url = Array.isArray(data?.images) ? data.images[0] : data?.image ?? null;
-
-      if (!url) {
-        console.error(`Failed to generate ${view.key}`, data);
-      }
-
-      if (view.key === "front" && url) {
-        primaryFrontReference = url;
-      }
-
-      generatedUrls.push(url || null);
+      generatedMoreUrls.push(url || null);
 
       setOutputs(prev =>
-  prev.map(o =>
-    o.id === placeholderOutputs[i].id
-      ? { ...o, url: url || "__FAILED__" }
-      : o
-  )
-);
-
+        prev.map(o =>
+          o.id === placeholders[i].id ? { ...o, url: url || "__FAILED__" } : o
+        )
+      );
     }
 
-    const cleanUrls = generatedUrls.filter(Boolean);
+    const allUrls = [
+      existingFront.url,
+      ...generatedMoreUrls.filter(Boolean),
+    ];
 
     const updatedChar = {
       ...activeChar,
-      generations: cleanUrls.length,
-      generatedImages: cleanUrls,
+      generations: allUrls.length,
+      generatedImages: allUrls,
       extraPrompt: extraPrompt || activeChar.extraPrompt || "",
     };
 
@@ -929,8 +928,8 @@ try {
       await supabase
         .from("characters")
         .update({
-          generated_images: cleanUrls,
-          cover_image: cleanUrls[0] || activeChar.refEntries?.[0]?.previewUrl || null,
+          generated_images: allUrls,
+          cover_image: existingFront.url,
           prompt: buildTraitsPayload({
             charDesc: activeChar.desc,
             gender: activeChar.gender,
@@ -948,11 +947,162 @@ try {
         .eq("user_id", userId);
     }
   } catch (err) {
-    console.error("Generate failed:", err);
+    console.error("Generate other profiles failed:", err);
+  } finally {
+    setGeneratingMore(false);
+  }
+}
+
+  async function handleGenerate() {
+  if (!activeChar || generating) return;
+  setGenerating(true);
+
+  const frontView = CHARACTER_PACK_VIEWS[0];
+
+  const traitDesc = [
+    activeChar.gender,
+    activeChar.ageRange,
+    activeChar.ethnicity,
+    activeChar.hairColor && activeChar.hairStyle ? `${activeChar.hairColor} ${activeChar.hairStyle} hair` : null,
+    activeChar.eyeColor ? `${activeChar.eyeColor} eyes` : null,
+    activeChar.build ? `${activeChar.build} build` : null,
+  ].filter(Boolean).join(", ");
+
+  const effectiveRefs = activeChar.refEntries.length > 0 ? activeChar.refEntries : refEntries;
+  const hasRefs = effectiveRefs.length > 0;
+
+  const createdAt = new Date().toISOString();
+
+  const frontOutput = {
+    id: `${activeCharId}-${frontView.key}-${Date.now()}`,
+    charId: activeCharId,
+    prompt: frontView.shot,
+    scene: frontView.label,
+    url: null,
+    createdAt,
+  };
+
+  setOutputs(prev => [
+    frontOutput,
+    ...prev.filter(o => o.charId !== activeCharId),
+  ]);
+
+  canvasRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+
+  try {
+    const uploadedRefs = hasRefs
+      ? (await Promise.all(
+          effectiveRefs.map(async e => {
+            if (e.file) return fileToBase64(e.file);
+            if (e.previewUrl) return e.previewUrl;
+            return null;
+          })
+        )).filter(Boolean)
+      : [];
+
+    const finalPrompt = [
+      hasRefs
+        ? `This is the same exact real person named ${activeChar.name}. Preserve the exact same identity, facial structure, skin tone, hairstyle, and proportions.`
+        : `This is the same exact character named ${activeChar.name}. Preserve the exact same identity, face, hairstyle, outfit, body type, and proportions.`,
+      traitDesc ? `Physical traits: ${traitDesc}.` : null,
+      activeChar.desc ? `Character details: ${activeChar.desc}.` : null,
+      extraPrompt.trim() ? `Additional fixed details: ${extraPrompt.trim()}.` : null,
+      `View requirement: ${frontView.shot}.`,
+      "Plain light studio background.",
+      "Neutral reference photo style.",
+      "Exactly one person only.",
+      "No duplicate person.",
+      "No collage.",
+      "No split screen.",
+      "No multiple angles in one image.",
+      "No character sheet.",
+      "No contact sheet.",
+      "No grid layout.",
+      "No text.",
+      "No watermark.",
+    ].filter(Boolean).join(" ");
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 45000);
+
+    let data = null;
+
+    try {
+      const res = await fetch("/api/generate-image", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
+        body: JSON.stringify({
+          prompt: finalPrompt,
+          size: frontView.size,
+          n: 1,
+          referenceImages: uploadedRefs,
+          characterSeed: String(activeChar.id),
+          
+          
+        }),
+      });
+
+      data = await res.json();
+    } finally {
+      clearTimeout(timeout);
+    }
+
+    const url = Array.isArray(data?.images) ? data.images[0] : data?.image ?? null;
+
+    setOutputs(prev =>
+      prev.map(o =>
+        o.id === frontOutput.id ? { ...o, url: url || "__FAILED__" } : o
+      )
+    );
+
+    if (url) {
+      const updatedChar = {
+        ...activeChar,
+        generations: 1,
+        generatedImages: [url],
+        extraPrompt: extraPrompt || activeChar.extraPrompt || "",
+      };
+
+      setCharacters(prev =>
+        prev.map(c => (c.id === activeCharId ? updatedChar : c))
+      );
+
+      if (userId && !String(activeCharId).startsWith("local-")) {
+        await supabase
+          .from("characters")
+          .update({
+            generated_images: [url],
+            cover_image: url,
+            prompt: buildTraitsPayload({
+              charDesc: activeChar.desc,
+              gender: activeChar.gender,
+              ageRange: activeChar.ageRange,
+              ethnicity: activeChar.ethnicity,
+              hairStyle: activeChar.hairStyle,
+              hairColor: activeChar.hairColor,
+              eyeColor: activeChar.eyeColor,
+              build: activeChar.build,
+              charLocked: activeChar.locked,
+              extraPrompt,
+            }),
+          })
+          .eq("id", activeCharId)
+          .eq("user_id", userId);
+      }
+    }
+  } catch (err) {
+    console.error("Generate first image failed:", err);
+    setOutputs(prev =>
+      prev.map(o =>
+        o.id === frontOutput.id ? { ...o, url: "__FAILED__" } : o
+      )
+    );
   } finally {
     setGenerating(false);
   }
 }
+
 
 
   const canGenerate = !!activeChar && !generating;
@@ -1415,48 +1565,163 @@ try {
                     </div>
                   )}
 
-                  {activeChar && charOutputs.length > 0 && (
-                    <div style={{ display: "grid", gridTemplateColumns: outputView === "grid" ? "repeat(auto-fill,minmax(200px,1fr))" : "1fr", gap: 12 }}>
-                      {charOutputs.map((item, i) => (
-                        outputView === "grid" ? (
-                          <motion.div key={item.id} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}>
-                            <OutputCard item={item}
-                              onDelete={() => setOutputs(p => p.filter(o => o.id !== item.id))}
-                              onOpen={setLightboxItem} />
-                          </motion.div>
-                        ) : (
-                          <motion.div key={item.id} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.04 }}
-                            onClick={() => item.url && setLightboxItem(item)}
-                            style={{ display: "flex", alignItems: "center", gap: 14, padding: "10px 14px",
-                              borderRadius: radius.md, border: `1px solid ${C.border}`, background: C.surface,
-                              cursor: item.url ? "zoom-in" : "default" }}>
-                            <div style={{ width: 52, height: 52, borderRadius: radius.sm, flexShrink: 0,
-                              overflow: "hidden", border: `1px solid ${C.border}`,
-                              background: CARD_GRADIENTS[getIdNumber(item.id) % CARD_GRADIENTS.length] }}>
-                              {item.url && <img src={item.url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />}
-                            </div>
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                              <div style={{ fontSize: 13, fontWeight: 600, color: C.text, marginBottom: 2 }}>{item.scene || "Portrait"}</div>
-                              <div style={{ fontSize: 11, color: C.textMuted }}>{new Date(item.createdAt).toLocaleString()}</div>
-                            </div>
-                            <div style={{ display: "flex", gap: 5 }}>
-                              {[Download, Trash2].map((Icon, j) => (
-                                <button key={j} onClick={e => { e.stopPropagation(); if (j === 1) setOutputs(p => p.filter(o => o.id !== item.id)); }}
-                                  style={{ width: 30, height: 30, borderRadius: 8, border: `1px solid ${C.border}`,
-                                    background: C.surface, color: j === 1 ? "#f87171" : C.textMuted,
-                                    display: "grid", placeItems: "center", cursor: "pointer" }}>
-                                  <Icon size={13} />
-                                </button>
-                              ))}
-                            </div>
-                          </motion.div>
-                        )
-                      ))}
-                    </div>
-                  )}
+                  {activeChar && charOutputs.length > 0 && !hasOnlyFront && (
+  <div style={{ display: "grid", gridTemplateColumns: outputView === "grid" ? "repeat(auto-fill,minmax(200px,1fr))" : "1fr", gap: 12 }}>
+    {charOutputs.map((item, i) => (
+      outputView === "grid" ? (
+        <motion.div key={item.id} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}>
+          <OutputCard
+            item={item}
+            onDelete={() => setOutputs(p => p.filter(o => o.id !== item.id))}
+            onOpen={setLightboxItem}
+          />
+        </motion.div>
+      ) : (
+        <motion.div
+          key={item.id}
+          initial={{ opacity: 0, x: -8 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ delay: i * 0.04 }}
+          onClick={() => item.url && item.url !== "__FAILED__" && setLightboxItem(item)}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 14,
+            padding: "10px 14px",
+            borderRadius: radius.md,
+            border: `1px solid ${C.border}`,
+            background: C.surface,
+            cursor: item.url && item.url !== "__FAILED__" ? "zoom-in" : "default",
+          }}
+        >
+          <div
+            style={{
+              width: 52,
+              height: 52,
+              borderRadius: radius.sm,
+              flexShrink: 0,
+              overflow: "hidden",
+              border: `1px solid ${C.border}`,
+              background: CARD_GRADIENTS[getIdNumber(item.id) % CARD_GRADIENTS.length],
+            }}
+          >
+            {item.url && item.url !== "__FAILED__" && (
+              <img src={item.url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+            )}
+          </div>
+
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: C.text, marginBottom: 2 }}>
+              {item.scene || "Portrait"}
+            </div>
+            <div style={{ fontSize: 11, color: C.textMuted }}>
+              {new Date(item.createdAt).toLocaleString()}
+            </div>
+          </div>
+
+          <div style={{ display: "flex", gap: 5 }}>
+            {[Download, Trash2].map((Icon, j) => (
+              <button
+                key={j}
+                onClick={e => {
+                  e.stopPropagation();
+                  if (j === 1) setOutputs(p => p.filter(o => o.id !== item.id));
+                }}
+                style={{
+                  width: 30,
+                  height: 30,
+                  borderRadius: 8,
+                  border: `1px solid ${C.border}`,
+                  background: C.surface,
+                  color: j === 1 ? "#f87171" : C.textMuted,
+                  display: "grid",
+                  placeItems: "center",
+                  cursor: "pointer",
+                }}
+              >
+                <Icon size={13} />
+              </button>
+            ))}
+          </div>
+        </motion.div>
+      )
+    ))}
+  </div>
+)}
+
+{activeChar && hasOnlyFront && (
+  <div style={{ display: "grid", gridTemplateColumns: "210px 1fr", gap: 16, alignItems: "stretch" }}>
+    <div>
+      <OutputCard
+        item={frontOutput}
+        onDelete={() => setOutputs(p => p.filter(o => o.id !== frontOutput.id))}
+        onOpen={setLightboxItem}
+      />
+    </div>
+
+    <div
+      style={{
+        borderRadius: radius.lg,
+        border: `1px solid ${C.border}`,
+        background: C.surface,
+        padding: 20,
+        display: "flex",
+        flexDirection: "column",
+        justifyContent: "center",
+        minHeight: 280,
+      }}
+    >
+      <div style={{ fontSize: 18, fontWeight: 700, color: C.text, marginBottom: 10 }}>
+        First profile ready
+      </div>
+
+      <div style={{ fontSize: 13, color: C.textMuted, lineHeight: 1.7, maxWidth: 500, marginBottom: 18 }}>
+        Generate the remaining 4 profiles for this character: left profile, right profile, back view, and upper-body close-up.
+      </div>
+
+      <motion.button
+        whileHover={!generatingMore ? { boxShadow: "0 18px 40px rgba(124,58,237,0.32)" } : {}}
+        whileTap={!generatingMore ? { scale: 0.98 } : {}}
+        onClick={generateOtherProfiles}
+        disabled={generatingMore}
+        style={{
+          height: 46,
+          padding: "0 18px",
+          borderRadius: radius.md,
+          border: "none",
+          background: !generatingMore ? "linear-gradient(135deg,#4f46e5,#7c3aed)" : "rgba(255,255,255,0.06)",
+          color: !generatingMore ? "white" : C.textMuted,
+          cursor: !generatingMore ? "pointer" : "default",
+          fontSize: 14,
+          fontWeight: 700,
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 8,
+          width: "fit-content",
+          fontFamily: "inherit",
+        }}
+      >
+        {generatingMore ? (
+          <>
+            <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: "linear" }}>
+              <Zap size={15} />
+            </motion.div>
+            Generating Other 4 Profiles...
+          </>
+        ) : (
+          <>
+            <Plus size={15} />
+            Generate Other 4 Profiles
+          </>
+        )}
+      </motion.button>
+    </div>
+  </div>
+)}
                 </div>
               </>
             )}
+
 
             {/* ── CHARACTERS VIEW ── */}
             {activeView === "characters" && (
