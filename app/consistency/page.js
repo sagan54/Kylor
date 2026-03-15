@@ -808,10 +808,7 @@ const uid = user?.id ?? null;
   async function generateOtherProfiles() {
   if (!activeChar || generatingMore) return;
 
-  const existingFront = charOutputs.find(
-    o => o.scene === "Front Full-Body" && o.url && o.url !== "__FAILED__"
-  );
-
+  const existingFront = charOutputs.find(o => o.scene === "Front Full-Body" && o.url && o.url !== "__FAILED__");
   if (!existingFront) {
     alert("Generate the first image first.");
     return;
@@ -819,12 +816,7 @@ const uid = user?.id ?? null;
 
   setGeneratingMore(true);
 
-  const testView = {
-    key: "left",
-    label: "Left Profile Full-Body",
-    shot: "single person, left side profile, full-body, facing left, standing straight, arms relaxed, centered composition",
-    size: "1024x1536",
-  };
+  const remainingViews = CHARACTER_PACK_VIEWS.slice(1);
 
   const traitDesc = [
     activeChar.gender,
@@ -849,98 +841,126 @@ const uid = user?.id ?? null;
         )).filter(Boolean)
       : [];
 
-    const placeholder = {
-      id: `${activeCharId}-${testView.key}-${Date.now()}`,
+    const placeholders = remainingViews.map(view => ({
+      id: `${activeCharId}-${view.key}-${Date.now()}-${Math.random()}`,
       charId: activeCharId,
-      prompt: testView.shot,
-      scene: testView.label,
+      prompt: view.shot,
+      scene: view.label,
       url: null,
       createdAt: new Date().toISOString(),
-    };
+    }));
 
     setOutputs(prev => [
-      ...prev.filter(o => !(o.charId === activeCharId && o.scene === testView.label)),
-      placeholder,
+      prev[0],
+      ...placeholders,
+      ...prev.filter(o => o.charId !== activeCharId && o.id !== prev[0]?.id),
     ]);
 
-    const finalPrompt = [
-      hasRefs
-        ? `This is the same exact real person named ${activeChar.name}. Preserve the same identity, face, skin tone, hairstyle, and body proportions.`
-        : `This is the same exact character named ${activeChar.name}. Preserve the same identity, face, hairstyle, outfit, body type, and proportions.`,
-      traitDesc ? `Physical traits: ${traitDesc}.` : null,
-      activeChar.desc ? `Character details: ${activeChar.desc}.` : null,
-      extraPrompt.trim() ? `Additional fixed details: ${extraPrompt.trim()}.` : null,
-      `View requirement: ${testView.shot}.`,
-      "Plain neutral studio background.",
-      "Exactly one person only.",
-      "No collage.",
-      "No multiple people.",
-      "No split screen.",
-      "No character sheet.",
-      "No text.",
-      "No watermark.",
-    ].filter(Boolean).join(" ");
+    const generatedMoreUrls = [];
 
-    console.log("LEFT PROFILE PROMPT:", finalPrompt);
+    for (let i = 0; i < remainingViews.length; i++) {
+      const view = remainingViews[i];
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 45000);
+      const finalPrompt = [
+        hasRefs
+          ? `This is the same exact real person named ${activeChar.name}. Preserve the exact same identity, facial structure, skin tone, hairstyle, and proportions.`
+          : `This is the same exact character named ${activeChar.name}. Preserve the exact same identity, face, hairstyle, outfit, body type, and proportions.`,
+        traitDesc ? `Physical traits: ${traitDesc}.` : null,
+        activeChar.desc ? `Character details: ${activeChar.desc}.` : null,
+        extraPrompt.trim() ? `Additional fixed details: ${extraPrompt.trim()}.` : null,
+        `View requirement: ${view.shot}.`,
+        "Plain light studio background.",
+        "Neutral reference photo style.",
+        "Exactly one person only.",
+        "No duplicate person.",
+        "No collage.",
+        "No split screen.",
+        "No multiple angles in one image.",
+        "No character sheet.",
+        "No contact sheet.",
+        "No grid layout.",
+        "No text.",
+        "No watermark.",
+      ].filter(Boolean).join(" ");
 
-    let data = null;
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 45000);
 
-    try {
-      const res = await fetch("/api/generate-image", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        signal: controller.signal,
-        body: JSON.stringify({
-          prompt: finalPrompt,
-          size: testView.size,
-          n: 1,
-          referenceImages: [],
+      let data = null;
 
-          characterSeed: String(activeChar.id),
-        }),
-      });
+      try {
+        const res = await fetch("/api/generate-image", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          signal: controller.signal,
+          body: JSON.stringify({
+            prompt: finalPrompt,
+            size: view.size,
+            n: 1,
+            referenceImages: [...uploadedRefs, existingFront.url],
+            characterSeed: String(activeChar.id),
+          }),
+        });
 
-      data = await res.json();
-      console.log("LEFT PROFILE RESPONSE:", data);
-    } finally {
-      clearTimeout(timeout);
+        data = await res.json();
+      } finally {
+        clearTimeout(timeout);
+      }
+
+      const url = Array.isArray(data?.images) ? data.images[0] : data?.image ?? null;
+      generatedMoreUrls.push(url || null);
+
+      setOutputs(prev =>
+        prev.map(o =>
+          o.id === placeholders[i].id ? { ...o, url: url || "__FAILED__" } : o
+        )
+      );
     }
 
-    const url = Array.isArray(data?.images) ? data.images[0] : data?.image ?? null;
+    const allUrls = [
+      existingFront.url,
+      ...generatedMoreUrls.filter(Boolean),
+    ];
 
-    setOutputs(prev =>
-      prev.map(o =>
-        o.id === placeholder.id ? { ...o, url: url || "__FAILED__" } : o
-      )
+    const updatedChar = {
+      ...activeChar,
+      generations: allUrls.length,
+      generatedImages: allUrls,
+      extraPrompt: extraPrompt || activeChar.extraPrompt || "",
+    };
+
+    setCharacters(prev =>
+      prev.map(c => (c.id === activeCharId ? updatedChar : c))
     );
 
-    if (url) {
-      const updatedImages = [
-        ...(activeChar.generatedImages || []).filter(Boolean),
-        url,
-      ];
-
+    if (userId && !String(activeCharId).startsWith("local-")) {
       await supabase
         .from("characters")
         .update({
-          generated_images: updatedImages,
+          generated_images: allUrls,
+          cover_image: existingFront.url,
+          prompt: buildTraitsPayload({
+            charDesc: activeChar.desc,
+            gender: activeChar.gender,
+            ageRange: activeChar.ageRange,
+            ethnicity: activeChar.ethnicity,
+            hairStyle: activeChar.hairStyle,
+            hairColor: activeChar.hairColor,
+            eyeColor: activeChar.eyeColor,
+            build: activeChar.build,
+            charLocked: activeChar.locked,
+            extraPrompt,
+          }),
         })
         .eq("id", activeCharId)
         .eq("user_id", userId);
-    } else {
-      alert("Left profile failed. Check console logs.");
     }
   } catch (err) {
-    console.error("Generate left profile failed:", err);
-    alert("Left profile failed. Check console logs.");
+    console.error("Generate other profiles failed:", err);
   } finally {
     setGeneratingMore(false);
   }
 }
-
 
   async function handleGenerate() {
   if (!activeChar || generating) return;
