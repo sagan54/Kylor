@@ -808,7 +808,10 @@ const uid = user?.id ?? null;
   async function generateOtherProfiles() {
   if (!activeChar || generatingMore) return;
 
-  const existingFront = charOutputs.find(o => o.scene === "Front Full-Body" && o.url && o.url !== "__FAILED__");
+  const existingFront = charOutputs.find(
+    o => o.scene === "Front Full-Body" && o.url && o.url !== "__FAILED__"
+  );
+
   if (!existingFront) {
     alert("Generate the first image first.");
     return;
@@ -816,144 +819,124 @@ const uid = user?.id ?? null;
 
   setGeneratingMore(true);
 
-  const remainingViews = CHARACTER_PACK_VIEWS.slice(1);
+  const views = [
+    {
+      key: "left",
+      label: "Left Profile Full-Body",
+      shot: "single person, left side profile, full-body, facing left, standing straight, arms relaxed, centered composition",
+      size: "1024x1536",
+    },
+    {
+      key: "right",
+      label: "Right Profile Full-Body",
+      shot: "single person, right side profile, full-body, facing right, standing straight, arms relaxed, centered composition",
+      size: "1024x1536",
+    },
+    {
+      key: "back",
+      label: "Back Full-Body",
+      shot: "single person, back view, full-body, standing straight, arms relaxed, centered composition",
+      size: "1024x1536",
+    },
+    {
+      key: "close",
+      label: "Upper-Body Close-Up",
+      shot: "single person, upper body portrait, facing camera, shoulders visible, neutral expression",
+      size: "1024x1024",
+    },
+  ];
 
   const traitDesc = [
     activeChar.gender,
     activeChar.ageRange,
     activeChar.ethnicity,
-    activeChar.hairColor && activeChar.hairStyle ? `${activeChar.hairColor} ${activeChar.hairStyle} hair` : null,
+    activeChar.hairColor && activeChar.hairStyle
+      ? `${activeChar.hairColor} ${activeChar.hairStyle} hair`
+      : null,
     activeChar.eyeColor ? `${activeChar.eyeColor} eyes` : null,
     activeChar.build ? `${activeChar.build} build` : null,
-  ].filter(Boolean).join(", ");
-
-  const effectiveRefs = activeChar.refEntries.length > 0 ? activeChar.refEntries : refEntries;
-  const hasRefs = effectiveRefs.length > 0;
+  ]
+    .filter(Boolean)
+    .join(", ");
 
   try {
-    const uploadedRefs = hasRefs
-      ? (await Promise.all(
-          effectiveRefs.map(async e => {
-            if (e.file) return fileToBase64(e.file);
-            if (e.previewUrl) return e.previewUrl;
-            return null;
-          })
-        )).filter(Boolean)
-      : [];
+    for (const view of views) {
 
-    const placeholders = remainingViews.map(view => ({
-      id: `${activeCharId}-${view.key}-${Date.now()}-${Math.random()}`,
-      charId: activeCharId,
-      prompt: view.shot,
-      scene: view.label,
-      url: null,
-      createdAt: new Date().toISOString(),
-    }));
+      const placeholder = {
+        id: `${activeCharId}-${view.key}-${Date.now()}`,
+        charId: activeCharId,
+        prompt: view.shot,
+        scene: view.label,
+        url: null,
+        createdAt: new Date().toISOString(),
+      };
 
-    setOutputs(prev => [
-      prev[0],
-      ...placeholders,
-      ...prev.filter(o => o.charId !== activeCharId && o.id !== prev[0]?.id),
-    ]);
-
-    const generatedMoreUrls = [];
-
-    for (let i = 0; i < remainingViews.length; i++) {
-      const view = remainingViews[i];
+      setOutputs(prev => [
+        ...prev.filter(
+          o => !(o.charId === activeCharId && o.scene === view.label)
+        ),
+        placeholder,
+      ]);
 
       const finalPrompt = [
-        hasRefs
-          ? `This is the same exact real person named ${activeChar.name}. Preserve the exact same identity, facial structure, skin tone, hairstyle, and proportions.`
-          : `This is the same exact character named ${activeChar.name}. Preserve the exact same identity, face, hairstyle, outfit, body type, and proportions.`,
+        `This is the same exact character named ${activeChar.name}. Preserve the same identity, face, hairstyle, outfit, body type, and proportions.`,
         traitDesc ? `Physical traits: ${traitDesc}.` : null,
         activeChar.desc ? `Character details: ${activeChar.desc}.` : null,
-        extraPrompt.trim() ? `Additional fixed details: ${extraPrompt.trim()}.` : null,
+        extraPrompt.trim()
+          ? `Additional fixed details: ${extraPrompt.trim()}.`
+          : null,
         `View requirement: ${view.shot}.`,
-        "Plain light studio background.",
-        "Neutral reference photo style.",
+        "Plain neutral studio background.",
         "Exactly one person only.",
-        "No duplicate person.",
         "No collage.",
+        "No multiple people.",
         "No split screen.",
-        "No multiple angles in one image.",
         "No character sheet.",
-        "No contact sheet.",
-        "No grid layout.",
         "No text.",
         "No watermark.",
-      ].filter(Boolean).join(" ");
+      ]
+        .filter(Boolean)
+        .join(" ");
 
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 45000);
+      const res = await fetch("/api/generate-image", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          prompt: finalPrompt,
+          size: view.size,
+          n: 1,
+          characterSeed: String(activeChar.id),
+        }),
+      });
 
-      let data = null;
+      const data = await res.json();
 
-      try {
-        const res = await fetch("/api/generate-image", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          signal: controller.signal,
-          body: JSON.stringify({
-            prompt: finalPrompt,
-            size: view.size,
-            n: 1,
-            referenceImages: [...uploadedRefs, existingFront.url],
-            characterSeed: String(activeChar.id),
-          }),
-        });
-
-        data = await res.json();
-      } finally {
-        clearTimeout(timeout);
-      }
-
-      const url = Array.isArray(data?.images) ? data.images[0] : data?.image ?? null;
-      generatedMoreUrls.push(url || null);
+      const url = Array.isArray(data?.images)
+        ? data.images[0]
+        : data?.image ?? null;
 
       setOutputs(prev =>
         prev.map(o =>
-          o.id === placeholders[i].id ? { ...o, url: url || "__FAILED__" } : o
+          o.id === placeholder.id ? { ...o, url: url || "__FAILED__" } : o
         )
       );
-    }
 
-    const allUrls = [
-      existingFront.url,
-      ...generatedMoreUrls.filter(Boolean),
-    ];
+      if (url) {
+        const updatedImages = [
+          ...(activeChar.generatedImages || []).filter(Boolean),
+          url,
+        ];
 
-    const updatedChar = {
-      ...activeChar,
-      generations: allUrls.length,
-      generatedImages: allUrls,
-      extraPrompt: extraPrompt || activeChar.extraPrompt || "",
-    };
-
-    setCharacters(prev =>
-      prev.map(c => (c.id === activeCharId ? updatedChar : c))
-    );
-
-    if (userId && !String(activeCharId).startsWith("local-")) {
-      await supabase
-        .from("characters")
-        .update({
-          generated_images: allUrls,
-          cover_image: existingFront.url,
-          prompt: buildTraitsPayload({
-            charDesc: activeChar.desc,
-            gender: activeChar.gender,
-            ageRange: activeChar.ageRange,
-            ethnicity: activeChar.ethnicity,
-            hairStyle: activeChar.hairStyle,
-            hairColor: activeChar.hairColor,
-            eyeColor: activeChar.eyeColor,
-            build: activeChar.build,
-            charLocked: activeChar.locked,
-            extraPrompt,
-          }),
-        })
-        .eq("id", activeCharId)
-        .eq("user_id", userId);
+        await supabase
+          .from("characters")
+          .update({
+            generated_images: updatedImages,
+          })
+          .eq("id", activeCharId)
+          .eq("user_id", userId);
+      }
     }
   } catch (err) {
     console.error("Generate other profiles failed:", err);
@@ -961,6 +944,7 @@ const uid = user?.id ?? null;
     setGeneratingMore(false);
   }
 }
+
 
   async function handleGenerate() {
   if (!activeChar || generating) return;
