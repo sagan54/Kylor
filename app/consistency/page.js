@@ -332,14 +332,24 @@ export default function ConsistencyPage() {
     setCharacters(p => p.map(c => c.id === activeCharId ? { ...c, refEntries } : c));
   }, [refEntries, activeCharId]);
 
-  // ── CHANGE 1: No auto-select on load ──────────────────────────────────────
+  // ── Load characters: cache-first, then Supabase in background ───────────
   useEffect(() => {
     const SESSION_KEY = "kylor_chars_cache";
+    const DELETED_KEY = "kylor_deleted_outputs"; // Fix 2: track per-character deleted URLs
 
-    async function parseAndSetChars(data) {
+    function parseRows(data) {
+      // Load deleted URLs set from sessionStorage
+      let deletedSet = new Set();
+      try {
+        const d = sessionStorage.getItem(DELETED_KEY);
+        if (d) deletedSet = new Set(JSON.parse(d));
+      } catch {}
+
       const loaded = data.map(row => {
         const traits = parseTraitsPayload(row.prompt);
-        const generatedImages = Array.isArray(row.generated_images) ? row.generated_images : [];
+        // Fix 2: filter out deleted images
+        const allImages = Array.isArray(row.generated_images) ? row.generated_images : [];
+        const generatedImages = allImages.filter(url => !deletedSet.has(url));
         const refUrls = row.reference_image ? [row.reference_image] : [];
         return {
           id: row.id, name: row.name, desc: traits.charDesc || row.description || "",
@@ -362,34 +372,33 @@ export default function ConsistencyPage() {
       return { loaded, loadedOutputs };
     }
 
+    // ── Step 1: Show cached data INSTANTLY (before any network call) ─────────
+    try {
+      const raw = sessionStorage.getItem(SESSION_KEY);
+      if (raw) {
+        const cached = JSON.parse(raw);
+        if (Array.isArray(cached) && cached.length > 0) {
+          const { loaded, loadedOutputs } = parseRows(cached);
+          setCharacters(loaded);
+          setOutputs(loadedOutputs);
+        }
+      }
+    } catch {}
+
+    // ── Step 2: Auth + fresh Supabase fetch in background ───────────────────
     (async () => {
       const { data: { user } } = await supabase.auth.getUser();
       const uid = user?.id ?? null;
       setUserId(uid);
       if (!uid) return;
 
-      // Step 1: Show cached data INSTANTLY
-      try {
-        const raw = sessionStorage.getItem(SESSION_KEY);
-        if (raw) {
-          const cached = JSON.parse(raw);
-          if (Array.isArray(cached) && cached.length > 0) {
-            const { loaded, loadedOutputs } = await parseAndSetChars(cached);
-            setCharacters(loaded);
-            setOutputs(loadedOutputs);
-          }
-        }
-      } catch {}
-
-      // Step 2: Fetch fresh from Supabase in background
       const { data, error } = await supabase
         .from("characters").select("*").eq("user_id", uid).order("created_at", { ascending: false });
 
-      if (!error && data && data.length > 0) {
-        const { loaded, loadedOutputs } = await parseAndSetChars(data);
+      if (!error && data) {
+        const { loaded, loadedOutputs } = parseRows(data);
         setCharacters(loaded);
         setOutputs(loadedOutputs);
-        // Step 3: Update cache
         try { sessionStorage.setItem(SESSION_KEY, JSON.stringify(data)); } catch {}
       }
     })();
@@ -457,6 +466,69 @@ export default function ConsistencyPage() {
       setActiveView("generate");
     } catch (err) { console.error("Save exception:", err); alert("Failed to save character."); }
     finally { setSaving(false); }
+  }
+
+  // ── Delete a single output image — persists to Supabase + cache ──────────
+  async function deleteOutput(outputId) {
+    // Find the output to get its URL and charId
+    const output = outputs.find(o => o.id === outputId);
+    setOutputs(p => p.filter(o => o.id !== outputId));
+
+    if (!output || !userId) return;
+    const char = characters.find(c => c.id === output.charId);
+    if (!char) return;
+
+    // Remove this URL from generated_images in Supabase
+    const updatedImages = (char.generatedImages || []).filter(url => url !== output.url);
+    await supabase.from("characters")
+      .update({ generated_images: updatedImages })
+      .eq("id", char.id).eq("user_id", userId);
+
+    // Update local characters state
+    setCharacters(p => p.map(c => c.id === char.id
+      ? { ...c, generatedImages: updatedImages, generations: updatedImages.length }
+      : c
+    ));
+
+    // Update cache
+    try {
+      const SESSION_KEY = "kylor_chars_cache";
+      const raw = sessionStorage.getItem(SESSION_KEY);
+      if (raw) {
+        const cached = JSON.parse(raw).map(row =>
+          row.id === char.id
+            ? { ...row, generated_images: updatedImages }
+            : row
+        );
+        sessionStorage.setItem(SESSION_KEY, JSON.stringify(cached));
+      }
+    } catch {}
+  }
+
+  // ── Delete all outputs for current character ──────────────────────────────
+  async function deleteAllOutputs() {
+    if (!activeCharId || !userId) {
+      setOutputs(p => p.filter(o => o.charId !== activeCharId));
+      return;
+    }
+    setOutputs(p => p.filter(o => o.charId !== activeCharId));
+    await supabase.from("characters")
+      .update({ generated_images: [], cover_image: null })
+      .eq("id", activeCharId).eq("user_id", userId);
+    setCharacters(p => p.map(c => c.id === activeCharId
+      ? { ...c, generatedImages: [], generations: 0 }
+      : c
+    ));
+    try {
+      const SESSION_KEY = "kylor_chars_cache";
+      const raw = sessionStorage.getItem(SESSION_KEY);
+      if (raw) {
+        const cached = JSON.parse(raw).map(row =>
+          row.id === activeCharId ? { ...row, generated_images: [], cover_image: null } : row
+        );
+        sessionStorage.setItem(SESSION_KEY, JSON.stringify(cached));
+      }
+    } catch {}
   }
 
   async function deleteCharacter(id) {
@@ -597,6 +669,35 @@ export default function ConsistencyPage() {
   }
 
   const canGenerate = !!activeChar && !generating;
+
+  // ── Delete output persistently (survives refresh) ─────────────────────────
+  function deleteOutput(itemId) {
+    // Find the URL of this item so we can remember it was deleted
+    const item = outputs.find(o => o.id === itemId);
+    if (item?.url && item.url !== "__FAILED__") {
+      try {
+        const DELETED_KEY = "kylor_deleted_outputs";
+        const raw = sessionStorage.getItem(DELETED_KEY);
+        const deleted = raw ? JSON.parse(raw) : [];
+        if (!deleted.includes(item.url)) {
+          sessionStorage.setItem(DELETED_KEY, JSON.stringify([...deleted, item.url]));
+        }
+      } catch {}
+
+      // Also update generated_images in Supabase for this character
+      if (userId && item.charId) {
+        const char = characters.find(c => c.id === item.charId);
+        if (char) {
+          const updatedImages = (char.generatedImages || []).filter(u => u !== item.url);
+          supabase.from("characters").update({ generated_images: updatedImages })
+            .eq("id", item.charId).eq("user_id", userId).then(() => {
+              setCharacters(prev => prev.map(c => c.id === item.charId ? { ...c, generatedImages: updatedImages, generations: updatedImages.length } : c));
+            });
+        }
+      }
+    }
+    setOutputs(p => p.filter(o => o.id !== itemId));
+  }
 
   // ── Reset everything and go back to landing ───────────────────────────────
   function resetToLanding() {
@@ -893,7 +994,7 @@ export default function ConsistencyPage() {
                   )}
                 </div>
                 {charOutputs.length > 0 && (
-                  <button onClick={() => setOutputs(p => p.filter(o => o.charId !== activeCharId))}
+                  <button onClick={deleteAllOutputs}
                     style={{ height: 28, padding: "0 10px", borderRadius: 8, border: "1px solid rgba(248,113,113,0.25)", background: "rgba(248,113,113,0.07)", color: "#fca5a5", fontSize: 11.5, cursor: "pointer", fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: 5 }}>
                     <Trash2 size={11} /> Clear
                   </button>
@@ -953,7 +1054,7 @@ export default function ConsistencyPage() {
                       {charOutputs.map((item, i) => (
                         outputView === "grid" ? (
                           <motion.div key={item.id} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}>
-                            <OutputCard item={item} onDelete={() => setOutputs(p => p.filter(o => o.id !== item.id))} onOpen={setLightboxItem} />
+                            <OutputCard item={item} onDelete={() => deleteOutput(item.id)} onOpen={setLightboxItem} />
                           </motion.div>
                         ) : (
                           <motion.div key={item.id} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.04 }}
@@ -968,7 +1069,7 @@ export default function ConsistencyPage() {
                             </div>
                             <div style={{ display: "flex", gap: 5 }}>
                               {[Download, Trash2].map((Icon, j) => (
-                                <button key={j} onClick={e => { e.stopPropagation(); if (j === 1) setOutputs(p => p.filter(o => o.id !== item.id)); }}
+                                <button key={j} onClick={e => { e.stopPropagation(); if (j === 1) deleteOutput(item.id); }}
                                   style={{ width: 30, height: 30, borderRadius: 8, border: `1px solid ${C.border}`, background: C.surface, color: j === 1 ? "#f87171" : C.textMuted, display: "grid", placeItems: "center", cursor: "pointer" }}>
                                   <Icon size={13} />
                                 </button>
@@ -1001,7 +1102,7 @@ export default function ConsistencyPage() {
                   <div style={{ display: "grid", gridTemplateColumns: "210px 1fr", gap: 16, alignItems: "stretch" }}>
                     {/* Left: front image + regenerate button below */}
                     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                      <OutputCard item={frontOutput} onDelete={() => setOutputs(p => p.filter(o => o.id !== frontOutput.id))} onOpen={setLightboxItem} />
+                      <OutputCard item={frontOutput} onDelete={() => deleteOutput(frontOutput.id)} onOpen={setLightboxItem} />
                       <motion.button
                         whileHover={!generating ? { borderColor: C.accentBorder, color: "#c4b5fd" } : {}}
                         whileTap={!generating ? { scale: 0.97 } : {}}
