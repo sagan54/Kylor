@@ -1092,121 +1092,6 @@ function GenerationCard({
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function ImagePage() {
-  function handleSelectCharacter(character) {
-  setSelectedCharacter(character);
-  try {
-    sessionStorage.setItem("kylor_selected_character_id", String(character.id));
-  } catch {}
-  setShowCharacterModal(false);
-}
-
-function clearSelectedCharacter() {
-  setSelectedCharacter(null);
-  try {
-    sessionStorage.removeItem("kylor_selected_character_id");
-  } catch {}
-}
-  useEffect(() => {
-  if (!selectedCharacter) return;
-
-  const traitParts = [
-    selectedCharacter.gender,
-    selectedCharacter.ageRange,
-    selectedCharacter.ethnicity,
-    selectedCharacter.hairColor && selectedCharacter.hairStyle
-      ? `${selectedCharacter.hairColor} ${selectedCharacter.hairStyle} hair`
-      : null,
-    selectedCharacter.eyeColor ? `${selectedCharacter.eyeColor} eyes` : null,
-    selectedCharacter.build ? `${selectedCharacter.build} build` : null,
-  ].filter(Boolean);
-
-  const characterPrompt = [
-    `Use the same character: ${selectedCharacter.name}`,
-    traitParts.length ? traitParts.join(", ") : null,
-    selectedCharacter.charDesc || null,
-    "Maintain the same facial features, hairstyle, skin tone, proportions, and identity.",
-  ].filter(Boolean).join(". ");
-
-  setPrompt((prev) => {
-    if (!prev?.trim()) return characterPrompt;
-    if (prev.includes(`Use the same character: ${selectedCharacter.name}`)) return prev;
-    return `${characterPrompt}. ${prev}`;
-  });
-}, [selectedCharacter]);
-  useEffect(() => {
-  loadSavedCharacters();
-}, []);
-  async function loadSavedCharacters() {
-  try {
-    setLoadingCharacters(true);
-
-    const { data: { session } } = await supabase.auth.getSession();
-    const uid = session?.user?.id ?? null;
-    if (!uid) {
-      setSavedCharacters([]);
-      setSelectedCharacter(null);
-      return;
-    }
-
-    const { data, error } = await supabase
-      .from("characters")
-      .select("*")
-      .eq("user_id", uid)
-      .order("created_at", { ascending: false });
-
-    if (error || !data) {
-      console.error("Failed to load saved characters:", error?.message);
-      setSavedCharacters([]);
-      return;
-    }
-
-    const mapped = data.map((row) => {
-      let traits = {};
-      try {
-        traits = JSON.parse(row.prompt || "{}");
-      } catch {}
-
-      return {
-        id: row.id,
-        name: row.name,
-        description: row.description || "",
-        referenceImage: row.reference_image || null,
-        generatedImages: Array.isArray(row.generated_images) ? row.generated_images : [],
-        coverImage:
-          row.cover_image ||
-          (Array.isArray(row.generated_images) && row.generated_images[0]) ||
-          row.reference_image ||
-          null,
-        gender: traits.gender || "",
-        ageRange: traits.ageRange || "",
-        ethnicity: traits.ethnicity || "",
-        hairStyle: traits.hairStyle || "",
-        hairColor: traits.hairColor || "",
-        eyeColor: traits.eyeColor || "",
-        build: traits.build || "",
-        charDesc: traits.charDesc || row.description || "",
-      };
-    });
-
-    setSavedCharacters(mapped);
-
-    const selectedId = sessionStorage.getItem("kylor_selected_character_id");
-    if (selectedId) {
-      const found = mapped.find((c) => String(c.id) === String(selectedId));
-      if (found) {
-        setSelectedCharacter(found);
-      }
-    }else if (!selectedCharacter && mapped.length > 0) {
-  // optional: auto select first character
-  // setSelectedCharacter(mapped[0]);
-}
-  } catch (err) {
-    console.error("loadSavedCharacters error:", err);
-    setSavedCharacters([]);
-  } finally {
-    setLoadingCharacters(false);
-  }
-}
   const [topTab, setTopTab] = useState("All");
   const [contentFilter, setContentFilter] = useState("All");
   const [assetView, setAssetView] = useState("grid");
@@ -1222,6 +1107,10 @@ function clearSelectedCharacter() {
 
   const [refImages, setRefImages] = useState([]);
   const [showCharacterModal, setShowCharacterModal] = useState(false);
+
+  const [savedCharacters, setSavedCharacters] = useState([]);
+  const [selectedCharacter, setSelectedCharacter] = useState(null);
+  const [loadingCharacters, setLoadingCharacters] = useState(false);
 
   const [ratio, setRatio] = useState("16:9");
   const [mode, setMode] = useState("2K HD");
@@ -1242,11 +1131,132 @@ function clearSelectedCharacter() {
   const stylesRef = useRef(null);
   const textareaRef = useRef(null);
   const canvasRef = useRef(null);
-  const [savedCharacters, setSavedCharacters] = useState([]);
-const [selectedCharacter, setSelectedCharacter] = useState(null);
-const [loadingCharacters, setLoadingCharacters] = useState(false);
 
   const SESSION_KEY = "kylor_img_cache";
+
+  async function loadSavedCharacters() {
+    try {
+      setLoadingCharacters(true);
+
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      const uid = session?.user?.id ?? null;
+      if (!uid) {
+        setSavedCharacters([]);
+        setSelectedCharacter(null);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("characters")
+        .select("*")
+        .eq("user_id", uid)
+        .order("created_at", { ascending: false });
+
+      if (error || !data) {
+        console.error("Failed to load saved characters:", error?.message);
+        setSavedCharacters([]);
+        return;
+      }
+
+      const mapped = data.map((row) => {
+        let traits = {};
+        try {
+          traits = JSON.parse(row.prompt || "{}");
+        } catch {}
+
+        return {
+          id: row.id,
+          name: row.name,
+          description: row.description || "",
+          referenceImage: row.reference_image || null,
+          generatedImages: Array.isArray(row.generated_images) ? row.generated_images : [],
+          coverImage:
+            row.cover_image ||
+            (Array.isArray(row.generated_images) && row.generated_images[0]) ||
+            row.reference_image ||
+            null,
+          gender: traits.gender || "",
+          ageRange: traits.ageRange || "",
+          ethnicity: traits.ethnicity || "",
+          hairStyle: traits.hairStyle || "",
+          hairColor: traits.hairColor || "",
+          eyeColor: traits.eyeColor || "",
+          build: traits.build || "",
+          charDesc: traits.charDesc || row.description || "",
+        };
+      });
+
+      setSavedCharacters(mapped);
+
+      const selectedId = sessionStorage.getItem("kylor_selected_character_id");
+      if (selectedId) {
+        const found = mapped.find((c) => String(c.id) === String(selectedId));
+        if (found) {
+          setSelectedCharacter(found);
+        }
+      } else if (!selectedCharacter && mapped.length > 0) {
+        // optional: auto select first character
+        // setSelectedCharacter(mapped[0]);
+      }
+    } catch (err) {
+      console.error("loadSavedCharacters error:", err);
+      setSavedCharacters([]);
+    } finally {
+      setLoadingCharacters(false);
+    }
+  }
+
+  function handleSelectCharacter(character) {
+    setSelectedCharacter(character);
+    try {
+      sessionStorage.setItem("kylor_selected_character_id", String(character.id));
+    } catch {}
+    setShowCharacterModal(false);
+  }
+
+  function clearSelectedCharacter() {
+    setSelectedCharacter(null);
+    try {
+      sessionStorage.removeItem("kylor_selected_character_id");
+    } catch {}
+  }
+
+  useEffect(() => {
+    loadSavedCharacters();
+  }, []);
+
+  useEffect(() => {
+    if (!selectedCharacter) return;
+
+    const traitParts = [
+      selectedCharacter.gender,
+      selectedCharacter.ageRange,
+      selectedCharacter.ethnicity,
+      selectedCharacter.hairColor && selectedCharacter.hairStyle
+        ? `${selectedCharacter.hairColor} ${selectedCharacter.hairStyle} hair`
+        : null,
+      selectedCharacter.eyeColor ? `${selectedCharacter.eyeColor} eyes` : null,
+      selectedCharacter.build ? `${selectedCharacter.build} build` : null,
+    ].filter(Boolean);
+
+    const characterPrompt = [
+      `Use the same character: ${selectedCharacter.name}`,
+      traitParts.length ? traitParts.join(", ") : null,
+      selectedCharacter.charDesc || null,
+      "Maintain the same facial features, hairstyle, skin tone, proportions, and identity.",
+    ]
+      .filter(Boolean)
+      .join(". ");
+
+    setPrompt((prev) => {
+      if (!prev?.trim()) return characterPrompt;
+      if (prev.includes(`Use the same character: ${selectedCharacter.name}`)) return prev;
+      return `${characterPrompt}. ${prev}`;
+    });
+  }, [selectedCharacter]);
 
   useEffect(() => {
     async function init() {
@@ -1846,59 +1856,139 @@ const [loadingCharacters, setLoadingCharacters] = useState(false);
             </motion.button>
 
             <motion.button
-  whileTap={{ scale: 0.97 }}
-  onClick={async () => {
-  setShowCharacterModal(true);
-  await loadSavedCharacters();
-}}
-  style={{
-    width: "100%",
-    padding: "10px 12px",
-    borderRadius: radius.md,
-    border: `1px solid ${C.border}`,
-    background: C.surface,
-    color: C.text,
-    display: "flex",
-    alignItems: "center",
-    gap: 10,
-    cursor: "pointer",
-    fontFamily: "inherit",
-    transition: "all 0.16s ease",
-    flexShrink: 0,
-  }}
->
-  <div
-    style={{
-      width: 30,
-      height: 30,
-      borderRadius: 10,
-      flexShrink: 0,
-      background: "rgba(255,255,255,0.03)",
-      border: `1px solid ${C.border}`,
-      display: "grid",
-      placeItems: "center",
-    }}
-  >
-    <UserCircle2 size={15} />
-  </div>
+              whileTap={{ scale: 0.97 }}
+              onClick={async () => {
+                setShowCharacterModal(true);
+                await loadSavedCharacters();
+              }}
+              style={{
+                width: "100%",
+                padding: "10px 12px",
+                borderRadius: radius.md,
+                border: `1px solid ${C.border}`,
+                background: C.surface,
+                color: C.text,
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                cursor: "pointer",
+                fontFamily: "inherit",
+                transition: "all 0.16s ease",
+                flexShrink: 0,
+              }}
+            >
+              <div
+                style={{
+                  width: 30,
+                  height: 30,
+                  borderRadius: 10,
+                  flexShrink: 0,
+                  background: "rgba(255,255,255,0.03)",
+                  border: `1px solid ${C.border}`,
+                  display: "grid",
+                  placeItems: "center",
+                }}
+              >
+                <UserCircle2 size={15} />
+              </div>
 
-  <div style={{ flex: 1, minWidth: 0, textAlign: "left" }}>
-    <div style={{ fontSize: 13.5, fontWeight: 700 }}>Use Character</div>
-    <div
-      style={{
-        fontSize: 11.5,
-        color: C.textMuted,
-        whiteSpace: "nowrap",
-        overflow: "hidden",
-        textOverflow: "ellipsis",
-      }}
-    >
-      Select a saved character from Consistency
-    </div>
-  </div>
+              <div style={{ flex: 1, minWidth: 0, textAlign: "left" }}>
+                <div style={{ fontSize: 13.5, fontWeight: 700 }}>Use Character</div>
+                <div
+                  style={{
+                    fontSize: 11.5,
+                    color: C.textMuted,
+                    whiteSpace: "nowrap",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                  }}
+                >
+                  Select a saved character from Consistency
+                </div>
+              </div>
 
-  <ChevronRight size={14} color={C.textMuted} />
-</motion.button>
+              <ChevronRight size={14} color={C.textMuted} />
+            </motion.button>
+
+            {selectedCharacter && (
+              <div
+                style={{
+                  width: "100%",
+                  padding: "10px 12px",
+                  borderRadius: radius.md,
+                  border: `1px solid ${C.accentBorder}`,
+                  background: C.accentSoft,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  flexShrink: 0,
+                }}
+              >
+                <div
+                  style={{
+                    width: 38,
+                    height: 38,
+                    borderRadius: 10,
+                    overflow: "hidden",
+                    background: "rgba(255,255,255,0.04)",
+                    border: `1px solid ${C.border}`,
+                    flexShrink: 0,
+                  }}
+                >
+                  {selectedCharacter.coverImage ? (
+                    <img
+                      src={selectedCharacter.coverImage}
+                      alt={selectedCharacter.name}
+                      style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                    />
+                  ) : (
+                    <div style={{ width: "100%", height: "100%", display: "grid", placeItems: "center" }}>
+                      <UserCircle2 size={16} color={C.textDim} />
+                    </div>
+                  )}
+                </div>
+
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div
+                    style={{
+                      fontSize: 13,
+                      fontWeight: 700,
+                      color: C.text,
+                      whiteSpace: "nowrap",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                    }}
+                  >
+                    {selectedCharacter.name}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 11.5,
+                      color: "rgba(255,255,255,0.72)",
+                      whiteSpace: "nowrap",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                    }}
+                  >
+                    Character applied
+                  </div>
+                </div>
+
+                <button
+                  onClick={clearSelectedCharacter}
+                  style={{
+                    border: "none",
+                    background: "transparent",
+                    color: C.textMuted,
+                    cursor: "pointer",
+                    fontSize: 11.5,
+                    fontFamily: "inherit",
+                  }}
+                >
+                  Remove
+                </button>
+              </div>
+            )}
 
             <div style={{ flexShrink: 0 }}>
               <DropZone files={refImages} onFiles={setRefImages} />
@@ -2881,321 +2971,242 @@ const [loadingCharacters, setLoadingCharacters] = useState(false);
       </div>
 
       <AnimatePresence>
-  {showCharacterModal && (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      onClick={() => setShowCharacterModal(false)}
-      style={{
-        position: "fixed",
-        inset: 0,
-        zIndex: 9998,
-        background: "rgba(0,0,0,0.82)",
-        backdropFilter: "blur(10px)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: 24,
-      }}
-    >
-      <motion.div
-        initial={{ opacity: 0, y: 18, scale: 0.98 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        exit={{ opacity: 0, y: 12, scale: 0.98 }}
-        transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          width: "100%",
-          maxWidth: 680,
-          borderRadius: 22,
-          border: `1px solid ${C.border}`,
-          background: "linear-gradient(180deg, rgba(10,12,20,0.98), rgba(8,10,18,0.98))",
-          boxShadow: "0 40px 120px rgba(0,0,0,0.6)",
-          overflow: "hidden",
-        }}
-      >
-        <div
-          style={{
-            padding: "16px 18px",
-            borderBottom: `1px solid ${C.border}`,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-          }}
-        >
-          <div>
-            <div style={{ fontSize: 14, fontWeight: 700, color: C.text }}>
-              Use Character
-            </div>
-            <div style={{ fontSize: 12, color: C.textMuted }}>
-              Select a saved character from Consistency
-            </div>
-          </div>
-
-          <button
+        {showCharacterModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
             onClick={() => setShowCharacterModal(false)}
             style={{
-              width: 34,
-              height: 34,
-              borderRadius: 10,
-              border: `1px solid ${C.border}`,
-              background: C.surface,
-              color: C.textMuted,
-              display: "grid",
-              placeItems: "center",
-              cursor: "pointer",
+              position: "fixed",
+              inset: 0,
+              zIndex: 9998,
+              background: "rgba(0,0,0,0.82)",
+              backdropFilter: "blur(10px)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: 24,
             }}
           >
-            {selectedCharacter && (
-  <div
-    style={{
-      width: "100%",
-      padding: "10px 12px",
-      borderRadius: radius.md,
-      border: `1px solid ${C.accentBorder}`,
-      background: C.accentSoft,
-      display: "flex",
-      alignItems: "center",
-      gap: 10,
-      flexShrink: 0,
-    }}
-  >
-    <div
-      style={{
-        width: 38,
-        height: 38,
-        borderRadius: 10,
-        overflow: "hidden",
-        background: "rgba(255,255,255,0.04)",
-        border: `1px solid ${C.border}`,
-        flexShrink: 0,
-      }}
-    >
-      {selectedCharacter.coverImage ? (
-        <img
-          src={selectedCharacter.coverImage}
-          alt={selectedCharacter.name}
-          style={{ width: "100%", height: "100%", objectFit: "cover" }}
-        />
-      ) : (
-        <div style={{ width: "100%", height: "100%", display: "grid", placeItems: "center" }}>
-          <UserCircle2 size={16} color={C.textDim} />
-        </div>
-      )}
-    </div>
-
-    <div style={{ flex: 1, minWidth: 0 }}>
-      <div
-        style={{
-          fontSize: 13,
-          fontWeight: 700,
-          color: C.text,
-          whiteSpace: "nowrap",
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-        }}
-      >
-        {selectedCharacter.name}
-      </div>
-      <div
-        style={{
-          fontSize: 11.5,
-          color: "rgba(255,255,255,0.72)",
-          whiteSpace: "nowrap",
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-        }}
-      >
-        Character applied
-      </div>
-    </div>
-
-    <button
-      onClick={clearSelectedCharacter}
-      style={{
-        border: "none",
-        background: "transparent",
-        color: C.textMuted,
-        cursor: "pointer",
-        fontSize: 11.5,
-        fontFamily: "inherit",
-      }}
-    >
-      Remove
-    </button>
-  </div>
-)}
-            <X size={14} />
-          </button>
-        </div>
-
-       <div style={{ padding: 14 }}>
-  {loadingCharacters ? (
-    <div
-      style={{
-        minHeight: 180,
-        borderRadius: 18,
-        border: `1px solid ${C.border}`,
-        background: "rgba(255,255,255,0.02)",
-        display: "grid",
-        placeItems: "center",
-        textAlign: "center",
-        padding: 24,
-      }}
-    >
-      <div>
-        <motion.div
-          animate={{ rotate: 360 }}
-          transition={{ repeat: Infinity, duration: 1, ease: "linear" }}
-          style={{
-            width: 34,
-            height: 34,
-            margin: "0 auto 12px",
-            borderRadius: 999,
-            border: `2px solid ${C.accent}`,
-            borderTopColor: "transparent",
-          }}
-        />
-        <div style={{ fontSize: 13, color: C.textMuted }}>Loading saved characters…</div>
-      </div>
-    </div>
-  ) : savedCharacters.length === 0 ? (
-    <div
-      style={{
-        minHeight: 180,
-        borderRadius: 18,
-        border: `1px solid ${C.border}`,
-        background: "rgba(255,255,255,0.02)",
-        display: "grid",
-        placeItems: "center",
-        textAlign: "center",
-        padding: 24,
-      }}
-    >
-      <div>
-        <div
-          style={{
-            width: 52,
-            height: 52,
-            borderRadius: 999,
-            margin: "0 auto 12px",
-            border: `1px solid ${C.border}`,
-            background: C.surface,
-            display: "grid",
-            placeItems: "center",
-          }}
-        >
-          <UserCircle2 size={22} color={C.textDim} />
-        </div>
-        <div style={{ fontSize: 14, fontWeight: 700, color: C.text, marginBottom: 6 }}>
-          No saved characters yet
-        </div>
-        <div style={{ fontSize: 12.5, color: C.textMuted }}>
-          Create and save a character in the Consistency section first.
-        </div>
-      </div>
-    </div>
-  ) : (
-    <div
-      style={{
-        display: "grid",
-        gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-        gap: 12,
-        maxHeight: 420,
-        overflowY: "auto",
-      }}
-    >
-      {savedCharacters.map((character) => {
-        const active = String(selectedCharacter?.id) === String(character.id);
-
-        return (
-          <button
-            key={character.id}
-            onClick={() => handleSelectCharacter(character)}
-            style={{
-              border: `1px solid ${active ? C.accentBorder : C.border}`,
-              background: active ? "rgba(124,58,237,0.08)" : C.surface,
-              borderRadius: 16,
-              padding: 10,
-              cursor: "pointer",
-              textAlign: "left",
-              fontFamily: "inherit",
-              transition: "all 0.16s ease",
-            }}
-          >
-            <div
+            <motion.div
+              initial={{ opacity: 0, y: 18, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 12, scale: 0.98 }}
+              transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+              onClick={(e) => e.stopPropagation()}
               style={{
                 width: "100%",
-                aspectRatio: "16/10",
-                borderRadius: 12,
-                overflow: "hidden",
-                background: "rgba(255,255,255,0.03)",
+                maxWidth: 680,
+                borderRadius: 22,
                 border: `1px solid ${C.border}`,
-                marginBottom: 10,
-              }}
-            >
-              {character.coverImage ? (
-                <img
-                  src={character.coverImage}
-                  alt={character.name}
-                  style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                />
-              ) : (
-                <div style={{ width: "100%", height: "100%", display: "grid", placeItems: "center" }}>
-                  <UserCircle2 size={22} color={C.textDim} />
-                </div>
-              )}
-            </div>
-
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                gap: 8,
-                marginBottom: 4,
+                background: "linear-gradient(180deg, rgba(10,12,20,0.98), rgba(8,10,18,0.98))",
+                boxShadow: "0 40px 120px rgba(0,0,0,0.6)",
+                overflow: "hidden",
               }}
             >
               <div
                 style={{
-                  fontSize: 13,
-                  fontWeight: 700,
-                  color: C.text,
-                  whiteSpace: "nowrap",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
+                  padding: "16px 18px",
+                  borderBottom: `1px solid ${C.border}`,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
                 }}
               >
-                {character.name}
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: C.text }}>
+                    Use Character
+                  </div>
+                  <div style={{ fontSize: 12, color: C.textMuted }}>
+                    Select a saved character from Consistency
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => setShowCharacterModal(false)}
+                  style={{
+                    width: 34,
+                    height: 34,
+                    borderRadius: 10,
+                    border: `1px solid ${C.border}`,
+                    background: C.surface,
+                    color: C.textMuted,
+                    display: "grid",
+                    placeItems: "center",
+                    cursor: "pointer",
+                  }}
+                >
+                  <X size={14} />
+                </button>
               </div>
 
-              {active && <Check size={13} color="#a78bfa" />}
-            </div>
+              <div style={{ padding: 14 }}>
+                {loadingCharacters ? (
+                  <div
+                    style={{
+                      minHeight: 180,
+                      borderRadius: 18,
+                      border: `1px solid ${C.border}`,
+                      background: "rgba(255,255,255,0.02)",
+                      display: "grid",
+                      placeItems: "center",
+                      textAlign: "center",
+                      padding: 24,
+                    }}
+                  >
+                    <div>
+                      <motion.div
+                        animate={{ rotate: 360 }}
+                        transition={{ repeat: Infinity, duration: 1, ease: "linear" }}
+                        style={{
+                          width: 34,
+                          height: 34,
+                          margin: "0 auto 12px",
+                          borderRadius: 999,
+                          border: `2px solid ${C.accent}`,
+                          borderTopColor: "transparent",
+                        }}
+                      />
+                      <div style={{ fontSize: 13, color: C.textMuted }}>Loading saved characters…</div>
+                    </div>
+                  </div>
+                ) : savedCharacters.length === 0 ? (
+                  <div
+                    style={{
+                      minHeight: 180,
+                      borderRadius: 18,
+                      border: `1px solid ${C.border}`,
+                      background: "rgba(255,255,255,0.02)",
+                      display: "grid",
+                      placeItems: "center",
+                      textAlign: "center",
+                      padding: 24,
+                    }}
+                  >
+                    <div>
+                      <div
+                        style={{
+                          width: 52,
+                          height: 52,
+                          borderRadius: 999,
+                          margin: "0 auto 12px",
+                          border: `1px solid ${C.border}`,
+                          background: C.surface,
+                          display: "grid",
+                          placeItems: "center",
+                        }}
+                      >
+                        <UserCircle2 size={22} color={C.textDim} />
+                      </div>
+                      <div style={{ fontSize: 14, fontWeight: 700, color: C.text, marginBottom: 6 }}>
+                        No saved characters yet
+                      </div>
+                      <div style={{ fontSize: 12.5, color: C.textMuted }}>
+                        Create and save a character in the Consistency section first.
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                      gap: 12,
+                      maxHeight: 420,
+                      overflowY: "auto",
+                    }}
+                  >
+                    {savedCharacters.map((character) => {
+                      const active = String(selectedCharacter?.id) === String(character.id);
 
-            <div
-              style={{
-                fontSize: 11.5,
-                color: C.textMuted,
-                lineHeight: 1.5,
-                display: "-webkit-box",
-                WebkitLineClamp: 2,
-                WebkitBoxOrient: "vertical",
-                overflow: "hidden",
-              }}
-            >
-              {character.charDesc || "Saved character from Consistency"}
-            </div>
-          </button>
-        );
-      })}
-    </div>
-  )}
-</div>
-      </motion.div>
-    </motion.div>
-  )}
-</AnimatePresence>
+                      return (
+                        <button
+                          key={character.id}
+                          onClick={() => handleSelectCharacter(character)}
+                          style={{
+                            border: `1px solid ${active ? C.accentBorder : C.border}`,
+                            background: active ? "rgba(124,58,237,0.08)" : C.surface,
+                            borderRadius: 16,
+                            padding: 10,
+                            cursor: "pointer",
+                            textAlign: "left",
+                            fontFamily: "inherit",
+                            transition: "all 0.16s ease",
+                          }}
+                        >
+                          <div
+                            style={{
+                              width: "100%",
+                              aspectRatio: "16/10",
+                              borderRadius: 12,
+                              overflow: "hidden",
+                              background: "rgba(255,255,255,0.03)",
+                              border: `1px solid ${C.border}`,
+                              marginBottom: 10,
+                            }}
+                          >
+                            {character.coverImage ? (
+                              <img
+                                src={character.coverImage}
+                                alt={character.name}
+                                style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                              />
+                            ) : (
+                              <div style={{ width: "100%", height: "100%", display: "grid", placeItems: "center" }}>
+                                <UserCircle2 size={22} color={C.textDim} />
+                              </div>
+                            )}
+                          </div>
+
+                          <div
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "space-between",
+                              gap: 8,
+                              marginBottom: 4,
+                            }}
+                          >
+                            <div
+                              style={{
+                                fontSize: 13,
+                                fontWeight: 700,
+                                color: C.text,
+                                whiteSpace: "nowrap",
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                              }}
+                            >
+                              {character.name}
+                            </div>
+
+                            {active && <Check size={13} color="#a78bfa" />}
+                          </div>
+
+                          <div
+                            style={{
+                              fontSize: 11.5,
+                              color: C.textMuted,
+                              lineHeight: 1.5,
+                              display: "-webkit-box",
+                              WebkitLineClamp: 2,
+                              WebkitBoxOrient: "vertical",
+                              overflow: "hidden",
+                            }}
+                          >
+                            {character.charDesc || "Saved character from Consistency"}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </main>
   );
 }
