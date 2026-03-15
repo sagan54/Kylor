@@ -15,7 +15,7 @@ import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { supabase } from "../../lib/supabase";
 
 const CHAR_BUCKET = "character-refs";
-const SESSION_KEY = "kylor_chars_cache";
+const SESSION_KEY = "kylor_chars_cache_v2";
 
 const C = {
   accent: "#7c3aed", accentSoft: "rgba(124,58,237,0.15)",
@@ -87,6 +87,44 @@ function parseTraitsPayload(value) {
     const p = JSON.parse(value || "{}");
     return { charDesc: p.charDesc || "", gender: p.gender || "", ageRange: p.ageRange || "", ethnicity: p.ethnicity || "", hairStyle: p.hairStyle || "", hairColor: p.hairColor || "", eyeColor: p.eyeColor || "", build: p.build || "", charLocked: !!p.charLocked, extraPrompt: p.extraPrompt || "" };
   } catch { return { charDesc: "", gender: "", ageRange: "", ethnicity: "", hairStyle: "", hairColor: "", eyeColor: "", build: "", charLocked: false, extraPrompt: "" }; }
+}
+
+function rowToCharacter(row) {
+  const traits = parseTraitsPayload(row.prompt);
+  const generatedImages = Array.isArray(row.generated_images) ? row.generated_images : [];
+  const refUrls = row.reference_image ? [row.reference_image] : [];
+
+  return {
+    id: row.id,
+    name: row.name,
+    desc: traits.charDesc || row.description || "",
+    gender: traits.gender || "",
+    ageRange: traits.ageRange || "",
+    ethnicity: traits.ethnicity || "",
+    hairStyle: traits.hairStyle || "",
+    hairColor: traits.hairColor || "",
+    eyeColor: traits.eyeColor || "",
+    build: traits.build || "",
+    locked: traits.charLocked || false,
+    generations: generatedImages.length,
+    generatedImages,
+    style: row.style || null,
+    extraPrompt: traits.extraPrompt || "",
+    createdAt: row.created_at,
+    refEntries: refUrls.map(url => ({ file: null, previewUrl: url })),
+  };
+}
+
+function outputsFromCharacter(char) {
+  if (!char) return [];
+  return (char.generatedImages || []).map((url, i) => ({
+    id: `${char.id}-${CHARACTER_PACK_VIEWS[i]?.key || i}`,
+    charId: char.id,
+    prompt: "",
+    scene: CHARACTER_PACK_VIEWS[i]?.label || `View ${i + 1}`,
+    url,
+    createdAt: char.createdAt || new Date().toISOString(),
+  }));
 }
 
 function SidebarItem({ item }) {
@@ -305,7 +343,6 @@ export default function ConsistencyPage() {
   const [saving,       setSaving]       = useState(false);
 
   const canvasRef = useRef(null);
-  // FIX: Track generating state in a ref so async callbacks can check it
   const generatingRef = useRef(false);
 
   const activeChar  = characters.find(c => c.id === activeCharId) || null;
@@ -320,65 +357,57 @@ export default function ConsistencyPage() {
     setCharacters(p => p.map(c => c.id === activeCharId ? { ...c, refEntries } : c));
   }, [refEntries, activeCharId]);
 
-  // ── Single load effect: sessionStorage first, then Supabase in background ─
   useEffect(() => {
-    function parseRows(data) {
-      const loaded = data.map(row => {
-        const traits = parseTraitsPayload(row.prompt);
-        const generatedImages = Array.isArray(row.generated_images) ? row.generated_images : [];
-        const refUrls = row.reference_image ? [row.reference_image] : [];
-        return {
-          id: row.id, name: row.name, desc: traits.charDesc || row.description || "",
-          gender: traits.gender || "", ageRange: traits.ageRange || "", ethnicity: traits.ethnicity || "",
-          hairStyle: traits.hairStyle || "", hairColor: traits.hairColor || "", eyeColor: traits.eyeColor || "",
-          build: traits.build || "", locked: traits.charLocked || false,
-          generations: generatedImages.length, generatedImages, style: row.style || null,
-          extraPrompt: traits.extraPrompt || "", createdAt: row.created_at,
-          refEntries: refUrls.map(url => ({ file: null, previewUrl: url })),
-        };
-      });
-      const loadedOutputs = loaded.flatMap(char =>
-        (char.generatedImages || []).map((url, i) => ({
-          id: `${char.id}-${CHARACTER_PACK_VIEWS[i]?.key || i}`,
-          charId: char.id, prompt: "",
-          scene: CHARACTER_PACK_VIEWS[i]?.label || `View ${i + 1}`,
-          url, createdAt: char.createdAt || new Date().toISOString(),
-        }))
-      );
-      return { loaded, loadedOutputs };
+    if (!activeCharId) {
+      setOutputs([]);
+      return;
     }
 
-    // Step 1: Show sessionStorage cache instantly (synchronous, 0ms)
+    if (generatingRef.current || generatingMore) return;
+
+    const current = characters.find(c => c.id === activeCharId);
+    if (!current) {
+      setOutputs([]);
+      return;
+    }
+
+    setOutputs(outputsFromCharacter(current));
+  }, [activeCharId, characters, generatingMore]);
+
+  useEffect(() => {
     try {
-      const raw = sessionStorage.getItem(SESSION_KEY);
+      const raw = localStorage.getItem(SESSION_KEY);
       if (raw) {
         const cached = JSON.parse(raw);
         if (Array.isArray(cached) && cached.length > 0) {
-          const { loaded, loadedOutputs } = parseRows(cached);
-          setCharacters(loaded);
-          setOutputs(loadedOutputs);
-          // ← NO activeCharId set here — page opens on landing screen
+          setCharacters(cached.map(rowToCharacter));
         }
       }
     } catch {}
 
-    // Step 2: Auth + Supabase in background
     (async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      const uid = user?.id ?? null;
+      const { data: { session } } = await supabase.auth.getSession();
+      let uid = session?.user?.id ?? null;
+
+      if (!uid) {
+        const { data: { user } } = await supabase.auth.getUser();
+        uid = user?.id ?? null;
+      }
+
       setUserId(uid);
       if (!uid) return;
 
       const { data, error } = await supabase
-        .from("characters").select("*").eq("user_id", uid).order("created_at", { ascending: false });
+        .from("characters")
+        .select("id, name, description, prompt, reference_image, generated_images, cover_image, style, created_at")
+        .eq("user_id", uid)
+        .order("created_at", { ascending: false });
 
-      if (!error && data) {
-        // FIX: Don't overwrite state if user is currently generating
-        if (generatingRef.current) return;
-        const { loaded, loadedOutputs } = parseRows(data);
-        setCharacters(loaded);
-        setOutputs(loadedOutputs);
-        try { sessionStorage.setItem(SESSION_KEY, JSON.stringify(data)); } catch {}
+      if (!error && data && !generatingRef.current) {
+        setCharacters(data.map(rowToCharacter));
+        try {
+          localStorage.setItem(SESSION_KEY, JSON.stringify(data));
+        } catch {}
       }
     })();
   }, []);
@@ -424,9 +453,9 @@ export default function ConsistencyPage() {
       setCharacters(prev => {
         const updated = [newChar, ...prev];
         try {
-          const raw = sessionStorage.getItem(SESSION_KEY);
+          const raw = localStorage.getItem(SESSION_KEY);
           const cached = raw ? JSON.parse(raw) : [];
-          sessionStorage.setItem(SESSION_KEY, JSON.stringify([{
+          localStorage.setItem(SESSION_KEY, JSON.stringify([{
             id: data.id, user_id: userId, name: newChar.name, description: newChar.desc,
             prompt: promptPayload, reference_image: refUrls[0] || null,
             generated_images: [], cover_image: null, style: null, seed: null, created_at: newChar.createdAt,
@@ -444,7 +473,6 @@ export default function ConsistencyPage() {
     finally { setSaving(false); }
   }
 
-  // ── Delete a single output (persists to Supabase + cache) ─────────────────
   async function deleteOutput(outputId) {
     const output = outputs.find(o => o.id === outputId);
     setOutputs(p => p.filter(o => o.id !== outputId));
@@ -455,25 +483,24 @@ export default function ConsistencyPage() {
     await supabase.from("characters").update({ generated_images: updatedImages }).eq("id", char.id).eq("user_id", userId);
     setCharacters(p => p.map(c => c.id === char.id ? { ...c, generatedImages: updatedImages, generations: updatedImages.length } : c));
     try {
-      const raw = sessionStorage.getItem(SESSION_KEY);
+      const raw = localStorage.getItem(SESSION_KEY);
       if (raw) {
         const cached = JSON.parse(raw).map(row => row.id === char.id ? { ...row, generated_images: updatedImages } : row);
-        sessionStorage.setItem(SESSION_KEY, JSON.stringify(cached));
+        localStorage.setItem(SESSION_KEY, JSON.stringify(cached));
       }
     } catch {}
   }
 
-  // ── Delete all outputs for current character ──────────────────────────────
   async function deleteAllOutputs() {
     setOutputs(p => p.filter(o => o.charId !== activeCharId));
     if (!activeCharId || !userId) return;
     await supabase.from("characters").update({ generated_images: [], cover_image: null }).eq("id", activeCharId).eq("user_id", userId);
     setCharacters(p => p.map(c => c.id === activeCharId ? { ...c, generatedImages: [], generations: 0 } : c));
     try {
-      const raw = sessionStorage.getItem(SESSION_KEY);
+      const raw = localStorage.getItem(SESSION_KEY);
       if (raw) {
         const cached = JSON.parse(raw).map(row => row.id === activeCharId ? { ...row, generated_images: [], cover_image: null } : row);
-        sessionStorage.setItem(SESSION_KEY, JSON.stringify(cached));
+        localStorage.setItem(SESSION_KEY, JSON.stringify(cached));
       }
     } catch {}
   }
@@ -482,8 +509,8 @@ export default function ConsistencyPage() {
     setCharacters(p => {
       const updated = p.filter(c => c.id !== id);
       try {
-        const raw = sessionStorage.getItem(SESSION_KEY);
-        if (raw) sessionStorage.setItem(SESSION_KEY, JSON.stringify(JSON.parse(raw).filter(r => r.id !== id)));
+        const raw = localStorage.getItem(SESSION_KEY);
+        if (raw) localStorage.setItem(SESSION_KEY, JSON.stringify(JSON.parse(raw).filter(r => r.id !== id)));
       } catch {}
       return updated;
     });
@@ -493,10 +520,19 @@ export default function ConsistencyPage() {
   }
 
   function loadCharacterIntoForm(char) {
-    setCharName(char.name); setCharDesc(char.desc); setGender(char.gender); setAgeRange(char.ageRange);
-    setEthnicity(char.ethnicity); setHairStyle(char.hairStyle); setHairColor(char.hairColor);
-    setEyeColor(char.eyeColor); setBuild(char.build); setRefEntries([...char.refEntries]);
-    setCharLocked(char.locked); setExtraPrompt(char.extraPrompt || ""); setActiveCharId(char.id);
+    setCharName(char.name);
+    setCharDesc(char.desc);
+    setGender(char.gender);
+    setAgeRange(char.ageRange);
+    setEthnicity(char.ethnicity);
+    setHairStyle(char.hairStyle);
+    setHairColor(char.hairColor);
+    setEyeColor(char.eyeColor);
+    setBuild(char.build);
+    setRefEntries([...char.refEntries]);
+    setCharLocked(char.locked);
+    setExtraPrompt(char.extraPrompt || "");
+    setActiveCharId(char.id);
     setFormSection("generate");
   }
 
@@ -554,10 +590,10 @@ export default function ConsistencyPage() {
           await supabase.from("characters").update({ generated_images: accumulatedImages }).eq("id", activeCharId).eq("user_id", userId);
           setCharacters(prev => prev.map(c => c.id === activeCharId ? { ...c, generatedImages: accumulatedImages, generations: accumulatedImages.length } : c));
           try {
-            const raw = sessionStorage.getItem(SESSION_KEY);
+            const raw = localStorage.getItem(SESSION_KEY);
             if (raw) {
               const cached = JSON.parse(raw).map(row => row.id === activeCharId ? { ...row, generated_images: accumulatedImages } : row);
-              sessionStorage.setItem(SESSION_KEY, JSON.stringify(cached));
+              localStorage.setItem(SESSION_KEY, JSON.stringify(cached));
             }
           } catch {}
         }
@@ -568,7 +604,6 @@ export default function ConsistencyPage() {
 
   async function handleGenerate() {
     if (!activeChar || generating) return;
-    // FIX: Set ref immediately so Supabase background fetch won't overwrite state
     generatingRef.current = true;
     setGenerating(true);
 
@@ -581,7 +616,6 @@ export default function ConsistencyPage() {
     const hasRefs = effectiveRefs.length > 0;
     const frontOutputItem = { id: `${activeCharId}-${frontView.key}-${Date.now()}`, charId: activeCharId, prompt: frontView.shot, scene: frontView.label, url: null, createdAt: new Date().toISOString() };
 
-    // Only replace outputs for this character, keep others
     setOutputs(prev => [frontOutputItem, ...prev.filter(o => o.charId !== activeCharId)]);
     canvasRef.current?.scrollTo({ top: 0, behavior: "smooth" });
 
@@ -618,12 +652,11 @@ export default function ConsistencyPage() {
             generated_images: [url], cover_image: url,
             prompt: buildTraitsPayload({ charDesc: activeChar.desc, gender: activeChar.gender, ageRange: activeChar.ageRange, ethnicity: activeChar.ethnicity, hairStyle: activeChar.hairStyle, hairColor: activeChar.hairColor, eyeColor: activeChar.eyeColor, build: activeChar.build, charLocked: activeChar.locked, extraPrompt }),
           }).eq("id", activeCharId).eq("user_id", userId);
-          // Update sessionStorage cache with new image
           try {
-            const raw = sessionStorage.getItem(SESSION_KEY);
+            const raw = localStorage.getItem(SESSION_KEY);
             if (raw) {
               const cached = JSON.parse(raw).map(row => row.id === activeCharId ? { ...row, generated_images: [url], cover_image: url } : row);
-              sessionStorage.setItem(SESSION_KEY, JSON.stringify(cached));
+              localStorage.setItem(SESSION_KEY, JSON.stringify(cached));
             }
           } catch {}
         }
@@ -700,7 +733,6 @@ export default function ConsistencyPage() {
 
         <div style={{ display: "grid", gridTemplateColumns: "380px 1fr", height: "100%", overflow: "hidden" }}>
 
-          {/* LEFT PANEL */}
           <div style={{ borderRight: `1px solid ${C.border}`, background: "linear-gradient(180deg,rgba(7,9,15,0.98),rgba(9,11,17,0.98))", height: "100%", overflow: "hidden", display: "flex", flexDirection: "column", boxSizing: "border-box" }}>
 
             <div style={{ padding: "12px 16px 0", flexShrink: 0 }}>
@@ -875,7 +907,6 @@ export default function ConsistencyPage() {
             )}
           </div>
 
-          {/* RIGHT PANEL */}
           <div style={{ background: "rgba(4,5,12,0.95)", display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
 
             {activeView === "generate" && (<>
