@@ -897,7 +897,8 @@ const uid = user?.id ?? null;
           prompt: finalPrompt,
           size: testView.size,
           n: 1,
-          referenceImages: [...uploadedRefs, existingFront.url],
+          referenceImages: [],
+
           characterSeed: String(activeChar.id),
         }),
       });
