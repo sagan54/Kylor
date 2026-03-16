@@ -19,11 +19,12 @@ const CHAR_SESSION_KEY = "kylor_img_chars_cache_v2";
 // ─── Supabase helpers ─────────────────────────────────────────────────────────
 async function sbLoadAll(userId) {
   if (!userId) return [];
-  const { data, error } = await supabase
-    .from("image_generations")
-    .select("id, prompt, negative_prompt, ratio, mode, style, created_at, images")
-    .eq("user_id", userId)
-    .order("created_at", { ascending: false });
+const { data, error } = await supabase
+  .from("image_generations")
+  .select("id, prompt, images, created_at, mode, ratio, style")
+  .eq("user_id", userId)
+  .order("created_at", { ascending: false })
+  .limit(24);
 
   if (error) {
     console.error("sbLoadAll:", error.message);
