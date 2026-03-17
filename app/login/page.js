@@ -1,8 +1,7 @@
 "use client";
-
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabase";
 
 export default function LoginPage() {
@@ -61,6 +60,25 @@ export default function LoginPage() {
           padding: "32px",
         }}
       >
+        <button
+          onClick={() => router.back()}
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "8px",
+            border: "none",
+            background: "transparent",
+            color: "rgba(255,255,255,0.62)",
+            fontSize: "14px",
+            cursor: "pointer",
+            padding: 0,
+            marginBottom: "18px",
+            fontFamily: "inherit",
+          }}
+        >
+          ← Back to site
+        </button>
+
         <div
           style={{
             display: "inline-flex",
