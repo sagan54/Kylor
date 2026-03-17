@@ -19,12 +19,12 @@ const CHAR_SESSION_KEY = "kylor_img_chars_cache_v2";
 // ─── Supabase helpers ─────────────────────────────────────────────────────────
 async function sbLoadAll(userId) {
   if (!userId) return [];
-const { data, error } = await supabase
-  .from("image_generations")
-  .select("id, prompt, images, created_at, mode, ratio, style")
-  .eq("user_id", userId)
-  .order("created_at", { ascending: false })
-  .limit(24);
+  const { data, error } = await supabase
+    .from("image_generations")
+    .select("id, prompt, images, created_at, mode, ratio, style")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false })
+    .limit(24);
 
   if (error) {
     console.error("sbLoadAll:", error.message);
@@ -1466,7 +1466,7 @@ export default function ImagePage() {
   }
 
   async function handleGenerate() {
-    const basePrompt = selectedCharacter ? scenePrompt.trim() : prompt.trim();
+    const basePrompt = scenePrompt.trim();
     if (!basePrompt || generating) return;
 
     setGenerating(true);
@@ -2510,12 +2510,12 @@ export default function ImagePage() {
 
                   <motion.button
                     whileHover={
-                      (selectedCharacter ? scenePrompt.trim() : prompt.trim()) && !generating
+                      scenePrompt.trim() && !generating
                         ? { boxShadow: "0 18px 40px rgba(124,58,237,0.42)" }
                         : {}
                     }
                     whileTap={
-                      (selectedCharacter ? scenePrompt.trim() : prompt.trim()) && !generating
+                      scenePrompt.trim() && !generating
                         ? { scale: 0.98 }
                         : {}
                     }
@@ -2527,19 +2527,19 @@ export default function ImagePage() {
                       borderRadius: radius.md,
                       border: "none",
                       background:
-                        (selectedCharacter ? scenePrompt.trim() : prompt.trim()) && !generating
+                        scenePrompt.trim() && !generating
                           ? "linear-gradient(135deg,#4f46e5,#7c3aed)"
                           : "rgba(255,255,255,0.06)",
                       color:
-                        (selectedCharacter ? scenePrompt.trim() : prompt.trim()) && !generating
+                        scenePrompt.trim() && !generating
                           ? "white"
                           : C.textMuted,
                       cursor:
-                        (selectedCharacter ? scenePrompt.trim() : prompt.trim()) && !generating
+                        scenePrompt.trim() && !generating
                           ? "pointer"
                           : "default",
                       boxShadow:
-                        (selectedCharacter ? scenePrompt.trim() : prompt.trim()) && !generating
+                        scenePrompt.trim() && !generating
                           ? "0 10px 28px rgba(124,58,237,0.28)"
                           : "none",
                       display: "inline-flex",
