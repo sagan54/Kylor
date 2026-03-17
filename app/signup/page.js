@@ -67,8 +67,6 @@ export default function SignupPage() {
           padding: "32px",
         }}
       >
-
-        {/* Back Button */}
         <button
           onClick={() => router.back()}
           style={{
@@ -77,42 +75,16 @@ export default function SignupPage() {
             gap: "8px",
             border: "none",
             background: "transparent",
-            color: "rgba(255,255,255,0.62)",
+            color: "rgba(255,255,255,0.65)",
             fontSize: "14px",
             cursor: "pointer",
             padding: 0,
-            marginBottom: "18px",
+            marginBottom: "24px",
             fontFamily: "inherit",
           }}
         >
-          ← Back to site
+          ← Back to Kylor
         </button>
-
-        <div
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: "10px",
-            padding: "7px 13px",
-            border: "1px solid rgba(255,255,255,0.10)",
-            borderRadius: "999px",
-            background: "rgba(255,255,255,0.03)",
-            color: "rgba(255,255,255,0.76)",
-            fontSize: "13px",
-            marginBottom: "18px",
-          }}
-        >
-          <span
-            style={{
-              width: "8px",
-              height: "8px",
-              borderRadius: "999px",
-              background: "#7c3aed",
-              boxShadow: "0 0 12px #7c3aed",
-            }}
-          />
-          Kylor Access
-        </div>
 
         <h1
           style={{
