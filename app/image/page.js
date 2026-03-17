@@ -21,7 +21,7 @@ async function sbLoadAll(userId) {
   if (!userId) return [];
   const { data, error } = await supabase
     .from("image_generations")
-    .select("id, prompt, images, created_at, mode, ratio, style")
+    .select("id, prompt, negative_prompt, images, created_at, mode, ratio, style")
     .eq("user_id", userId)
     .order("created_at", { ascending: false })
     .limit(24);
@@ -521,21 +521,23 @@ function DropZone({ files, onFiles }) {
 function StylesPicker({ value, onChange, onClose }) {
   return (
     <motion.div
-      initial={{ opacity: 0, y: 8, scale: 0.97 }}
+      initial={{ opacity: 0, y: 10, scale: 0.98 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
-      exit={{ opacity: 0, y: 4, scale: 0.97 }}
-      transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+      exit={{ opacity: 0, y: 6, scale: 0.98 }}
+      transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
       style={{
         position: "absolute",
         left: 0,
         right: 0,
-        bottom: "calc(100% + 8px)",
+        bottom: "calc(100% + 10px)",
         zIndex: 20,
-        borderRadius: radius.lg,
+        borderRadius: 20,
         border: `1px solid ${C.border}`,
-        background: "rgba(12,14,22,0.99)",
-        backdropFilter: "blur(18px)",
-        boxShadow: "0 32px 80px rgba(0,0,0,0.6)",
+        background:
+          "linear-gradient(180deg, rgba(13,16,28,0.985), rgba(9,11,20,0.985))",
+        backdropFilter: "blur(20px)",
+        boxShadow:
+          "0 30px 90px rgba(0,0,0,0.58), 0 0 0 1px rgba(255,255,255,0.025) inset",
         padding: 14,
       }}
     >
@@ -544,32 +546,43 @@ function StylesPicker({ value, onChange, onClose }) {
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
-          marginBottom: 12,
+          gap: 12,
+          marginBottom: 14,
         }}
       >
-        <div
-          style={{
-            fontSize: 11,
-            fontWeight: 700,
-            letterSpacing: "0.08em",
-            textTransform: "uppercase",
-            color: C.textMuted,
-          }}
-        >
-          Choose Style
+        <div>
+          <div
+            style={{
+              fontSize: 10.5,
+              fontWeight: 700,
+              letterSpacing: "0.11em",
+              textTransform: "uppercase",
+              color: "#b8a8ff",
+              marginBottom: 4,
+            }}
+          >
+            Style Library
+          </div>
+          <div style={{ fontSize: 12, color: C.textMuted }}>
+            Pick a visual direction for this generation
+          </div>
         </div>
+
         <button
           onClick={onClose}
           style={{
-            border: "none",
-            background: "transparent",
+            width: 30,
+            height: 30,
+            borderRadius: 10,
+            border: `1px solid ${C.border}`,
+            background: "rgba(255,255,255,0.03)",
             color: C.textMuted,
             cursor: "pointer",
             display: "grid",
             placeItems: "center",
           }}
         >
-          <X size={14} />
+          <X size={13} />
         </button>
       </div>
 
@@ -577,53 +590,95 @@ function StylesPicker({ value, onChange, onClose }) {
         style={{
           display: "grid",
           gridTemplateColumns: "1fr 1fr",
-          gap: 6,
-          maxHeight: 260,
-          overflowY: "auto",
+          gap: 8,
         }}
       >
         {STYLES.map((s) => {
           const active = value === s.id;
+
           return (
             <motion.button
               key={s.id}
-              whileTap={{ scale: 0.96 }}
+              whileHover={{ y: -1 }}
+              whileTap={{ scale: 0.98 }}
               onClick={() => {
                 onChange(active ? null : s.id);
                 if (!active) onClose();
               }}
               style={{
-                padding: "10px 12px",
-                borderRadius: radius.sm,
-                border: `1px solid ${active ? s.color + "55" : C.border}`,
-                background: active ? s.color + "18" : C.surface,
+                position: "relative",
+                overflow: "hidden",
+                padding: "12px 12px 11px",
+                borderRadius: 14,
+                border: `1px solid ${active ? s.color + "55" : "rgba(255,255,255,0.07)"}`,
+                background: active
+                  ? `linear-gradient(180deg, ${s.color}18, rgba(255,255,255,0.03))`
+                  : "linear-gradient(180deg, rgba(255,255,255,0.035), rgba(255,255,255,0.02))",
                 cursor: "pointer",
                 textAlign: "left",
                 fontFamily: "inherit",
-                transition: "all 0.15s ease",
+                transition: "all 0.16s ease",
                 display: "grid",
-                gap: 3,
+                gap: 6,
+                minHeight: 78,
               }}
             >
+              <div
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  height: 2,
+                  background: active
+                    ? `linear-gradient(90deg, ${s.color}, rgba(255,255,255,0.2))`
+                    : "transparent",
+                }}
+              />
+
               <div
                 style={{
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "space-between",
+                  gap: 8,
                 }}
               >
-                <span
-                  style={{
-                    fontSize: 12.5,
-                    fontWeight: 600,
-                    color: active ? C.text : "rgba(255,255,255,0.85)",
-                  }}
-                >
-                  {s.label}
-                </span>
-                {active && <Check size={11} color={s.color} />}
+                <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+                  <div
+                    style={{
+                      width: 10,
+                      height: 10,
+                      borderRadius: 999,
+                      flexShrink: 0,
+                      background: s.color,
+                      boxShadow: `0 0 12px ${s.color}80`,
+                    }}
+                  />
+                  <span
+                    style={{
+                      fontSize: 13,
+                      fontWeight: 700,
+                      color: active ? C.text : "rgba(255,255,255,0.92)",
+                      whiteSpace: "nowrap",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                    }}
+                  >
+                    {s.label}
+                  </span>
+                </div>
+
+                {active && <Check size={12} color={s.color} />}
               </div>
-              <span style={{ fontSize: 10.5, color: C.textDim, lineHeight: 1.4 }}>
+
+              <span
+                style={{
+                  fontSize: 10.8,
+                  color: active ? "rgba(255,255,255,0.74)" : C.textDim,
+                  lineHeight: 1.45,
+                }}
+              >
                 {s.desc}
               </span>
             </motion.button>
@@ -635,12 +690,12 @@ function StylesPicker({ value, onChange, onClose }) {
         <button
           onClick={() => onChange(null)}
           style={{
-            marginTop: 10,
+            marginTop: 12,
             width: "100%",
-            padding: 8,
-            borderRadius: radius.sm,
+            height: 36,
+            borderRadius: 12,
             border: `1px solid ${C.border}`,
-            background: "transparent",
+            background: "rgba(255,255,255,0.025)",
             color: C.textMuted,
             fontSize: 12,
             cursor: "pointer",
@@ -1325,52 +1380,83 @@ export default function ImagePage() {
   }, [selectedCharacter]);
 
   useEffect(() => {
-    async function init() {
-      try {
-        const raw = localStorage.getItem(SESSION_KEY);
-        if (raw) {
-          const cached = JSON.parse(raw);
-          if (Array.isArray(cached) && cached.length > 0) {
-            setGroups(cached);
-            setDbLoaded(true);
-          }
+  let mounted = true;
+
+  async function init() {
+    try {
+      const raw = localStorage.getItem(SESSION_KEY);
+      if (raw) {
+        const cached = JSON.parse(raw);
+        if (mounted && Array.isArray(cached) && cached.length > 0) {
+          setGroups(cached);
         }
-      } catch {}
+      }
+    } catch {}
 
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
+    const { data: { session } } = await supabase.auth.getSession();
+    let uid = session?.user?.id ?? null;
 
-      const uid = session?.user?.id ?? null;
-      setUserId(uid);
-
-      const fresh = await sbLoadAll(uid);
-      setGroups(fresh);
-      setDbLoaded(true);
-
-      try {
-        localStorage.setItem(SESSION_KEY, JSON.stringify(fresh));
-      } catch {}
+    if (!uid) {
+      const { data: { user } } = await supabase.auth.getUser();
+      uid = user?.id ?? null;
     }
 
-    init();
+    if (!mounted) return;
 
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      const uid = session?.user?.id ?? null;
-      setUserId(uid);
-      const fresh = await sbLoadAll(uid);
-      setGroups(fresh);
+    setUserId(uid);
+
+    if (!uid) {
       setDbLoaded(true);
-      try {
-        localStorage.setItem(SESSION_KEY, JSON.stringify(fresh));
-      } catch {}
-    });
+      return;
+    }
 
-    return () => subscription.unsubscribe();
-  }, []);
+    const fresh = await sbLoadAll(uid);
 
+    if (!mounted) return;
+
+    setGroups(fresh);
+    setDbLoaded(true);
+
+    try {
+      localStorage.setItem(SESSION_KEY, JSON.stringify(fresh));
+    } catch {}
+  }
+
+  init();
+
+  const {
+    data: { subscription },
+  } = supabase.auth.onAuthStateChange(async (_event, session) => {
+    let uid = session?.user?.id ?? null;
+
+    if (!uid) {
+      const { data: { user } } = await supabase.auth.getUser();
+      uid = user?.id ?? null;
+    }
+
+    if (!mounted) return;
+
+    setUserId(uid);
+
+    if (!uid) return;
+
+    const fresh = await sbLoadAll(uid);
+
+    if (!mounted) return;
+
+    setGroups(fresh);
+    setDbLoaded(true);
+
+    try {
+      localStorage.setItem(SESSION_KEY, JSON.stringify(fresh));
+    } catch {}
+  });
+
+  return () => {
+    mounted = false;
+    subscription.unsubscribe();
+  };
+}, []);
   useEffect(() => {
     function handleOutside(e) {
       if (panelRef.current && !panelRef.current.contains(e.target)) {
@@ -2098,23 +2184,21 @@ export default function ImagePage() {
                       Defined Character Prompt
                     </div>
 
-                    <textarea
-                      value={prompt}
-                      readOnly
-                      rows={6}
-                      style={{
-                        width: "100%",
-                        border: "none",
-                        background: "transparent",
-                        color: "rgba(255,255,255,0.88)",
-                        resize: "none",
-                        fontFamily: "inherit",
-                        fontSize: 13,
-                        lineHeight: 1.65,
-                        outline: "none",
-                        boxSizing: "border-box",
-                      }}
-                    />
+                    <div
+  style={{
+    width: "100%",
+    background: "transparent",
+    color: "rgba(255,255,255,0.88)",
+    fontFamily: "inherit",
+    fontSize: 13,
+    lineHeight: 1.65,
+    boxSizing: "border-box",
+    whiteSpace: "pre-wrap",
+    wordBreak: "break-word",
+  }}
+>
+  {prompt}
+</div>
                   </div>
                 )}
 
