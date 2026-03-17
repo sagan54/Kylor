@@ -2184,15 +2184,19 @@ export default function ImagePage() {
                       Defined Character Prompt
                     </div>
 
-                    <div
+                   <div
   style={{
     width: "100%",
+    maxHeight: 150,
+    overflowY: "auto",
+    paddingRight: 4,
     background: "transparent",
     color: "rgba(255,255,255,0.88)",
     fontFamily: "inherit",
     fontSize: 13,
     lineHeight: 1.65,
     boxSizing: "border-box",
+    scrollbarWidth: "thin",
     whiteSpace: "pre-wrap",
     wordBreak: "break-word",
   }}
