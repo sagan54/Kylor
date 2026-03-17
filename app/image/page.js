@@ -2197,6 +2197,7 @@ export default function ImagePage() {
     lineHeight: 1.65,
     boxSizing: "border-box",
     scrollbarWidth: "thin",
+    scrollbarColor: "dark grey",
     whiteSpace: "pre-wrap",
     wordBreak: "break-word",
   }}
