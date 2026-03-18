@@ -18,16 +18,12 @@ import {
   ChevronRight,
   Bell,
   BellOff,
-  X,
   ChevronDown,
-  Folder,
   Upload,
   Zap,
-  Star,
   Download,
   Share2,
   Trash2,
-  Plus,
   Play,
   Film,
   SlidersHorizontal,
@@ -35,7 +31,7 @@ import {
   Layers3,
   Check,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 
 const C = {
   bg: "#0a0a0f",
@@ -251,8 +247,11 @@ function VideoCard({ item, view, onDelete }) {
             aspectRatio: "16 / 9",
             borderRadius: 14,
             overflow: "hidden",
-            background:
-              "linear-gradient(135deg, rgba(124,58,237,0.30), rgba(255,255,255,0.06), rgba(124,58,237,0.10))",
+            background: `
+              linear-gradient(135deg, rgba(124,58,237,0.26), rgba(255,255,255,0.05), rgba(59,130,246,0.10)),
+              radial-gradient(circle at 20% 20%, rgba(255,255,255,0.14), transparent 30%),
+              radial-gradient(circle at 80% 80%, rgba(124,58,237,0.20), transparent 34%)
+            `,
             border: `1px solid ${C.border}`,
             position: "relative",
           }}
@@ -318,23 +317,13 @@ function VideoCard({ item, view, onDelete }) {
         </div>
 
         <div style={{ display: "flex", gap: 8 }}>
-          <button
-            style={iconBtnStyle}
-            title="Download"
-          >
+          <button style={iconBtnStyle} title="Download">
             <Download size={16} />
           </button>
-          <button
-            style={iconBtnStyle}
-            title="Share"
-          >
+          <button style={iconBtnStyle} title="Share">
             <Share2 size={16} />
           </button>
-          <button
-            onClick={onDelete}
-            style={{ ...iconBtnStyle, color: "#ffb4b4" }}
-            title="Delete"
-          >
+          <button onClick={onDelete} style={{ ...iconBtnStyle, color: "#ffb4b4" }} title="Delete">
             <Trash2 size={16} />
           </button>
         </div>
@@ -356,8 +345,11 @@ function VideoCard({ item, view, onDelete }) {
         style={{
           aspectRatio: "16 / 9",
           position: "relative",
-          background:
-            "linear-gradient(135deg, rgba(124,58,237,0.30), rgba(255,255,255,0.06), rgba(124,58,237,0.10))",
+          background: `
+            linear-gradient(135deg, rgba(124,58,237,0.26), rgba(255,255,255,0.05), rgba(59,130,246,0.10)),
+            radial-gradient(circle at 20% 20%, rgba(255,255,255,0.14), transparent 30%),
+            radial-gradient(circle at 80% 80%, rgba(124,58,237,0.20), transparent 34%)
+          `,
         }}
       >
         <div
@@ -564,8 +556,12 @@ export default function VideoPage() {
     <main
       style={{
         minHeight: "100vh",
-        background:
-          "radial-gradient(circle at top, rgba(124,58,237,0.12), transparent 20%), linear-gradient(180deg, #09090d 0%, #0b0b12 100%)",
+        background: `
+          radial-gradient(circle at 12% 18%, rgba(124,58,237,0.16), transparent 22%),
+          radial-gradient(circle at 85% 10%, rgba(59,130,246,0.10), transparent 20%),
+          radial-gradient(circle at 50% 100%, rgba(124,58,237,0.08), transparent 28%),
+          linear-gradient(180deg, #07070b 0%, #0a0a12 45%, #090910 100%)
+        `,
         color: C.text,
       }}
     >
@@ -576,7 +572,6 @@ export default function VideoPage() {
           minHeight: "100vh",
         }}
       >
-        {/* Sidebar */}
         <aside
           style={{
             borderRight: `1px solid ${C.border}`,
@@ -677,9 +672,7 @@ export default function VideoPage() {
           </div>
         </aside>
 
-        {/* Main */}
         <section style={{ padding: 22 }}>
-          {/* Top bar */}
           <div
             style={{
               display: "flex",
@@ -690,11 +683,52 @@ export default function VideoPage() {
             }}
           >
             <div>
-              <div style={{ fontSize: 26, fontWeight: 800, letterSpacing: -0.3 }}>
-                Video Generation
+              <div
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 8,
+                  padding: "6px 10px",
+                  borderRadius: 999,
+                  border: `1px solid ${C.accentBorder}`,
+                  background: "rgba(124,58,237,0.10)",
+                  color: C.textSoft,
+                  fontSize: 11,
+                  fontWeight: 800,
+                  letterSpacing: 0.4,
+                  textTransform: "uppercase",
+                  marginBottom: 10,
+                }}
+              >
+                <Sparkles size={12} />
+                Kylor Video Engine
               </div>
-              <div style={{ color: C.textDim, fontSize: 13, marginTop: 4 }}>
-                Create cinematic AI videos with prompt-based direction and motion controls.
+
+              <div
+                style={{
+                  fontSize: 30,
+                  fontWeight: 900,
+                  letterSpacing: -0.6,
+                  lineHeight: 1.05,
+                  background: "linear-gradient(180deg, #ffffff 0%, rgba(255,255,255,0.78) 100%)",
+                  WebkitBackgroundClip: "text",
+                  WebkitTextFillColor: "transparent",
+                }}
+              >
+                Cinematic Video Generation
+              </div>
+
+              <div
+                style={{
+                  color: C.textDim,
+                  fontSize: 13,
+                  marginTop: 8,
+                  maxWidth: 620,
+                  lineHeight: 1.6,
+                }}
+              >
+                Create premium AI video shots with prompt direction, camera motion, visual styling,
+                and reference-based control.
               </div>
             </div>
 
@@ -724,7 +758,6 @@ export default function VideoPage() {
             </div>
           </div>
 
-          {/* Layout */}
           <div
             style={{
               display: "grid",
@@ -733,13 +766,14 @@ export default function VideoPage() {
               alignItems: "start",
             }}
           >
-            {/* Left panel */}
             <div
               style={{
-                background: "linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.02))",
-                border: `1px solid ${C.border}`,
-                borderRadius: 24,
+                background: "linear-gradient(180deg, rgba(255,255,255,0.035), rgba(255,255,255,0.018))",
+                border: `1px solid ${C.borderStrong}`,
+                borderRadius: 26,
                 padding: 18,
+                boxShadow: "0 18px 50px rgba(0,0,0,0.22)",
+                backdropFilter: "blur(10px)",
               }}
             >
               <SectionTitle
@@ -750,10 +784,14 @@ export default function VideoPage() {
 
               <div
                 style={{
-                  borderRadius: 20,
-                  border: `1px solid ${C.border}`,
-                  background: C.soft,
+                  borderRadius: 24,
+                  border: `1px solid ${C.borderStrong}`,
+                  background: `
+                    linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.02)),
+                    ${C.soft}
+                  `,
                   overflow: "hidden",
+                  boxShadow: "0 20px 60px rgba(0,0,0,0.28)",
                 }}
               >
                 <textarea
@@ -807,9 +845,7 @@ export default function VideoPage() {
                     ))}
                   </div>
 
-                  <div style={{ fontSize: 12, color: C.textDim }}>
-                    {prompt.length} characters
-                  </div>
+                  <div style={{ fontSize: 12, color: C.textDim }}>{prompt.length} characters</div>
                 </div>
               </div>
 
@@ -859,9 +895,18 @@ export default function VideoPage() {
                     gap: 12,
                   }}
                 >
-                  <UploadCard title="Character Reference" sub="Maintain character look across video shots." />
-                  <UploadCard title="Style Reference" sub="Match visual language, lighting, and tone." />
-                  <UploadCard title="First Frame / Scene" sub="Guide composition and starting frame." />
+                  <UploadCard
+                    title="Character Reference"
+                    sub="Maintain character look across video shots."
+                  />
+                  <UploadCard
+                    title="Style Reference"
+                    sub="Match visual language, lighting, and tone."
+                  />
+                  <UploadCard
+                    title="First Frame / Scene"
+                    sub="Guide composition and starting frame."
+                  />
                 </div>
               </div>
 
@@ -877,21 +922,37 @@ export default function VideoPage() {
                   onClick={handleGenerate}
                   disabled={isGenerating || !prompt.trim()}
                   style={{
-                    padding: "14px 18px",
-                    borderRadius: 16,
+                    position: "relative",
+                    overflow: "hidden",
+                    padding: "14px 20px",
+                    borderRadius: 18,
                     border: `1px solid ${C.accentBorder}`,
                     background: isGenerating
-                      ? "rgba(124,58,237,0.10)"
-                      : "linear-gradient(180deg, rgba(124,58,237,0.30), rgba(124,58,237,0.18))",
+                      ? "rgba(124,58,237,0.12)"
+                      : "linear-gradient(180deg, rgba(139,92,246,0.34), rgba(124,58,237,0.18))",
                     color: C.text,
                     fontSize: 14,
                     fontWeight: 800,
                     cursor: isGenerating || !prompt.trim() ? "not-allowed" : "pointer",
-                    boxShadow: `0 10px 30px ${C.accentGlow}`,
-                    minWidth: 180,
+                    boxShadow: "0 14px 40px rgba(124,58,237,0.30)",
+                    minWidth: 190,
                   }}
                 >
-                  {isGenerating ? "Generating..." : "Generate Video"}
+                  <span
+                    style={{
+                      position: "absolute",
+                      inset: 0,
+                      background:
+                        "linear-gradient(120deg, transparent 0%, rgba(255,255,255,0.12) 35%, transparent 70%)",
+                      transform: "translateX(-100%)",
+                      animation:
+                        !isGenerating && prompt.trim() ? "kylorShine 2.6s linear infinite" : "none",
+                      pointerEvents: "none",
+                    }}
+                  />
+                  <span style={{ position: "relative", zIndex: 2 }}>
+                    {isGenerating ? "Generating..." : "Generate Video"}
+                  </span>
                 </button>
 
                 <button
@@ -911,13 +972,14 @@ export default function VideoPage() {
               </div>
             </div>
 
-            {/* Middle panel */}
             <div
               style={{
-                background: "linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.02))",
-                border: `1px solid ${C.border}`,
-                borderRadius: 24,
+                background: "linear-gradient(180deg, rgba(255,255,255,0.035), rgba(255,255,255,0.018))",
+                border: `1px solid ${C.borderStrong}`,
+                borderRadius: 26,
                 padding: 18,
+                boxShadow: "0 18px 50px rgba(0,0,0,0.22)",
+                backdropFilter: "blur(10px)",
               }}
             >
               <SectionTitle
@@ -1061,7 +1123,6 @@ export default function VideoPage() {
               </div>
             </div>
 
-            {/* Right settings */}
             <AnimatePresence>
               {settingsOpen && (
                 <motion.div
@@ -1070,10 +1131,12 @@ export default function VideoPage() {
                   exit={{ opacity: 0, x: 16 }}
                   transition={{ duration: 0.22 }}
                   style={{
-                    background: "linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.02))",
-                    border: `1px solid ${C.border}`,
-                    borderRadius: 24,
+                    background: "linear-gradient(180deg, rgba(255,255,255,0.035), rgba(255,255,255,0.018))",
+                    border: `1px solid ${C.borderStrong}`,
+                    borderRadius: 26,
                     padding: 18,
+                    boxShadow: "0 18px 50px rgba(0,0,0,0.22)",
+                    backdropFilter: "blur(10px)",
                   }}
                 >
                   <SectionTitle
@@ -1145,14 +1208,15 @@ export default function VideoPage() {
             </AnimatePresence>
           </div>
 
-          {/* Outputs */}
           <div
             style={{
               marginTop: 18,
-              background: "linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.02))",
-              border: `1px solid ${C.border}`,
-              borderRadius: 24,
+              background: "linear-gradient(180deg, rgba(255,255,255,0.035), rgba(255,255,255,0.018))",
+              border: `1px solid ${C.borderStrong}`,
+              borderRadius: 26,
               padding: 18,
+              boxShadow: "0 18px 50px rgba(0,0,0,0.22)",
+              backdropFilter: "blur(10px)",
             }}
           >
             <div
@@ -1301,6 +1365,17 @@ export default function VideoPage() {
           </div>
         </section>
       </div>
+
+      <style jsx>{`
+        @keyframes kylorShine {
+          0% {
+            transform: translateX(-100%);
+          }
+          100% {
+            transform: translateX(160%);
+          }
+        }
+      `}</style>
     </main>
   );
 }
