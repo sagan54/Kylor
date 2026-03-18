@@ -18,1205 +18,596 @@ import {
   ChevronRight,
   Bell,
   BellOff,
+  X,
   ChevronDown,
+  Folder,
   Upload,
   Zap,
+  Star,
   Download,
   Share2,
   Trash2,
-  Play,
-  Film,
-  SlidersHorizontal,
-  Clock3,
-  Layers3,
+  Plus,
+  Music,
   Check,
+  Copy,
+  Clock3,
+  Play,
+  CloudUpload,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useRef, useState, useCallback, useMemo } from "react";
+
+const SESSION_KEY = "kylor_video_cache_v1";
 
 const C = {
-  bg: "#0a0a0f",
-  panel: "#111119",
-  panel2: "#151520",
-  soft: "#1b1b28",
-  soft2: "#202032",
-  border: "rgba(255,255,255,0.08)",
-  borderStrong: "rgba(255,255,255,0.14)",
-  text: "#f5f7fb",
-  textSoft: "rgba(245,247,251,0.72)",
-  textDim: "rgba(245,247,251,0.52)",
   accent: "#7c3aed",
-  accentSoft: "rgba(124,58,237,0.16)",
-  accentBorder: "rgba(124,58,237,0.36)",
-  accentGlow: "rgba(124,58,237,0.28)",
-  green: "#22c55e",
-  yellow: "#f59e0b",
-  red: "#ef4444",
+  accentSoft: "rgba(124,58,237,0.15)",
+  accentBorder: "rgba(124,58,237,0.35)",
+  accentGlow: "rgba(124,58,237,0.25)",
+  indigo: "#4f46e5",
+  border: "rgba(255,255,255,0.07)",
+  borderHover: "rgba(255,255,255,0.13)",
+  surface: "rgba(255,255,255,0.03)",
+  surfaceHover: "rgba(255,255,255,0.055)",
+  text: "white",
+  textMuted: "rgba(255,255,255,0.52)",
+  textDim: "rgba(255,255,255,0.32)",
+  bg: "#05070c",
+  sidebar: "#080a10",
 };
 
-function SectionTitle({ icon: Icon, title, sub }) {
+const radius = {
+  sm: "10px",
+  md: "14px",
+  lg: "18px",
+  xl: "22px",
+  full: "999px",
+};
+
+const SIDEBAR_ITEMS = [
+  { label: "Home", icon: Compass, href: "/" },
+  { label: "Explore", icon: Compass, href: "/explore" },
+  { label: "Story", icon: Clapperboard, href: "/story" },
+  { label: "Image", icon: ImageIcon, href: "/image" },
+  { label: "Video", icon: Video, href: "/video", active: true },
+  { label: "Consistency", icon: UserCircle2, href: "/consistency" },
+  { label: "Motion", icon: Orbit, href: "#" },
+  { label: "Projects", icon: FolderKanban, href: "/story" },
+  { label: "Settings", icon: Settings, href: "#" },
+];
+
+const CONTENT_TABS = ["All", "Images", "Videos", "Audio"];
+const VIDEO_MODES = ["Text to Video", "Image to Video", "Frame to Video"];
+const QUALITIES = ["720p", "1080p", "2K HD", "4K"];
+const DURATIONS = ["3 sec", "5 sec", "8 sec", "10 sec"];
+const RATIOS = ["9:16", "1:1", "4:5", "16:9", "21:9"];
+const FPS_OPTIONS = ["24 FPS", "30 FPS", "60 FPS"];
+const OUTPUTS = [1, 2, 4];
+const MOTIONS = [
+  "Static",
+  "Slow Push In",
+  "Pull Back",
+  "Orbit Shot",
+  "Tracking Shot",
+  "Drone Rise",
+  "Handheld",
+  "Tilt Up",
+];
+
+const VIDEO_GRADIENTS = [
+  "linear-gradient(135deg, rgba(79,70,229,0.55), rgba(124,58,237,0.35))",
+  "linear-gradient(135deg, rgba(124,58,237,0.5), rgba(17,17,34,0.9))",
+  "linear-gradient(135deg, rgba(49,46,129,0.65), rgba(79,70,229,0.4))",
+  "linear-gradient(135deg, rgba(91,33,182,0.55), rgba(55,48,163,0.45))",
+  "linear-gradient(135deg, rgba(67,56,202,0.6), rgba(124,58,237,0.35))",
+];
+
+function fmtDate(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+    d.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    }) +
+    " · " +
+    d.toLocaleTimeString("en-US", {
+      hour: "2-digit",
+      minute: "2-digit",
+    })
+  );
+}
+
+function SidebarItem({ item }) {
+  const Icon = item.icon;
+
+  const inner = (
+    <motion.div
+      whileHover={{ scale: 1.03 }}
+      whileTap={{ scale: 0.97 }}
+      style={{
+        display: "grid",
+        justifyItems: "center",
+        gap: "6px",
+        padding: "10px 6px",
+        borderRadius: radius.lg,
+        background: item.active
+          ? "linear-gradient(160deg,rgba(79,70,229,0.22),rgba(124,58,237,0.14))"
+          : "transparent",
+        border: `1px solid ${item.active ? C.border : "transparent"}`,
+        color: item.active ? C.text : C.textMuted,
+        cursor: "pointer",
+        transition: "all 0.18s ease",
+      }}
+    >
       <div
         style={{
-          width: 34,
-          height: 34,
+          width: 36,
+          height: 36,
           borderRadius: 12,
           display: "grid",
           placeItems: "center",
-          background: C.accentSoft,
-          border: `1px solid ${C.accentBorder}`,
-          color: C.text,
-          flexShrink: 0,
+          background: item.active
+            ? "rgba(255,255,255,0.07)"
+            : "rgba(255,255,255,0.02)",
         }}
       >
-        <Icon size={16} />
+        <Icon size={17} />
       </div>
-      <div>
-        <div style={{ color: C.text, fontSize: 15, fontWeight: 700 }}>{title}</div>
-        {sub ? (
-          <div style={{ color: C.textDim, fontSize: 12, marginTop: 2 }}>{sub}</div>
-        ) : null}
-      </div>
+      <span style={{ fontSize: "10.5px", textAlign: "center", lineHeight: 1.2 }}>
+        {item.label}
+      </span>
+    </motion.div>
+  );
+
+  return item.href === "#" ? (
+    <div>{inner}</div>
+  ) : (
+    <Link href={item.href} style={{ textDecoration: "none", color: "inherit" }}>
+      {inner}
+    </Link>
+  );
+}
+
+function SegmentControl({ options, value, onChange }) {
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: `repeat(${options.length},1fr)`,
+        gap: 6,
+        padding: 4,
+        borderRadius: radius.lg,
+        background: "rgba(255,255,255,0.03)",
+        border: `1px solid ${C.border}`,
+      }}
+    >
+      {options.map((opt) => {
+        const active = opt === value;
+        return (
+          <motion.button
+            key={opt}
+            onClick={() => onChange(opt)}
+            whileTap={{ scale: 0.96 }}
+            style={{
+              height: 36,
+              borderRadius: radius.sm,
+              border: active
+                ? `1px solid ${C.accentBorder}`
+                : "1px solid transparent",
+              background: active
+                ? "linear-gradient(160deg,rgba(79,70,229,0.18),rgba(124,58,237,0.13))"
+                : "transparent",
+              color: active ? "white" : C.textMuted,
+              fontSize: 13,
+              cursor: "pointer",
+              fontFamily: "inherit",
+              transition: "all 0.16s ease",
+            }}
+          >
+            {opt}
+          </motion.button>
+        );
+      })}
     </div>
   );
 }
 
-function PillButton({ active, children, onClick }) {
-  return (
-    <button
-      onClick={onClick}
-      style={{
-        padding: "10px 14px",
-        borderRadius: 12,
-        border: `1px solid ${active ? C.accentBorder : C.border}`,
-        background: active ? C.accentSoft : "rgba(255,255,255,0.03)",
-        color: C.text,
-        fontSize: 13,
-        fontWeight: 600,
-        cursor: "pointer",
-        transition: "0.2s ease",
-      }}
-    >
-      {children}
-    </button>
+function DropZone({ files, onFiles, label = "Drop frames or browse" }) {
+  const [dragging, setDragging] = useState(false);
+  const inputRef = useRef(null);
+
+  const handleDrop = useCallback(
+    (e) => {
+      e.preventDefault();
+      setDragging(false);
+      const dropped = Array.from(e.dataTransfer.files).filter((f) =>
+        f.type.startsWith("image/")
+      );
+      if (dropped.length) onFiles((p) => [...p, ...dropped].slice(0, 10));
+    },
+    [onFiles]
   );
-}
-
-function SelectCard({ label, value, options, onChange }) {
-  const [open, setOpen] = useState(false);
 
   return (
-    <div style={{ position: "relative" }}>
-      <div
-        style={{
-          color: C.textSoft,
-          fontSize: 12,
-          marginBottom: 8,
-          fontWeight: 600,
+    <div style={{ display: "grid", gap: 8 }}>
+      <motion.div
+        onDragOver={(e) => {
+          e.preventDefault();
+          setDragging(true);
         }}
-      >
-        {label}
-      </div>
-
-      <button
-        onClick={() => setOpen((p) => !p)}
+        onDragLeave={() => setDragging(false)}
+        onDrop={handleDrop}
+        onClick={() => inputRef.current?.click()}
+        animate={{
+          borderColor: dragging ? C.accent : "rgba(255,255,255,0.08)",
+          background: dragging ? C.accentSoft : C.surface,
+        }}
         style={{
-          width: "100%",
+          borderRadius: radius.md,
+          border: "1.5px dashed rgba(255,255,255,0.08)",
+          padding: "12px 14px",
+          cursor: "pointer",
           display: "flex",
           alignItems: "center",
-          justifyContent: "space-between",
-          gap: 10,
-          padding: "13px 14px",
-          borderRadius: 14,
-          background: C.soft,
-          border: `1px solid ${C.border}`,
-          color: C.text,
-          cursor: "pointer",
+          gap: 12,
         }}
       >
-        <span style={{ fontSize: 13, fontWeight: 600 }}>{value}</span>
-        <ChevronDown size={16} style={{ opacity: 0.8 }} />
-      </button>
+        <input
+          ref={inputRef}
+          type="file"
+          accept="image/*"
+          multiple
+          style={{ display: "none" }}
+          onChange={(e) => {
+            onFiles((p) =>
+              [
+                ...p,
+                ...Array.from(e.target.files).filter((f) =>
+                  f.type.startsWith("image/")
+                ),
+              ].slice(0, 10)
+            );
+            e.target.value = "";
+          }}
+        />
+        <div
+          style={{
+            width: 34,
+            height: 34,
+            borderRadius: radius.sm,
+            flexShrink: 0,
+            background: C.accentSoft,
+            border: `1px solid ${C.accentBorder}`,
+            display: "grid",
+            placeItems: "center",
+          }}
+        >
+          <Upload size={14} color="#a78bfa" />
+        </div>
 
-      <AnimatePresence>
-        {open && (
-          <motion.div
-            initial={{ opacity: 0, y: 8, scale: 0.98 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 8, scale: 0.98 }}
-            transition={{ duration: 0.18 }}
-            style={{
-              position: "absolute",
-              zIndex: 20,
-              top: "calc(100% + 8px)",
-              left: 0,
-              right: 0,
-              background: C.panel2,
-              border: `1px solid ${C.borderStrong}`,
-              borderRadius: 16,
-              overflow: "hidden",
-              boxShadow: `0 18px 40px ${C.accentGlow}`,
-            }}
-          >
-            {options.map((opt) => (
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 13, color: C.text, fontWeight: 500 }}>
+            {label.split("browse")[0]}
+            <span style={{ color: "#a78bfa" }}>browse</span>
+          </div>
+          <div style={{ fontSize: 11, color: C.textMuted, marginTop: 2 }}>
+            PNG, JPG, WEBP · max 10 refs
+          </div>
+        </div>
+
+        <div
+          style={{
+            fontSize: 12,
+            color: files.length > 0 ? "#a78bfa" : C.textDim,
+            fontWeight: 600,
+          }}
+        >
+          {files.length}/10
+        </div>
+      </motion.div>
+
+      {files.length > 0 && (
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {files.map((file, i) => (
+            <div
+              key={i}
+              style={{
+                position: "relative",
+                width: 44,
+                height: 44,
+                borderRadius: 8,
+                overflow: "hidden",
+                border: `1px solid ${C.accentBorder}`,
+              }}
+            >
+              <img
+                src={URL.createObjectURL(file)}
+                alt=""
+                style={{ width: "100%", height: "100%", objectFit: "cover" }}
+              />
               <button
-                key={opt}
-                onClick={() => {
-                  onChange(opt);
-                  setOpen(false);
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onFiles((p) => p.filter((_, j) => j !== i));
                 }}
                 style={{
-                  width: "100%",
-                  textAlign: "left",
-                  padding: "12px 14px",
+                  position: "absolute",
+                  top: 2,
+                  right: 2,
+                  width: 16,
+                  height: 16,
+                  borderRadius: 999,
+                  background: "rgba(0,0,0,0.75)",
                   border: "none",
-                  borderBottom: `1px solid ${C.border}`,
-                  background: opt === value ? C.accentSoft : "transparent",
-                  color: C.text,
-                  fontSize: 13,
+                  color: "white",
+                  display: "grid",
+                  placeItems: "center",
                   cursor: "pointer",
                 }}
               >
-                {opt}
+                <X size={9} />
               </button>
-            ))}
-          </motion.div>
-        )}
-      </AnimatePresence>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
 
-function UploadCard({ title, sub }) {
-  return (
-    <button
-      style={{
-        width: "100%",
-        minHeight: 120,
-        borderRadius: 18,
-        border: `1px dashed ${C.borderStrong}`,
-        background: "linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.03))",
-        color: C.text,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        flexDirection: "column",
-        gap: 10,
-        cursor: "pointer",
-        padding: 16,
-      }}
-    >
-      <div
-        style={{
-          width: 42,
-          height: 42,
-          borderRadius: 14,
-          display: "grid",
-          placeItems: "center",
-          background: C.accentSoft,
-          border: `1px solid ${C.accentBorder}`,
-        }}
-      >
-        <Upload size={18} />
-      </div>
-      <div style={{ fontSize: 13, fontWeight: 700 }}>{title}</div>
-      <div style={{ fontSize: 12, color: C.textDim, textAlign: "center", lineHeight: 1.45 }}>
-        {sub}
-      </div>
-    </button>
-  );
-}
+function VideoOutputCard({
+  group,
+  isLatest,
+  onDelete,
+  onToggleFavorite,
+  onDownload,
+  onShare,
+  onVariation,
+  generating,
+}) {
+  const [copiedPrompt, setCopiedPrompt] = useState(false);
 
-function VideoCard({ item, view, onDelete }) {
-  if (view === "list") {
-    return (
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "220px 1fr auto",
-          gap: 16,
-          alignItems: "center",
-          padding: 14,
-          borderRadius: 18,
-          border: `1px solid ${C.border}`,
-          background: "rgba(255,255,255,0.02)",
-        }}
-      >
-        <div
-          style={{
-            aspectRatio: "16 / 9",
-            borderRadius: 14,
-            overflow: "hidden",
-            background: `
-              linear-gradient(135deg, rgba(124,58,237,0.26), rgba(255,255,255,0.05), rgba(59,130,246,0.10)),
-              radial-gradient(circle at 20% 20%, rgba(255,255,255,0.14), transparent 30%),
-              radial-gradient(circle at 80% 80%, rgba(124,58,237,0.20), transparent 34%)
-            `,
-            border: `1px solid ${C.border}`,
-            position: "relative",
-          }}
-        >
-          <div
-            style={{
-              position: "absolute",
-              inset: 0,
-              display: "grid",
-              placeItems: "center",
-            }}
-          >
-            <div
-              style={{
-                width: 52,
-                height: 52,
-                borderRadius: 999,
-                display: "grid",
-                placeItems: "center",
-                background: "rgba(0,0,0,0.35)",
-                border: `1px solid ${C.borderStrong}`,
-                backdropFilter: "blur(8px)",
-              }}
-            >
-              <Play size={20} fill="white" />
-            </div>
-          </div>
-        </div>
-
-        <div>
-          <div style={{ fontSize: 14, fontWeight: 700, color: C.text, marginBottom: 6 }}>
-            {item.title}
-          </div>
-          <div
-            style={{
-              fontSize: 12,
-              color: C.textDim,
-              lineHeight: 1.55,
-              marginBottom: 10,
-            }}
-          >
-            {item.prompt}
-          </div>
-
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-            {[item.duration, item.ratio, item.style, item.motion].map((tag) => (
-              <span
-                key={tag}
-                style={{
-                  padding: "7px 10px",
-                  borderRadius: 999,
-                  fontSize: 11,
-                  fontWeight: 700,
-                  color: C.textSoft,
-                  background: "rgba(255,255,255,0.04)",
-                  border: `1px solid ${C.border}`,
-                }}
-              >
-                {tag}
-              </span>
-            ))}
-          </div>
-        </div>
-
-        <div style={{ display: "flex", gap: 8 }}>
-          <button style={iconBtnStyle} title="Download">
-            <Download size={16} />
-          </button>
-          <button style={iconBtnStyle} title="Share">
-            <Share2 size={16} />
-          </button>
-          <button onClick={onDelete} style={{ ...iconBtnStyle, color: "#ffb4b4" }} title="Delete">
-            <Trash2 size={16} />
-          </button>
-        </div>
-      </div>
-    );
+  async function copyPrompt() {
+    if (!group.prompt) return;
+    try {
+      await navigator.clipboard.writeText(group.prompt);
+      setCopiedPrompt(true);
+      setTimeout(() => setCopiedPrompt(false), 1800);
+    } catch {}
   }
 
   return (
     <motion.div
-      layout
+      initial={{ opacity: 0, y: 24 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
       style={{
         borderRadius: 20,
+        border: `1px solid ${isLatest ? C.accentBorder : C.border}`,
+        background: isLatest ? "rgba(124,58,237,0.04)" : "rgba(255,255,255,0.015)",
         overflow: "hidden",
-        border: `1px solid ${C.border}`,
-        background: "rgba(255,255,255,0.02)",
+        boxShadow: isLatest
+          ? "0 0 0 1px rgba(124,58,237,0.08) inset, 0 8px 32px rgba(0,0,0,0.3)"
+          : "none",
       }}
     >
       <div
         style={{
-          aspectRatio: "16 / 9",
-          position: "relative",
-          background: `
-            linear-gradient(135deg, rgba(124,58,237,0.26), rgba(255,255,255,0.05), rgba(59,130,246,0.10)),
-            radial-gradient(circle at 20% 20%, rgba(255,255,255,0.14), transparent 30%),
-            radial-gradient(circle at 80% 80%, rgba(124,58,237,0.20), transparent 34%)
-          `,
+          padding: "12px 16px",
+          borderBottom: `1px solid ${C.border}`,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
         }}
       >
-        <div
-          style={{
-            position: "absolute",
-            inset: 0,
-            background:
-              "radial-gradient(circle at 20% 20%, rgba(255,255,255,0.16), transparent 30%), radial-gradient(circle at 80% 80%, rgba(124,58,237,0.22), transparent 32%)",
-          }}
-        />
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div
+            style={{
+              width: 28,
+              height: 28,
+              borderRadius: 9,
+              flexShrink: 0,
+              background: "linear-gradient(135deg,#6D5CFF,#9d4edd)",
+              display: "grid",
+              placeItems: "center",
+              fontWeight: 800,
+              fontSize: 11,
+              color: "#fff",
+            }}
+          >
+            V1
+          </div>
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: C.text }}>Kylor Video</div>
+            <div style={{ fontSize: 11, color: C.textMuted }}>{fmtDate(group.createdAt)}</div>
+          </div>
+          {isLatest && (
+            <div
+              style={{
+                padding: "2px 8px",
+                borderRadius: radius.full,
+                background: C.accentSoft,
+                border: `1px solid ${C.accentBorder}`,
+                fontSize: 10.5,
+                color: "#c4b5fd",
+                fontWeight: 700,
+              }}
+            >
+              Latest
+            </div>
+          )}
+        </div>
 
+        <div style={{ display: "flex", gap: 6 }}>
+          {[
+            {
+              icon: Star,
+              action: () => onToggleFavorite?.(group.id),
+              active: group.starred,
+              activeColor: "#fbbf24",
+              activeFill: "#fbbf24",
+            },
+            { icon: Download, action: () => onDownload?.(group) },
+            { icon: Share2, action: () => onShare?.(group) },
+            { icon: Trash2, action: () => onDelete?.(group.id), danger: true },
+          ].map(({ icon: Icon, action, active, activeColor, activeFill, danger }, i) => (
+            <button
+              key={i}
+              onClick={action}
+              style={{
+                width: 30,
+                height: 30,
+                borderRadius: 9,
+                cursor: "pointer",
+                border: `1px solid ${
+                  danger
+                    ? "rgba(248,113,113,0.25)"
+                    : active
+                    ? `${activeColor}40`
+                    : C.border
+                }`,
+                background: danger
+                  ? "rgba(248,113,113,0.07)"
+                  : active
+                  ? `${activeColor}12`
+                  : C.surface,
+                color: danger ? "#f87171" : active ? activeColor : C.textMuted,
+                display: "grid",
+                placeItems: "center",
+              }}
+            >
+              <Icon size={13} fill={active && activeFill ? activeFill : "none"} />
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 320px" }}>
         <div
           style={{
-            position: "absolute",
-            inset: 0,
+            position: "relative",
+            minHeight: 360,
+            background: VIDEO_GRADIENTS[(group.id || 0) % VIDEO_GRADIENTS.length],
+            borderRight: `1px solid ${C.border}`,
+            overflow: "hidden",
             display: "grid",
             placeItems: "center",
           }}
         >
           <div
             style={{
+              position: "absolute",
+              inset: 0,
+              background:
+                "radial-gradient(circle at 20% 20%, rgba(255,255,255,0.14), transparent 22%), radial-gradient(circle at 80% 80%, rgba(124,58,237,0.25), transparent 28%)",
+            }}
+          />
+
+          <div
+            style={{
+              position: "absolute",
+              top: 12,
+              left: 12,
+              display: "flex",
+              gap: 6,
+              flexWrap: "wrap",
+            }}
+          >
+            {[group.duration, group.ratio].filter(Boolean).map((tag) => (
+              <div
+                key={tag}
+                style={{
+                  height: 24,
+                  padding: "0 10px",
+                  borderRadius: radius.full,
+                  background: "rgba(0,0,0,0.38)",
+                  border: `1px solid rgba(255,255,255,0.12)`,
+                  color: "rgba(255,255,255,0.88)",
+                  fontSize: 11,
+                  display: "inline-flex",
+                  alignItems: "center",
+                }}
+              >
+                {tag}
+              </div>
+            ))}
+          </div>
+
+          <div
+            style={{
               width: 58,
               height: 58,
               borderRadius: 999,
+              background: "rgba(0,0,0,0.38)",
+              border: `1px solid rgba(255,255,255,0.18)`,
               display: "grid",
               placeItems: "center",
-              background: "rgba(0,0,0,0.38)",
-              border: `1px solid ${C.borderStrong}`,
               backdropFilter: "blur(10px)",
             }}
           >
-            <Play size={22} fill="white" />
+            <Play size={22} fill="white" color="white" />
+          </div>
+
+          <div
+            style={{
+              position: "absolute",
+              top: 12,
+              right: 12,
+              padding: "4px 10px",
+              borderRadius: radius.full,
+              background: "rgba(0,0,0,0.58)",
+              backdropFilter: "blur(8px)",
+              fontSize: 11,
+              color: "rgba(255,255,255,0.55)",
+            }}
+          >
+            Preview
           </div>
         </div>
 
         <div
           style={{
-            position: "absolute",
-            left: 12,
-            top: 12,
+            padding: 16,
             display: "flex",
-            gap: 8,
+            flexDirection: "column",
+            gap: 12,
+            overflow: "hidden",
           }}
         >
-          <span style={metaTag}>{item.duration}</span>
-          <span style={metaTag}>{item.ratio}</span>
-        </div>
-      </div>
-
-      <div style={{ padding: 14 }}>
-        <div style={{ color: C.text, fontSize: 14, fontWeight: 700, marginBottom: 6 }}>
-          {item.title}
-        </div>
-        <div
-          style={{
-            color: C.textDim,
-            fontSize: 12,
-            lineHeight: 1.5,
-            minHeight: 36,
-            marginBottom: 12,
-          }}
-        >
-          {item.prompt}
-        </div>
-
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <span style={smallTag}>{item.style}</span>
-            <span style={smallTag}>{item.motion}</span>
-          </div>
-
-          <div style={{ display: "flex", gap: 8 }}>
-            <button style={iconBtnStyle}>
-              <Download size={15} />
-            </button>
-            <button style={iconBtnStyle}>
-              <Share2 size={15} />
-            </button>
-            <button onClick={onDelete} style={{ ...iconBtnStyle, color: "#ffb4b4" }}>
-              <Trash2 size={15} />
-            </button>
-          </div>
-        </div>
-      </div>
-    </motion.div>
-  );
-}
-
-const iconBtnStyle = {
-  width: 34,
-  height: 34,
-  borderRadius: 12,
-  display: "grid",
-  placeItems: "center",
-  background: "rgba(255,255,255,0.03)",
-  border: `1px solid ${C.border}`,
-  color: C.textSoft,
-  cursor: "pointer",
-};
-
-const metaTag = {
-  padding: "7px 10px",
-  borderRadius: 999,
-  fontSize: 11,
-  fontWeight: 700,
-  color: "white",
-  background: "rgba(0,0,0,0.38)",
-  border: `1px solid rgba(255,255,255,0.14)`,
-  backdropFilter: "blur(10px)",
-};
-
-const smallTag = {
-  padding: "6px 9px",
-  borderRadius: 999,
-  fontSize: 11,
-  fontWeight: 700,
-  color: C.textSoft,
-  background: "rgba(255,255,255,0.04)",
-  border: `1px solid ${C.border}`,
-};
-
-export default function VideoPage() {
-  const [assetView, setAssetView] = useState("grid");
-  const [prompt, setPrompt] = useState("");
-  const [negativePrompt, setNegativePrompt] = useState("");
-  const [duration, setDuration] = useState("5 sec");
-  const [ratio, setRatio] = useState("16:9");
-  const [quality, setQuality] = useState("1080p");
-  const [style, setStyle] = useState("Cinematic");
-  const [cameraMotion, setCameraMotion] = useState("Slow Push In");
-  const [fps, setFps] = useState("24 FPS");
-  const [generationMode, setGenerationMode] = useState("Text to Video");
-  const [outputCount, setOutputCount] = useState(2);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [notificationsOn, setNotificationsOn] = useState(true);
-  const [isGenerating, setIsGenerating] = useState(false);
-
-  const [outputs, setOutputs] = useState([
-    {
-      id: 1,
-      title: "Neon Alley Sequence",
-      prompt:
-        "A cinematic cyberpunk alley at night, rain reflections, drifting smoke, slow forward camera movement, dramatic lighting.",
-      duration: "5 sec",
-      ratio: "16:9",
-      style: "Cinematic",
-      motion: "Slow Push In",
-    },
-    {
-      id: 2,
-      title: "Desert Chase Frame",
-      prompt:
-        "Epic desert vehicle sequence with dust, heat haze, golden-hour sun, dynamic tracking shot, high-end film aesthetic.",
-      duration: "8 sec",
-      ratio: "21:9",
-      style: "Epic",
-      motion: "Tracking Shot",
-    },
-  ]);
-
-  const promptIdeas = useMemo(
-    () => [
-      "A lone astronaut walking through a frozen alien valley, cinematic lighting, slow camera drift",
-      "A luxury perfume bottle floating in black liquid with glossy reflections and macro movement",
-      "A warrior standing on a cliff during a storm, cape moving in the wind, dramatic push in",
-    ],
-    []
-  );
-
-  const sidebarItems = [
-    { label: "Home", icon: Sparkles, href: "/" },
-    { label: "Explore", icon: Compass, href: "/explore" },
-    { label: "Story", icon: Clapperboard, href: "/story" },
-    { label: "Image", icon: ImageIcon, href: "/image" },
-    { label: "Video", icon: Video, href: "/video", active: true },
-    { label: "Characters", icon: UserCircle2, href: "/characters" },
-    { label: "Worlds", icon: Orbit, href: "/worlds" },
-    { label: "Projects", icon: FolderKanban, href: "/projects" },
-    { label: "Settings", icon: Settings, href: "/settings" },
-  ];
-
-  function handleGenerate() {
-    if (!prompt.trim()) return;
-
-    setIsGenerating(true);
-
-    setTimeout(() => {
-      const newItems = Array.from({ length: outputCount }).map((_, i) => ({
-        id: Date.now() + i,
-        title: `Kylor Video ${outputs.length + i + 1}`,
-        prompt,
-        duration,
-        ratio,
-        style,
-        motion: cameraMotion,
-      }));
-
-      setOutputs((prev) => [...newItems, ...prev]);
-      setIsGenerating(false);
-    }, 1800);
-  }
-
-  return (
-    <main
-      style={{
-        minHeight: "100vh",
-        background: `
-          radial-gradient(circle at 12% 18%, rgba(124,58,237,0.16), transparent 22%),
-          radial-gradient(circle at 85% 10%, rgba(59,130,246,0.10), transparent 20%),
-          radial-gradient(circle at 50% 100%, rgba(124,58,237,0.08), transparent 28%),
-          linear-gradient(180deg, #07070b 0%, #0a0a12 45%, #090910 100%)
-        `,
-        color: C.text,
-      }}
-    >
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "270px 1fr",
-          minHeight: "100vh",
-        }}
-      >
-        <aside
-          style={{
-            borderRight: `1px solid ${C.border}`,
-            padding: 18,
-            position: "sticky",
-            top: 0,
-            height: "100vh",
-            background: "rgba(10,10,15,0.85)",
-            backdropFilter: "blur(16px)",
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 12,
-              marginBottom: 22,
-              padding: "10px 8px",
-            }}
-          >
-            <div
-              style={{
-                width: 42,
-                height: 42,
-                borderRadius: 16,
-                display: "grid",
-                placeItems: "center",
-                background: C.accentSoft,
-                border: `1px solid ${C.accentBorder}`,
-                boxShadow: `0 0 0 6px rgba(124,58,237,0.08)`,
-              }}
-            >
-              <Film size={20} />
-            </div>
-            <div>
-              <div style={{ fontSize: 18, fontWeight: 800, letterSpacing: 0.2 }}>Kylor</div>
-              <div style={{ fontSize: 12, color: C.textDim }}>Video Engine</div>
-            </div>
-          </div>
-
-          <div style={{ display: "grid", gap: 8 }}>
-            {sidebarItems.map((item) => {
-              const Icon = item.icon;
-              return (
-                <Link
-                  key={item.label}
-                  href={item.href}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 12,
-                    padding: "12px 14px",
-                    borderRadius: 16,
-                    textDecoration: "none",
-                    color: item.active ? C.text : C.textSoft,
-                    background: item.active ? C.accentSoft : "transparent",
-                    border: `1px solid ${item.active ? C.accentBorder : "transparent"}`,
-                    fontSize: 14,
-                    fontWeight: 700,
-                    transition: "0.2s ease",
-                  }}
-                >
-                  <Icon size={18} />
-                  <span>{item.label}</span>
-                  {item.active ? <ChevronRight size={16} style={{ marginLeft: "auto" }} /> : null}
-                </Link>
-              );
-            })}
-          </div>
-
-          <div
-            style={{
-              marginTop: 22,
-              padding: 16,
-              borderRadius: 20,
-              background: "linear-gradient(180deg, rgba(124,58,237,0.12), rgba(255,255,255,0.03))",
-              border: `1px solid ${C.accentBorder}`,
-            }}
-          >
-            <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 6 }}>Kylor Pro Video</div>
-            <div style={{ fontSize: 12, color: C.textDim, lineHeight: 1.55, marginBottom: 12 }}>
-              Generate cinematic AI videos with motion control, references, and premium output flow.
-            </div>
-            <button
-              style={{
-                width: "100%",
-                padding: "11px 14px",
-                borderRadius: 14,
-                border: `1px solid ${C.accentBorder}`,
-                background: C.accentSoft,
-                color: C.text,
-                fontWeight: 800,
-                cursor: "pointer",
-              }}
-            >
-              Upgrade
-            </button>
-          </div>
-        </aside>
-
-        <section style={{ padding: 22 }}>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: 14,
-              marginBottom: 20,
-            }}
-          >
-            <div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {[group.mode, group.quality, group.motion].filter(Boolean).map((tag) => (
               <div
+                key={tag}
                 style={{
+                  height: 26,
+                  padding: "0 10px",
+                  borderRadius: radius.full,
+                  border: `1px solid ${C.border}`,
+                  background: "rgba(255,255,255,0.04)",
+                  color: "rgba(255,255,255,0.75)",
+                  fontSize: 11.5,
                   display: "inline-flex",
                   alignItems: "center",
-                  gap: 8,
-                  padding: "6px 10px",
-                  borderRadius: 999,
-                  border: `1px solid ${C.accentBorder}`,
-                  background: "rgba(124,58,237,0.10)",
-                  color: C.textSoft,
-                  fontSize: 11,
-                  fontWeight: 800,
-                  letterSpacing: 0.4,
-                  textTransform: "uppercase",
-                  marginBottom: 10,
                 }}
               >
-                <Sparkles size={12} />
-                Kylor Video Engine
+                {tag}
               </div>
-
-              <div
-                style={{
-                  fontSize: 30,
-                  fontWeight: 900,
-                  letterSpacing: -0.6,
-                  lineHeight: 1.05,
-                  background: "linear-gradient(180deg, #ffffff 0%, rgba(255,255,255,0.78) 100%)",
-                  WebkitBackgroundClip: "text",
-                  WebkitTextFillColor: "transparent",
-                }}
-              >
-                Cinematic Video Generation
-              </div>
-
-              <div
-                style={{
-                  color: C.textDim,
-                  fontSize: 13,
-                  marginTop: 8,
-                  maxWidth: 620,
-                  lineHeight: 1.6,
-                }}
-              >
-                Create premium AI video shots with prompt direction, camera motion, visual styling,
-                and reference-based control.
-              </div>
-            </div>
-
-            <div style={{ display: "flex", gap: 10 }}>
-              <button
-                onClick={() => setNotificationsOn((p) => !p)}
-                style={iconBtnStyle}
-                title="Notifications"
-              >
-                {notificationsOn ? <Bell size={16} /> : <BellOff size={16} />}
-              </button>
-
-              <button
-                onClick={() => setSettingsOpen((p) => !p)}
-                style={{
-                  ...iconBtnStyle,
-                  width: 40,
-                  height: 40,
-                  borderRadius: 14,
-                  background: settingsOpen ? C.accentSoft : "rgba(255,255,255,0.03)",
-                  border: `1px solid ${settingsOpen ? C.accentBorder : C.border}`,
-                }}
-                title="Quick settings"
-              >
-                <SlidersHorizontal size={17} />
-              </button>
-            </div>
+            ))}
           </div>
 
           <div
             style={{
-              display: "grid",
-              gridTemplateColumns: settingsOpen ? "1.05fr 0.95fr 340px" : "1.1fr 0.9fr",
-              gap: 18,
-              alignItems: "start",
-            }}
-          >
-            <div
-              style={{
-                background: "linear-gradient(180deg, rgba(255,255,255,0.035), rgba(255,255,255,0.018))",
-                border: `1px solid ${C.borderStrong}`,
-                borderRadius: 26,
-                padding: 18,
-                boxShadow: "0 18px 50px rgba(0,0,0,0.22)",
-                backdropFilter: "blur(10px)",
-              }}
-            >
-              <SectionTitle
-                icon={Wand2}
-                title="Prompt Director"
-                sub="Describe scene, camera motion, mood, and visual style."
-              />
-
-              <div
-                style={{
-                  borderRadius: 24,
-                  border: `1px solid ${C.borderStrong}`,
-                  background: `
-                    linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.02)),
-                    ${C.soft}
-                  `,
-                  overflow: "hidden",
-                  boxShadow: "0 20px 60px rgba(0,0,0,0.28)",
-                }}
-              >
-                <textarea
-                  value={prompt}
-                  onChange={(e) => setPrompt(e.target.value)}
-                  placeholder="Example: A cinematic tracking shot of a futuristic motorcycle racing through a neon Tokyo street at night, rain reflections, high contrast lighting, dramatic speed, ultra detailed..."
-                  style={{
-                    width: "100%",
-                    minHeight: 180,
-                    resize: "vertical",
-                    padding: 16,
-                    background: "transparent",
-                    border: "none",
-                    outline: "none",
-                    color: C.text,
-                    fontSize: 14,
-                    lineHeight: 1.7,
-                    fontFamily: "inherit",
-                  }}
-                />
-
-                <div
-                  style={{
-                    padding: 12,
-                    borderTop: `1px solid ${C.border}`,
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    gap: 12,
-                    flexWrap: "wrap",
-                  }}
-                >
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                    {promptIdeas.map((idea) => (
-                      <button
-                        key={idea}
-                        onClick={() => setPrompt(idea)}
-                        style={{
-                          padding: "8px 10px",
-                          borderRadius: 999,
-                          border: `1px solid ${C.border}`,
-                          background: "rgba(255,255,255,0.03)",
-                          color: C.textSoft,
-                          fontSize: 11,
-                          fontWeight: 700,
-                          cursor: "pointer",
-                        }}
-                      >
-                        Use idea
-                      </button>
-                    ))}
-                  </div>
-
-                  <div style={{ fontSize: 12, color: C.textDim }}>{prompt.length} characters</div>
-                </div>
-              </div>
-
-              <div style={{ marginTop: 16 }}>
-                <div
-                  style={{
-                    color: C.textSoft,
-                    fontSize: 12,
-                    marginBottom: 8,
-                    fontWeight: 600,
-                  }}
-                >
-                  Negative Prompt
-                </div>
-                <textarea
-                  value={negativePrompt}
-                  onChange={(e) => setNegativePrompt(e.target.value)}
-                  placeholder="low quality, blurry frames, deformed faces, flicker, unstable motion, warped hands..."
-                  style={{
-                    width: "100%",
-                    minHeight: 82,
-                    resize: "vertical",
-                    padding: 14,
-                    background: C.soft,
-                    border: `1px solid ${C.border}`,
-                    borderRadius: 16,
-                    outline: "none",
-                    color: C.text,
-                    fontSize: 13,
-                    lineHeight: 1.6,
-                    fontFamily: "inherit",
-                  }}
-                />
-              </div>
-
-              <div style={{ marginTop: 18 }}>
-                <SectionTitle
-                  icon={Layers3}
-                  title="References"
-                  sub="Upload image, frame, or style references for better direction."
-                />
-
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
-                    gap: 12,
-                  }}
-                >
-                  <UploadCard
-                    title="Character Reference"
-                    sub="Maintain character look across video shots."
-                  />
-                  <UploadCard
-                    title="Style Reference"
-                    sub="Match visual language, lighting, and tone."
-                  />
-                  <UploadCard
-                    title="First Frame / Scene"
-                    sub="Guide composition and starting frame."
-                  />
-                </div>
-              </div>
-
-              <div
-                style={{
-                  display: "flex",
-                  gap: 10,
-                  marginTop: 20,
-                  flexWrap: "wrap",
-                }}
-              >
-                <button
-                  onClick={handleGenerate}
-                  disabled={isGenerating || !prompt.trim()}
-                  style={{
-                    position: "relative",
-                    overflow: "hidden",
-                    padding: "14px 20px",
-                    borderRadius: 18,
-                    border: `1px solid ${C.accentBorder}`,
-                    background: isGenerating
-                      ? "rgba(124,58,237,0.12)"
-                      : "linear-gradient(180deg, rgba(139,92,246,0.34), rgba(124,58,237,0.18))",
-                    color: C.text,
-                    fontSize: 14,
-                    fontWeight: 800,
-                    cursor: isGenerating || !prompt.trim() ? "not-allowed" : "pointer",
-                    boxShadow: "0 14px 40px rgba(124,58,237,0.30)",
-                    minWidth: 190,
-                  }}
-                >
-                  <span
-                    style={{
-                      position: "absolute",
-                      inset: 0,
-                      background:
-                        "linear-gradient(120deg, transparent 0%, rgba(255,255,255,0.12) 35%, transparent 70%)",
-                      transform: "translateX(-100%)",
-                      animation:
-                        !isGenerating && prompt.trim() ? "kylorShine 2.6s linear infinite" : "none",
-                      pointerEvents: "none",
-                    }}
-                  />
-                  <span style={{ position: "relative", zIndex: 2 }}>
-                    {isGenerating ? "Generating..." : "Generate Video"}
-                  </span>
-                </button>
-
-                <button
-                  style={{
-                    padding: "14px 18px",
-                    borderRadius: 16,
-                    border: `1px solid ${C.border}`,
-                    background: "rgba(255,255,255,0.03)",
-                    color: C.text,
-                    fontSize: 14,
-                    fontWeight: 700,
-                    cursor: "pointer",
-                  }}
-                >
-                  Save Preset
-                </button>
-              </div>
-            </div>
-
-            <div
-              style={{
-                background: "linear-gradient(180deg, rgba(255,255,255,0.035), rgba(255,255,255,0.018))",
-                border: `1px solid ${C.borderStrong}`,
-                borderRadius: 26,
-                padding: 18,
-                boxShadow: "0 18px 50px rgba(0,0,0,0.22)",
-                backdropFilter: "blur(10px)",
-              }}
-            >
-              <SectionTitle
-                icon={Clapperboard}
-                title="Generation Controls"
-                sub="Dial in style, motion, ratio, quality, and timing."
-              />
-
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-                <SelectCard
-                  label="Mode"
-                  value={generationMode}
-                  onChange={setGenerationMode}
-                  options={["Text to Video", "Image to Video", "Frame to Video"]}
-                />
-                <SelectCard
-                  label="Style"
-                  value={style}
-                  onChange={setStyle}
-                  options={["Cinematic", "Epic", "Photoreal", "Anime", "Stylized", "Luxury Ad"]}
-                />
-                <SelectCard
-                  label="Duration"
-                  value={duration}
-                  onChange={setDuration}
-                  options={["3 sec", "5 sec", "8 sec", "10 sec", "15 sec"]}
-                />
-                <SelectCard
-                  label="Aspect Ratio"
-                  value={ratio}
-                  onChange={setRatio}
-                  options={["16:9", "9:16", "1:1", "21:9", "4:5"]}
-                />
-                <SelectCard
-                  label="Quality"
-                  value={quality}
-                  onChange={setQuality}
-                  options={["720p", "1080p", "2K"]}
-                />
-                <SelectCard
-                  label="Frame Rate"
-                  value={fps}
-                  onChange={setFps}
-                  options={["24 FPS", "30 FPS", "60 FPS"]}
-                />
-              </div>
-
-              <div style={{ marginTop: 18 }}>
-                <div
-                  style={{
-                    color: C.textSoft,
-                    fontSize: 12,
-                    marginBottom: 10,
-                    fontWeight: 600,
-                  }}
-                >
-                  Camera Motion
-                </div>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
-                  {[
-                    "Static",
-                    "Slow Push In",
-                    "Pull Back",
-                    "Orbit Shot",
-                    "Tracking Shot",
-                    "Drone Rise",
-                    "Handheld",
-                    "Tilt Up",
-                  ].map((m) => (
-                    <PillButton
-                      key={m}
-                      active={cameraMotion === m}
-                      onClick={() => setCameraMotion(m)}
-                    >
-                      {m}
-                    </PillButton>
-                  ))}
-                </div>
-              </div>
-
-              <div style={{ marginTop: 18 }}>
-                <div
-                  style={{
-                    color: C.textSoft,
-                    fontSize: 12,
-                    marginBottom: 10,
-                    fontWeight: 600,
-                  }}
-                >
-                  Outputs
-                </div>
-                <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                  {[1, 2, 4].map((n) => (
-                    <PillButton
-                      key={n}
-                      active={outputCount === n}
-                      onClick={() => setOutputCount(n)}
-                    >
-                      {n} Output{n > 1 ? "s" : ""}
-                    </PillButton>
-                  ))}
-                </div>
-              </div>
-
-              <div
-                style={{
-                  marginTop: 20,
-                  borderRadius: 20,
-                  border: `1px solid ${C.border}`,
-                  background: C.soft,
-                  padding: 16,
-                }}
-              >
-                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
-                  <Clock3 size={16} />
-                  <div style={{ fontSize: 13, fontWeight: 700 }}>Estimated Cost / Load</div>
-                </div>
-
-                <div style={{ display: "grid", gap: 10 }}>
-                  <div style={statsRow}>
-                    <span style={statsLabel}>Render Time</span>
-                    <span style={statsValue}>
-                      {duration === "3 sec"
-                        ? "~30s"
-                        : duration === "5 sec"
-                        ? "~45s"
-                        : duration === "8 sec"
-                        ? "~70s"
-                        : "~90s+"}
-                    </span>
-                  </div>
-                  <div style={statsRow}>
-                    <span style={statsLabel}>Quality Tier</span>
-                    <span style={statsValue}>{quality}</span>
-                  </div>
-                  <div style={statsRow}>
-                    <span style={statsLabel}>Generation Type</span>
-                    <span style={statsValue}>{generationMode}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <AnimatePresence>
-              {settingsOpen && (
-                <motion.div
-                  initial={{ opacity: 0, x: 16 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: 16 }}
-                  transition={{ duration: 0.22 }}
-                  style={{
-                    background: "linear-gradient(180deg, rgba(255,255,255,0.035), rgba(255,255,255,0.018))",
-                    border: `1px solid ${C.borderStrong}`,
-                    borderRadius: 26,
-                    padding: 18,
-                    boxShadow: "0 18px 50px rgba(0,0,0,0.22)",
-                    backdropFilter: "blur(10px)",
-                  }}
-                >
-                  <SectionTitle
-                    icon={Settings}
-                    title="Quick Settings"
-                    sub="Fast toggles for premium generation workflow."
-                  />
-
-                  <div style={{ display: "grid", gap: 12 }}>
-                    {[
-                      "Enable motion stabilization",
-                      "Improve face consistency",
-                      "Use cinematic color grade",
-                      "Lock scene composition",
-                      "Prioritize detail over speed",
-                    ].map((label, i) => (
-                      <label
-                        key={label}
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "space-between",
-                          gap: 12,
-                          padding: "13px 14px",
-                          borderRadius: 16,
-                          border: `1px solid ${C.border}`,
-                          background: "rgba(255,255,255,0.03)",
-                          cursor: "pointer",
-                        }}
-                      >
-                        <span style={{ fontSize: 13, color: C.textSoft, fontWeight: 600 }}>
-                          {label}
-                        </span>
-                        <div
-                          style={{
-                            width: 20,
-                            height: 20,
-                            borderRadius: 6,
-                            display: "grid",
-                            placeItems: "center",
-                            background: i < 2 ? C.accentSoft : "transparent",
-                            border: `1px solid ${i < 2 ? C.accentBorder : C.borderStrong}`,
-                          }}
-                        >
-                          {i < 2 ? <Check size={13} /> : null}
-                        </div>
-                      </label>
-                    ))}
-                  </div>
-
-                  <button
-                    onClick={() => setSettingsOpen(false)}
-                    style={{
-                      marginTop: 16,
-                      width: "100%",
-                      padding: "12px 14px",
-                      borderRadius: 14,
-                      border: `1px solid ${C.border}`,
-                      background: "rgba(255,255,255,0.03)",
-                      color: C.text,
-                      fontWeight: 700,
-                      cursor: "pointer",
-                    }}
-                  >
-                    Close Panel
-                  </button>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-
-          <div
-            style={{
-              marginTop: 18,
-              background: "linear-gradient(180deg, rgba(255,255,255,0.035), rgba(255,255,255,0.018))",
-              border: `1px solid ${C.borderStrong}`,
-              borderRadius: 26,
-              padding: 18,
-              boxShadow: "0 18px 50px rgba(0,0,0,0.22)",
-              backdropFilter: "blur(10px)",
+              flex: 1,
+              borderRadius: radius.md,
+              border: `1px solid ${C.border}`,
+              background: "rgba(255,255,255,0.02)",
+              padding: "10px 12px",
+              overflow: "hidden",
+              display: "flex",
+              flexDirection: "column",
+              gap: 8,
             }}
           >
             <div
@@ -1224,177 +615,1727 @@ export default function VideoPage() {
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "space-between",
-                gap: 14,
-                marginBottom: 16,
-                flexWrap: "wrap",
               }}
             >
-              <SectionTitle
-                icon={Play}
-                title="Generated Videos"
-                sub="Your recent AI video outputs."
-              />
-
-              <div style={{ display: "flex", gap: 10 }}>
-                <button
-                  onClick={() => setAssetView("grid")}
-                  style={{
-                    ...iconBtnStyle,
-                    background: assetView === "grid" ? C.accentSoft : "rgba(255,255,255,0.03)",
-                    border: `1px solid ${assetView === "grid" ? C.accentBorder : C.border}`,
-                  }}
-                >
-                  <Grid3X3 size={16} />
-                </button>
-                <button
-                  onClick={() => setAssetView("list")}
-                  style={{
-                    ...iconBtnStyle,
-                    background: assetView === "list" ? C.accentSoft : "rgba(255,255,255,0.03)",
-                    border: `1px solid ${assetView === "list" ? C.accentBorder : C.border}`,
-                  }}
-                >
-                  <List size={16} />
-                </button>
+              <div
+                style={{
+                  fontSize: 10.5,
+                  fontWeight: 700,
+                  letterSpacing: "0.08em",
+                  textTransform: "uppercase",
+                  color: C.textMuted,
+                }}
+              >
+                Prompt
               </div>
+
+              <button
+                onClick={copyPrompt}
+                style={{
+                  height: 24,
+                  padding: "0 8px",
+                  borderRadius: 7,
+                  cursor: "pointer",
+                  border: `1px solid ${copiedPrompt ? C.accentBorder : C.border}`,
+                  background: copiedPrompt ? C.accentSoft : C.surface,
+                  color: copiedPrompt ? "#c4b5fd" : C.textMuted,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 4,
+                  fontSize: 11,
+                  fontFamily: "inherit",
+                  transition: "all 0.16s",
+                }}
+              >
+                {copiedPrompt ? <Check size={10} /> : <Copy size={10} />}
+                {copiedPrompt ? "Copied" : "Copy"}
+              </button>
             </div>
 
-            {isGenerating && (
+            <p
+              style={{
+                margin: 0,
+                color: "rgba(255,255,255,0.82)",
+                fontSize: 12.5,
+                lineHeight: 1.65,
+                wordBreak: "break-word",
+                display: "-webkit-box",
+                WebkitLineClamp: 7,
+                WebkitBoxOrient: "vertical",
+                overflow: "hidden",
+              }}
+            >
+              {group.prompt}
+            </p>
+          </div>
+
+          {group.negativePrompt && (
+            <div
+              style={{
+                borderRadius: radius.sm,
+                border: "1px solid rgba(248,113,113,0.2)",
+                background: "rgba(248,113,113,0.04)",
+                padding: "8px 12px",
+              }}
+            >
               <div
                 style={{
-                  marginBottom: 16,
-                  borderRadius: 18,
-                  border: `1px solid ${C.accentBorder}`,
-                  background: "linear-gradient(180deg, rgba(124,58,237,0.12), rgba(255,255,255,0.03))",
-                  padding: 14,
+                  fontSize: 10.5,
+                  fontWeight: 700,
+                  letterSpacing: "0.08em",
+                  textTransform: "uppercase",
+                  color: "#fca5a5",
+                  marginBottom: 4,
                 }}
               >
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <Zap size={16} />
-                  <div style={{ fontSize: 13, fontWeight: 700 }}>
-                    Kylor is generating your video...
-                  </div>
-                </div>
-                <div
+                Negative
+              </div>
+              <p
+                style={{
+                  margin: 0,
+                  color: "rgba(255,255,255,0.65)",
+                  fontSize: 12,
+                  lineHeight: 1.6,
+                }}
+              >
+                {group.negativePrompt}
+              </p>
+            </div>
+          )}
+
+          <div>
+            <div
+              style={{
+                fontSize: 10.5,
+                fontWeight: 700,
+                letterSpacing: "0.08em",
+                textTransform: "uppercase",
+                color: C.textMuted,
+                marginBottom: 6,
+              }}
+            >
+              Variations
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 6 }}>
+              {[1, 2, 3, 4].map((v, i) => (
+                <motion.button
+                  key={v}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={() => onVariation?.(group, i)}
+                  disabled={generating}
                   style={{
-                    marginTop: 12,
-                    height: 8,
-                    borderRadius: 999,
-                    background: "rgba(255,255,255,0.06)",
-                    overflow: "hidden",
+                    height: 34,
+                    borderRadius: radius.sm,
+                    cursor: generating ? "default" : "pointer",
+                    border: `1px solid ${C.border}`,
+                    background: generating ? "rgba(255,255,255,0.02)" : C.surface,
+                    color: generating ? C.textDim : C.textMuted,
+                    fontSize: 12,
+                    fontWeight: 600,
+                    fontFamily: "inherit",
+                    transition: "all 0.15s ease",
                   }}
                 >
-                  <motion.div
-                    initial={{ width: "0%" }}
-                    animate={{ width: "78%" }}
-                    transition={{ duration: 1.4 }}
-                    style={{
-                      height: "100%",
-                      borderRadius: 999,
-                      background:
-                        "linear-gradient(90deg, rgba(124,58,237,0.65), rgba(168,85,247,0.95))",
-                    }}
-                  />
-                </div>
-              </div>
-            )}
-
-            {outputs.length === 0 ? (
-              <div
-                style={{
-                  minHeight: 280,
-                  display: "grid",
-                  placeItems: "center",
-                  borderRadius: 22,
-                  border: `1px dashed ${C.borderStrong}`,
-                  background: "rgba(255,255,255,0.02)",
-                }}
-              >
-                <div style={{ textAlign: "center", padding: 20 }}>
-                  <div
-                    style={{
-                      width: 54,
-                      height: 54,
-                      borderRadius: 18,
-                      display: "grid",
-                      placeItems: "center",
-                      margin: "0 auto 12px",
-                      background: C.accentSoft,
-                      border: `1px solid ${C.accentBorder}`,
-                    }}
-                  >
-                    <Video size={22} />
-                  </div>
-                  <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 6 }}>
-                    No videos yet
-                  </div>
-                  <div style={{ fontSize: 13, color: C.textDim }}>
-                    Your generated video outputs will appear here.
-                  </div>
-                </div>
-              </div>
-            ) : assetView === "grid" ? (
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
-                  gap: 14,
-                }}
-              >
-                {outputs.map((item) => (
-                  <VideoCard
-                    key={item.id}
-                    item={item}
-                    view="grid"
-                    onDelete={() => setOutputs((prev) => prev.filter((x) => x.id !== item.id))}
-                  />
-                ))}
-              </div>
-            ) : (
-              <div style={{ display: "grid", gap: 12 }}>
-                {outputs.map((item) => (
-                  <VideoCard
-                    key={item.id}
-                    item={item}
-                    view="list"
-                    onDelete={() => setOutputs((prev) => prev.filter((x) => x.id !== item.id))}
-                  />
-                ))}
-              </div>
-            )}
+                  V{v}
+                </motion.button>
+              ))}
+            </div>
           </div>
-        </section>
-      </div>
 
-      <style jsx>{`
-        @keyframes kylorShine {
-          0% {
-            transform: translateX(-100%);
-          }
-          100% {
-            transform: translateX(160%);
-          }
-        }
-      `}</style>
-    </main>
+          <button
+            onClick={() => onDownload?.(group)}
+            style={{
+              height: 40,
+              borderRadius: radius.sm,
+              border: `1px solid ${C.accentBorder}`,
+              background: C.accentSoft,
+              color: "#c4b5fd",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 7,
+              cursor: "pointer",
+              fontSize: 12.5,
+              fontWeight: 600,
+              fontFamily: "inherit",
+            }}
+          >
+            <Download size={13} /> Download video
+          </button>
+        </div>
+      </div>
+    </motion.div>
   );
 }
 
-const statsRow = {
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "center",
-  gap: 12,
-};
+export default function VideoPage() {
+  const [topTab, setTopTab] = useState("All");
+  const [contentFilter, setContentFilter] = useState("Videos");
+  const [assetView, setAssetView] = useState("grid");
+  const [favoritesOnly, setFavoritesOnly] = useState(false);
 
-const statsLabel = {
-  color: "rgba(245,247,251,0.62)",
-  fontSize: 12,
-  fontWeight: 600,
-};
+  const [mode, setMode] = useState("Text to Video");
+  const [quality, setQuality] = useState("1080p");
+  const [duration, setDuration] = useState("5 sec");
+  const [ratio, setRatio] = useState("16:9");
+  const [fps, setFps] = useState("24 FPS");
+  const [motionType, setMotionType] = useState("Slow Push In");
+  const [outputCount, setOutputCount] = useState(2);
 
-const statsValue = {
-  color: "#f5f7fb",
-  fontSize: 12,
-  fontWeight: 800,
-};
+  const [prompt, setPrompt] = useState("");
+  const [negativeOpen, setNegativeOpen] = useState(false);
+  const [negativePrompt, setNegativePrompt] = useState("");
+  const [refImages, setRefImages] = useState([]);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+
+  const [notifState, setNotifState] = useState("idle");
+  const [groups, setGroups] = useState([]);
+  const [generating, setGenerating] = useState(false);
+
+  const panelRef = useRef(null);
+  const textareaRef = useRef(null);
+  const canvasRef = useRef(null);
+
+  const charLimit = 600;
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(SESSION_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) setGroups(parsed);
+      }
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    function handleOutside(e) {
+      if (panelRef.current && !panelRef.current.contains(e.target)) {
+        setSettingsOpen(false);
+      }
+    }
+
+    document.addEventListener("mousedown", handleOutside);
+    return () => document.removeEventListener("mousedown", handleOutside);
+  }, []);
+
+  function syncCache(updated) {
+    try {
+      localStorage.setItem(SESSION_KEY, JSON.stringify(updated));
+    } catch {}
+  }
+
+  async function handleAllowNotifications() {
+    if (!("Notification" in window)) {
+      setNotifState("dismissed");
+      return;
+    }
+
+    try {
+      const p = await Notification.requestPermission();
+      setNotifState(p === "granted" ? "granted" : "denied");
+    } catch {
+      setNotifState("dismissed");
+    }
+  }
+
+  function deleteGroup(groupId) {
+    const next = groups.filter((g) => g.id !== groupId);
+    setGroups(next);
+    syncCache(next);
+  }
+
+  function toggleFavorite(groupId) {
+    const next = groups.map((g) =>
+      g.id === groupId ? { ...g, starred: !g.starred } : g
+    );
+    setGroups(next);
+    syncCache(next);
+  }
+
+  async function handleDownload(group) {
+    try {
+      await navigator.clipboard.writeText(`Video prompt copied:\n\n${group.prompt}`);
+    } catch {}
+  }
+
+  async function handleShare(group) {
+    try {
+      const text = `Kylor Video\n\n${group.prompt}`;
+      if (navigator.share) {
+        await navigator.share({ title: "Kylor Video", text });
+      } else {
+        await navigator.clipboard.writeText(text);
+      }
+    } catch {}
+  }
+
+  function clearAll() {
+    if (!confirm("Delete all saved video generations?")) return;
+    setGroups([]);
+    syncCache([]);
+  }
+
+  function makeGroup(basePrompt, variationLabel = null) {
+    return {
+      id: Date.now() + Math.floor(Math.random() * 1000),
+      prompt: variationLabel ? `${basePrompt}. ${variationLabel}` : basePrompt,
+      negativePrompt: negativePrompt.trim(),
+      createdAt: new Date().toISOString(),
+      mode,
+      quality,
+      duration,
+      ratio,
+      fps,
+      motion: motionType,
+      starred: false,
+    };
+  }
+
+  async function handleGenerate() {
+    const basePrompt = prompt.trim();
+    if (!basePrompt || generating) return;
+
+    setGenerating(true);
+    canvasRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+
+    const promptText = [
+      basePrompt,
+      negativePrompt.trim() ? `Negative: ${negativePrompt.trim()}` : null,
+      `Mode: ${mode}`,
+      `Motion: ${motionType}`,
+      `Duration: ${duration}`,
+      `Quality: ${quality}`,
+      `Aspect Ratio: ${ratio}`,
+      `Frame Rate: ${fps}`,
+    ]
+      .filter(Boolean)
+      .join(". ");
+
+    setTimeout(() => {
+      const made = Array.from({ length: outputCount }, (_, i) =>
+        makeGroup(promptText, outputCount > 1 ? `Variation ${i + 1}` : null)
+      );
+
+      const next = [...made, ...groups];
+      setGroups(next);
+      syncCache(next);
+      setGenerating(false);
+
+      if (notifState === "granted" && "Notification" in window) {
+        new Notification("Kylor", {
+          body: "Your video generation is complete.",
+        });
+      }
+    }, 1800);
+  }
+
+  async function handleVariation(group, variationIndex) {
+    if (generating) return;
+    setGenerating(true);
+
+    setTimeout(() => {
+      const nextGroup = {
+        ...group,
+        id: Date.now(),
+        createdAt: new Date().toISOString(),
+        starred: false,
+        prompt: `${group.prompt}. Variation ${variationIndex + 1}, slightly different camera movement and framing.`,
+      };
+
+      const next = [nextGroup, ...groups];
+      setGroups(next);
+      syncCache(next);
+      setGenerating(false);
+    }, 1200);
+  }
+
+  const filteredGroups = useMemo(() => {
+    if (contentFilter === "Images" || contentFilter === "Audio") return [];
+    if (favoritesOnly) return groups.filter((g) => g.starred);
+    return groups;
+  }, [groups, contentFilter, favoritesOnly]);
+
+  return (
+    <main
+      style={{
+        height: "100vh",
+        overflow: "hidden",
+        background: `radial-gradient(ellipse at 8% 12%,rgba(79,70,229,0.13),transparent 28%),radial-gradient(ellipse at 92% 8%,rgba(124,58,237,0.11),transparent 30%),${C.bg}`,
+        color: C.text,
+        fontFamily: "'Inter','SF Pro Display',sans-serif",
+        display: "grid",
+        gridTemplateColumns: "88px 1fr",
+      }}
+    >
+      <aside
+        style={{
+          borderRight: `1px solid ${C.border}`,
+          background: C.sidebar,
+          padding: "18px 10px",
+          height: "100vh",
+          display: "flex",
+          flexDirection: "column",
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{
+            width: 46,
+            height: 46,
+            borderRadius: 16,
+            margin: "0 auto 22px",
+            display: "grid",
+            placeItems: "center",
+            background: "linear-gradient(135deg,rgba(79,70,229,0.28),rgba(124,58,237,0.18))",
+            border: `1px solid ${C.border}`,
+            boxShadow: `0 0 20px ${C.accentGlow}`,
+          }}
+        >
+          <Sparkles size={20} color="#a78bfa" />
+        </div>
+
+        <div style={{ display: "grid", gap: 8 }}>
+          {SIDEBAR_ITEMS.map((item) => (
+            <SidebarItem key={item.label} item={item} />
+          ))}
+        </div>
+      </aside>
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateRows: "48px 1fr",
+          height: "100vh",
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{
+            borderBottom: `1px solid ${C.border}`,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            padding: "0 18px",
+            background: "rgba(255,255,255,0.01)",
+          }}
+        >
+          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+            {["All", "Output", "Projects"].map((tab) => (
+              <motion.button
+                key={tab}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => setTopTab(tab)}
+                style={{
+                  height: 30,
+                  padding: "0 14px",
+                  borderRadius: 9,
+                  border: `1px solid ${topTab === tab ? C.accentBorder : "transparent"}`,
+                  background: topTab === tab ? C.accentSoft : "transparent",
+                  color: topTab === tab ? "#c4b5fd" : C.textMuted,
+                  cursor: "pointer",
+                  fontSize: 13,
+                  fontFamily: "inherit",
+                  fontWeight: topTab === tab ? 600 : 400,
+                  transition: "all 0.15s ease",
+                }}
+              >
+                {tab}
+              </motion.button>
+            ))}
+          </div>
+
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            {[{ icon: Grid3X3, val: "grid" }, { icon: List, val: "list" }].map(
+              ({ icon: Icon, val }) => (
+                <motion.button
+                  key={val}
+                  whileTap={{ scale: 0.94 }}
+                  onClick={() => setAssetView(val)}
+                  style={{
+                    width: 34,
+                    height: 34,
+                    borderRadius: radius.sm,
+                    border: `1px solid ${C.border}`,
+                    background:
+                      assetView === val ? "rgba(255,255,255,0.08)" : "transparent",
+                    color: assetView === val ? C.text : C.textMuted,
+                    display: "grid",
+                    placeItems: "center",
+                    cursor: "pointer",
+                    transition: "all 0.15s ease",
+                  }}
+                >
+                  <Icon size={15} />
+                </motion.button>
+              )
+            )}
+
+            <motion.button
+              whileHover={{ borderColor: C.borderHover }}
+              style={{
+                height: 34,
+                padding: "0 14px",
+                borderRadius: radius.sm,
+                border: `1px solid ${C.border}`,
+                background: C.surface,
+                color: "rgba(255,255,255,0.8)",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 7,
+                cursor: "pointer",
+                fontSize: 13,
+                fontFamily: "inherit",
+              }}
+            >
+              <Folder size={13} /> Assets
+            </motion.button>
+          </div>
+        </div>
+
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "380px 1fr",
+            height: "100%",
+            overflow: "hidden",
+          }}
+        >
+          <div
+            style={{
+              borderRight: `1px solid ${C.border}`,
+              background: "linear-gradient(180deg,rgba(7,9,15,0.98),rgba(9,11,17,0.98))",
+              height: "100%",
+              overflow: "hidden",
+              display: "flex",
+              flexDirection: "column",
+              padding: 16,
+              gap: 12,
+              boxSizing: "border-box",
+            }}
+          >
+            <div
+              style={{
+                borderBottom: `1px solid ${C.border}`,
+                paddingBottom: 14,
+                flexShrink: 0,
+              }}
+            >
+              <div
+                style={{
+                  color: C.text,
+                  fontWeight: 700,
+                  fontSize: 14,
+                  position: "relative",
+                  display: "inline-block",
+                  paddingBottom: 4,
+                }}
+              >
+                Video Generation
+                <span
+                  style={{
+                    position: "absolute",
+                    left: 0,
+                    bottom: -15,
+                    width: "100%",
+                    height: 2,
+                    borderRadius: radius.full,
+                    background: `linear-gradient(90deg,${C.indigo},${C.accent})`,
+                  }}
+                />
+              </div>
+            </div>
+
+            <motion.button
+              whileHover={{ borderColor: C.accentBorder }}
+              whileTap={{ scale: 0.99 }}
+              style={{
+                width: "100%",
+                padding: "10px 12px",
+                borderRadius: radius.md,
+                border: `1px solid ${C.border}`,
+                background: C.surface,
+                color: C.text,
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                cursor: "pointer",
+                fontFamily: "inherit",
+                transition: "all 0.16s ease",
+                flexShrink: 0,
+              }}
+            >
+              <div
+                style={{
+                  width: 34,
+                  height: 34,
+                  borderRadius: 10,
+                  flexShrink: 0,
+                  background: "linear-gradient(135deg,#6D5CFF,#9d4edd)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontWeight: 800,
+                  fontSize: 12,
+                  color: "#fff",
+                }}
+              >
+                V1
+              </div>
+
+              <div style={{ flex: 1, minWidth: 0, textAlign: "left" }}>
+                <div style={{ fontSize: 14, fontWeight: 700 }}>Kylor Video V1</div>
+                <div
+                  style={{
+                    fontSize: 11.5,
+                    color: C.textMuted,
+                    whiteSpace: "nowrap",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                  }}
+                >
+                  Motion-aware cinematic video generation
+                </div>
+              </div>
+
+              <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+                <div
+                  style={{
+                    fontSize: 10,
+                    padding: "2px 7px",
+                    borderRadius: 6,
+                    background: "rgba(124,58,237,0.2)",
+                    border: `1px solid ${C.accentBorder}`,
+                    color: "#c4b5fd",
+                  }}
+                >
+                  BETA
+                </div>
+                <ChevronDown size={14} color={C.textMuted} />
+              </div>
+            </motion.button>
+
+            <motion.button
+              whileTap={{ scale: 0.97 }}
+              style={{
+                width: "100%",
+                padding: "10px 12px",
+                borderRadius: radius.md,
+                border: `1px solid ${C.border}`,
+                background: C.surface,
+                color: C.text,
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                cursor: "pointer",
+                fontFamily: "inherit",
+                transition: "all 0.16s ease",
+                flexShrink: 0,
+              }}
+            >
+              <div
+                style={{
+                  width: 30,
+                  height: 30,
+                  borderRadius: 10,
+                  flexShrink: 0,
+                  background: "rgba(255,255,255,0.03)",
+                  border: `1px solid ${C.border}`,
+                  display: "grid",
+                  placeItems: "center",
+                }}
+              >
+                <UserCircle2 size={15} />
+              </div>
+
+              <div style={{ flex: 1, minWidth: 0, textAlign: "left" }}>
+                <div style={{ fontSize: 13.5, fontWeight: 700 }}>Use Character</div>
+                <div
+                  style={{
+                    fontSize: 11.5,
+                    color: C.textMuted,
+                    whiteSpace: "nowrap",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                  }}
+                >
+                  Select a saved character from Consistency
+                </div>
+              </div>
+
+              <ChevronRight size={14} color={C.textMuted} />
+            </motion.button>
+
+            <div style={{ flexShrink: 0 }}>
+              <DropZone files={refImages} onFiles={setRefImages} label="Drop frames or browse" />
+            </div>
+
+            <div
+              style={{
+                flex: 1,
+                minHeight: 0,
+                borderRadius: radius.md,
+                border: `1px solid ${C.border}`,
+                background: C.surface,
+                padding: 12,
+                display: "flex",
+                flexDirection: "column",
+              }}
+            >
+              <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+                <div
+                  style={{
+                    fontSize: 10.5,
+                    fontWeight: 700,
+                    letterSpacing: "0.08em",
+                    textTransform: "uppercase",
+                    color: C.textMuted,
+                    marginBottom: 6,
+                    flexShrink: 0,
+                  }}
+                >
+                  Video Prompt
+                </div>
+
+                <textarea
+                  ref={textareaRef}
+                  value={prompt}
+                  onChange={(e) => setPrompt(e.target.value.slice(0, charLimit))}
+                  placeholder="Describe the video scene, camera motion, action, lighting, mood, and composition..."
+                  style={{
+                    flex: 1,
+                    width: "100%",
+                    border: "none",
+                    background: "transparent",
+                    color: C.text,
+                    resize: "none",
+                    fontFamily: "inherit",
+                    fontSize: 13.5,
+                    lineHeight: 1.7,
+                    outline: "none",
+                    minHeight: 0,
+                    boxSizing: "border-box",
+                  }}
+                />
+              </div>
+
+              <AnimatePresence>
+                {negativeOpen && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: "auto" }}
+                    exit={{ opacity: 0, height: 0 }}
+                    style={{ overflow: "hidden" }}
+                  >
+                    <div
+                      style={{
+                        borderTop: `1px solid ${C.border}`,
+                        marginTop: 8,
+                        paddingTop: 8,
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: 10.5,
+                          fontWeight: 700,
+                          letterSpacing: "0.08em",
+                          textTransform: "uppercase",
+                          color: "#f87171",
+                          marginBottom: 6,
+                        }}
+                      >
+                        Negative Prompt
+                      </div>
+
+                      <textarea
+                        value={negativePrompt}
+                        onChange={(e) => setNegativePrompt(e.target.value)}
+                        placeholder="What to avoid: flicker, blur, distorted faces, unstable motion..."
+                        rows={3}
+                        style={{
+                          width: "100%",
+                          border: "1px solid rgba(248,113,113,0.25)",
+                          background: "rgba(248,113,113,0.04)",
+                          color: C.text,
+                          borderRadius: radius.sm,
+                          padding: "8px 10px",
+                          resize: "none",
+                          fontFamily: "inherit",
+                          fontSize: 12.5,
+                          lineHeight: 1.6,
+                          outline: "none",
+                          boxSizing: "border-box",
+                        }}
+                      />
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  marginTop: 10,
+                  paddingTop: 10,
+                  borderTop: `1px solid ${C.border}`,
+                  flexShrink: 0,
+                }}
+              >
+                <div style={{ display: "flex", gap: 6 }}>
+                  <motion.button
+                    whileTap={{ scale: 0.95 }}
+                    onClick={() => setNegativeOpen((p) => !p)}
+                    style={{
+                      height: 30,
+                      padding: "0 12px",
+                      borderRadius: 9,
+                      border: `1px solid ${
+                        negativeOpen || negativePrompt
+                          ? "rgba(248,113,113,0.3)"
+                          : C.border
+                      }`,
+                      background:
+                        negativeOpen || negativePrompt
+                          ? "rgba(248,113,113,0.08)"
+                          : C.surface,
+                      color: negativeOpen || negativePrompt ? "#fca5a5" : C.textMuted,
+                      fontSize: 12,
+                      cursor: "pointer",
+                      fontFamily: "inherit",
+                      transition: "all 0.15s ease",
+                    }}
+                  >
+                    Negative{negativePrompt ? " ✓" : ""}
+                  </motion.button>
+                </div>
+
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <span
+                    style={{
+                      fontSize: 11,
+                      color: prompt.length > charLimit * 0.9 ? "#f87171" : C.textDim,
+                    }}
+                  >
+                    {prompt.length}/{charLimit}
+                  </span>
+
+                  <motion.button
+                    whileTap={{ scale: 0.92 }}
+                    title="Enhance prompt"
+                    onClick={() => {
+                      if (prompt.trim()) {
+                        setPrompt((p) => p.trim() + ", cinematic camera movement, rich lighting, premium film look");
+                      }
+                    }}
+                    style={{
+                      width: 32,
+                      height: 32,
+                      borderRadius: 10,
+                      border: `1px solid ${C.accentBorder}`,
+                      background: C.accentSoft,
+                      color: "#a78bfa",
+                      display: "grid",
+                      placeItems: "center",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <Sparkles size={14} />
+                  </motion.button>
+                </div>
+              </div>
+            </div>
+
+            <div style={{ position: "relative", flexShrink: 0 }}>
+              <div ref={panelRef}>
+                <AnimatePresence>
+                  {settingsOpen && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 16, scale: 0.97 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 10, scale: 0.97 }}
+                      transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+                      style={{
+                        position: "absolute",
+                        left: 0,
+                        right: 0,
+                        bottom: "calc(100% + 8px)",
+                        zIndex: 10,
+                        borderRadius: 18,
+                        border: `1px solid ${C.border}`,
+                        background: "rgba(14,16,26,0.99)",
+                        backdropFilter: "blur(16px)",
+                        boxShadow: "0 28px 80px rgba(0,0,0,0.5)",
+                        padding: 16,
+                        display: "grid",
+                        gap: 16,
+                      }}
+                    >
+                      <div>
+                        <div
+                          style={{
+                            fontSize: 11,
+                            color: C.textMuted,
+                            marginBottom: 8,
+                            fontWeight: 600,
+                            letterSpacing: "0.08em",
+                            textTransform: "uppercase",
+                          }}
+                        >
+                          Mode
+                        </div>
+                        <SegmentControl options={VIDEO_MODES} value={mode} onChange={setMode} />
+                      </div>
+
+                      <div>
+                        <div
+                          style={{
+                            fontSize: 11,
+                            color: C.textMuted,
+                            marginBottom: 8,
+                            fontWeight: 600,
+                            letterSpacing: "0.08em",
+                            textTransform: "uppercase",
+                          }}
+                        >
+                          Quality
+                        </div>
+                        <SegmentControl options={QUALITIES} value={quality} onChange={setQuality} />
+                      </div>
+
+                      <div>
+                        <div
+                          style={{
+                            fontSize: 11,
+                            color: C.textMuted,
+                            marginBottom: 8,
+                            fontWeight: 600,
+                            letterSpacing: "0.08em",
+                            textTransform: "uppercase",
+                          }}
+                        >
+                          Duration
+                        </div>
+                        <div
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns: "repeat(4,1fr)",
+                            gap: 6,
+                          }}
+                        >
+                          {DURATIONS.map((r) => (
+                            <motion.button
+                              key={r}
+                              whileTap={{ scale: 0.95 }}
+                              onClick={() => setDuration(r)}
+                              style={{
+                                height: 34,
+                                borderRadius: radius.sm,
+                                border:
+                                  duration === r
+                                    ? `1px solid ${C.accentBorder}`
+                                    : `1px solid ${C.border}`,
+                                background:
+                                  duration === r
+                                    ? "linear-gradient(160deg,rgba(79,70,229,0.18),rgba(124,58,237,0.12))"
+                                    : C.surface,
+                                color: duration === r ? "white" : C.textMuted,
+                                fontSize: 12,
+                                cursor: "pointer",
+                                fontFamily: "inherit",
+                              }}
+                            >
+                              {r}
+                            </motion.button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div>
+                        <div
+                          style={{
+                            fontSize: 11,
+                            color: C.textMuted,
+                            marginBottom: 8,
+                            fontWeight: 600,
+                            letterSpacing: "0.08em",
+                            textTransform: "uppercase",
+                          }}
+                        >
+                          Aspect Ratio
+                        </div>
+                        <div
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns: "repeat(5,1fr)",
+                            gap: 6,
+                          }}
+                        >
+                          {RATIOS.map((r) => (
+                            <motion.button
+                              key={r}
+                              whileTap={{ scale: 0.95 }}
+                              onClick={() => setRatio(r)}
+                              style={{
+                                height: 34,
+                                borderRadius: radius.sm,
+                                border:
+                                  ratio === r
+                                    ? `1px solid ${C.accentBorder}`
+                                    : `1px solid ${C.border}`,
+                                background:
+                                  ratio === r
+                                    ? "linear-gradient(160deg,rgba(79,70,229,0.18),rgba(124,58,237,0.12))"
+                                    : C.surface,
+                                color: ratio === r ? "white" : C.textMuted,
+                                fontSize: 12,
+                                cursor: "pointer",
+                                fontFamily: "inherit",
+                              }}
+                            >
+                              {r}
+                            </motion.button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div>
+                        <div
+                          style={{
+                            fontSize: 11,
+                            color: C.textMuted,
+                            marginBottom: 8,
+                            fontWeight: 600,
+                            letterSpacing: "0.08em",
+                            textTransform: "uppercase",
+                          }}
+                        >
+                          FPS
+                        </div>
+                        <SegmentControl options={FPS_OPTIONS} value={fps} onChange={setFps} />
+                      </div>
+
+                      <div>
+                        <div
+                          style={{
+                            fontSize: 11,
+                            color: C.textMuted,
+                            marginBottom: 8,
+                            fontWeight: 600,
+                            letterSpacing: "0.08em",
+                            textTransform: "uppercase",
+                          }}
+                        >
+                          Output Count
+                        </div>
+                        <div
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns: "repeat(3,1fr)",
+                            gap: 6,
+                          }}
+                        >
+                          {OUTPUTS.map((n) => (
+                            <motion.button
+                              key={n}
+                              whileTap={{ scale: 0.95 }}
+                              onClick={() => setOutputCount(n)}
+                              style={{
+                                height: 34,
+                                borderRadius: radius.sm,
+                                border:
+                                  outputCount === n
+                                    ? `1px solid ${C.accentBorder}`
+                                    : `1px solid ${C.border}`,
+                                background:
+                                  outputCount === n
+                                    ? "linear-gradient(160deg,rgba(79,70,229,0.18),rgba(124,58,237,0.12))"
+                                    : C.surface,
+                                color: outputCount === n ? "white" : C.textMuted,
+                                fontSize: 13,
+                                cursor: "pointer",
+                                fontFamily: "inherit",
+                              }}
+                            >
+                              {n}
+                            </motion.button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div>
+                        <div
+                          style={{
+                            fontSize: 11,
+                            color: C.textMuted,
+                            marginBottom: 8,
+                            fontWeight: 600,
+                            letterSpacing: "0.08em",
+                            textTransform: "uppercase",
+                          }}
+                        >
+                          Camera Motion
+                        </div>
+
+                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                          {MOTIONS.map((m) => (
+                            <motion.button
+                              key={m}
+                              whileTap={{ scale: 0.95 }}
+                              onClick={() => setMotionType(m)}
+                              style={{
+                                height: 34,
+                                padding: "0 12px",
+                                borderRadius: radius.full,
+                                border:
+                                  motionType === m
+                                    ? `1px solid ${C.accentBorder}`
+                                    : `1px solid ${C.border}`,
+                                background:
+                                  motionType === m
+                                    ? "linear-gradient(160deg,rgba(79,70,229,0.18),rgba(124,58,237,0.12))"
+                                    : C.surface,
+                                color: motionType === m ? "white" : C.textMuted,
+                                fontSize: 12,
+                                cursor: "pointer",
+                                fontFamily: "inherit",
+                              }}
+                            >
+                              {m}
+                            </motion.button>
+                          ))}
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+
+                <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: 10 }}>
+                  <motion.button
+                    whileHover={{ borderColor: C.borderHover }}
+                    whileTap={{ scale: 0.97 }}
+                    onClick={() => setSettingsOpen((p) => !p)}
+                    style={{
+                      height: 46,
+                      padding: "0 14px",
+                      borderRadius: radius.md,
+                      border: `1px solid ${settingsOpen ? C.accentBorder : C.border}`,
+                      background: settingsOpen ? C.accentSoft : "#0d0f18",
+                      color: "rgba(255,255,255,0.85)",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      cursor: "pointer",
+                      fontSize: 13,
+                      fontFamily: "inherit",
+                      whiteSpace: "nowrap",
+                      transition: "all 0.15s ease",
+                    }}
+                  >
+                    <Settings size={14} />
+                    <span>
+                      {quality} · {ratio} · {duration}
+                    </span>
+                    <motion.div
+                      animate={{ rotate: settingsOpen ? 180 : 0 }}
+                      transition={{ duration: 0.2 }}
+                    >
+                      <ChevronDown size={14} />
+                    </motion.div>
+                  </motion.button>
+
+                  <motion.button
+                    whileHover={
+                      prompt.trim() && !generating
+                        ? { boxShadow: "0 18px 40px rgba(124,58,237,0.42)" }
+                        : {}
+                    }
+                    whileTap={prompt.trim() && !generating ? { scale: 0.98 } : {}}
+                    onClick={handleGenerate}
+                    disabled={generating}
+                    style={{
+                      height: 46,
+                      width: "100%",
+                      borderRadius: radius.md,
+                      border: "none",
+                      background:
+                        prompt.trim() && !generating
+                          ? "linear-gradient(135deg,#4f46e5,#7c3aed)"
+                          : "rgba(255,255,255,0.06)",
+                      color: prompt.trim() && !generating ? "white" : C.textMuted,
+                      cursor: prompt.trim() && !generating ? "pointer" : "default",
+                      boxShadow:
+                        prompt.trim() && !generating
+                          ? "0 10px 28px rgba(124,58,237,0.28)"
+                          : "none",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 8,
+                      fontFamily: "inherit",
+                      transition: "all 0.2s ease",
+                    }}
+                  >
+                    <AnimatePresence mode="wait">
+                      {generating ? (
+                        <motion.span
+                          key="gen"
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          exit={{ opacity: 0 }}
+                          style={{ display: "flex", alignItems: "center", gap: 8 }}
+                        >
+                          <motion.div
+                            animate={{ rotate: 360 }}
+                            transition={{
+                              repeat: Infinity,
+                              duration: 1,
+                              ease: "linear",
+                            }}
+                          >
+                            <Zap size={15} />
+                          </motion.div>
+                          Generating…
+                        </motion.span>
+                      ) : (
+                        <motion.span
+                          key="idle"
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          exit={{ opacity: 0 }}
+                          style={{ display: "flex", alignItems: "center", gap: 8 }}
+                        >
+                          <Wand2 size={15} /> Generate Video <ChevronRight size={15} />
+                        </motion.span>
+                      )}
+                    </AnimatePresence>
+                  </motion.button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div
+            style={{
+              background: "rgba(4,5,12,0.95)",
+              display: "flex",
+              flexDirection: "column",
+              height: "100%",
+              overflow: "hidden",
+            }}
+          >
+            <AnimatePresence>
+              {notifState === "idle" && (
+                <motion.div
+                  key="notif-idle"
+                  initial={{ height: 44 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  transition={{ duration: 0.2 }}
+                  style={{
+                    borderBottom: `1px solid ${C.border}`,
+                    background: "#12141e",
+                    padding: "0 16px",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: 10,
+                    overflow: "hidden",
+                    flexShrink: 0,
+                    height: 44,
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      color: "rgba(255,255,255,0.75)",
+                      fontSize: 13,
+                    }}
+                  >
+                    <Bell size={13} color={C.textMuted} />
+                    <span>Turn on notifications for generation updates.</span>
+                    <button
+                      onClick={handleAllowNotifications}
+                      style={{
+                        border: "none",
+                        background: "transparent",
+                        color: "#a78bfa",
+                        cursor: "pointer",
+                        fontWeight: 700,
+                        fontSize: 13,
+                        fontFamily: "inherit",
+                      }}
+                    >
+                      Allow
+                    </button>
+                  </div>
+
+                  <motion.button
+                    whileTap={{ scale: 0.9 }}
+                    onClick={() => setNotifState("dismissed")}
+                    style={{
+                      border: "none",
+                      background: "transparent",
+                      color: C.textMuted,
+                      cursor: "pointer",
+                      display: "grid",
+                      placeItems: "center",
+                    }}
+                  >
+                    <X size={14} />
+                  </motion.button>
+                </motion.div>
+              )}
+
+              {notifState === "granted" && (
+                <motion.div
+                  key="notif-ok"
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: 44, opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  transition={{ duration: 0.2 }}
+                  style={{
+                    borderBottom: `1px solid ${C.border}`,
+                    background: "rgba(34,197,94,0.07)",
+                    padding: "0 16px",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: 10,
+                    overflow: "hidden",
+                    flexShrink: 0,
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#86efac", fontSize: 13 }}>
+                    <Check size={13} /> Notifications enabled — you'll be notified when generation completes.
+                  </div>
+                  <button
+                    onClick={() => setNotifState("dismissed")}
+                    style={{
+                      border: "none",
+                      background: "transparent",
+                      color: C.textMuted,
+                      cursor: "pointer",
+                    }}
+                  >
+                    <X size={14} />
+                  </button>
+                </motion.div>
+              )}
+
+              {notifState === "denied" && (
+                <motion.div
+                  key="notif-denied"
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: 44, opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  transition={{ duration: 0.2 }}
+                  style={{
+                    borderBottom: `1px solid ${C.border}`,
+                    background: "rgba(239,68,68,0.07)",
+                    padding: "0 16px",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: 10,
+                    overflow: "hidden",
+                    flexShrink: 0,
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#fca5a5", fontSize: 13 }}>
+                    <BellOff size={13} /> Notifications blocked — enable them in your browser settings.
+                  </div>
+                  <button
+                    onClick={() => setNotifState("dismissed")}
+                    style={{
+                      border: "none",
+                      background: "transparent",
+                      color: C.textMuted,
+                      cursor: "pointer",
+                    }}
+                  >
+                    <X size={14} />
+                  </button>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                padding: "0 16px",
+                borderBottom: `1px solid ${C.border}`,
+                height: 48,
+                flexShrink: 0,
+              }}
+            >
+              <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                {CONTENT_TABS.map((tab) => (
+                  <motion.button
+                    key={tab}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={() => setContentFilter(tab)}
+                    style={{
+                      height: 28,
+                      padding: "0 12px",
+                      borderRadius: 8,
+                      border: `1px solid ${
+                        contentFilter === tab ? C.border : "transparent"
+                      }`,
+                      background:
+                        contentFilter === tab ? "rgba(255,255,255,0.09)" : "transparent",
+                      color: contentFilter === tab ? C.text : C.textMuted,
+                      cursor: "pointer",
+                      fontSize: 12.5,
+                      fontFamily: "inherit",
+                      transition: "all 0.14s ease",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 5,
+                    }}
+                  >
+                    {tab === "Videos" && <Video size={11} />}
+                    {tab === "Audio" && <Music size={11} />}
+                    {tab === "Images" && <ImageIcon size={11} />}
+                    {tab}
+                  </motion.button>
+                ))}
+
+                <label
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    marginLeft: 6,
+                    fontSize: 12.5,
+                    color: favoritesOnly ? "#a78bfa" : C.textMuted,
+                    cursor: "pointer",
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={favoritesOnly}
+                    onChange={(e) => setFavoritesOnly(e.target.checked)}
+                    style={{ accentColor: C.accent }}
+                  />
+                  Favorites
+                </label>
+              </div>
+
+              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                {groups.length > 0 && (
+                  <motion.button
+                    whileTap={{ scale: 0.95 }}
+                    onClick={clearAll}
+                    style={{
+                      height: 28,
+                      padding: "0 10px",
+                      borderRadius: 8,
+                      border: "1px solid rgba(248,113,113,0.25)",
+                      background: "rgba(248,113,113,0.07)",
+                      color: "#fca5a5",
+                      fontSize: 11.5,
+                      cursor: "pointer",
+                      fontFamily: "inherit",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 5,
+                    }}
+                  >
+                    <Trash2 size={11} /> Clear all
+                  </motion.button>
+                )}
+
+                <motion.button
+                  whileHover={{ borderColor: C.borderHover }}
+                  style={{
+                    height: 28,
+                    padding: "0 10px",
+                    borderRadius: 8,
+                    border: `1px solid ${C.border}`,
+                    background: C.surface,
+                    color: "rgba(255,255,255,0.8)",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 5,
+                    cursor: "pointer",
+                    fontSize: 12,
+                    fontFamily: "inherit",
+                  }}
+                >
+                  <Folder size={12} /> Assets
+                </motion.button>
+              </div>
+            </div>
+
+            <div ref={canvasRef} style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
+              {topTab === "Projects" ? (
+                <div style={{ padding: "16px 16px 64px" }}>
+                  {groups.length === 0 ? (
+                    <div style={{ height: "80vh", display: "grid", placeItems: "center" }}>
+                      <motion.div
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        style={{ textAlign: "center", maxWidth: 320 }}
+                      >
+                        <div
+                          style={{
+                            width: 72,
+                            height: 72,
+                            borderRadius: 999,
+                            margin: "0 auto 18px",
+                            display: "grid",
+                            placeItems: "center",
+                            border: `1px solid ${C.border}`,
+                            background: C.surface,
+                          }}
+                        >
+                          <FolderKanban size={30} color={C.textDim} />
+                        </div>
+
+                        <p style={{ margin: "0 0 8px", color: C.text, fontSize: 16, fontWeight: 700 }}>
+                          No video projects yet
+                        </p>
+
+                        <p style={{ margin: 0, color: C.textMuted, fontSize: 13, lineHeight: 1.7 }}>
+                          Generate some videos first. They will appear here as your saved video projects.
+                        </p>
+                      </motion.div>
+                    </div>
+                  ) : (
+                    <div style={{ display: "grid", gap: 12 }}>
+                      {groups.map((group, idx) => (
+                        <VideoOutputCard
+                          key={group.id}
+                          group={group}
+                          isLatest={idx === 0}
+                          generating={false}
+                          onDelete={deleteGroup}
+                          onToggleFavorite={toggleFavorite}
+                          onDownload={handleDownload}
+                          onShare={handleShare}
+                          onVariation={handleVariation}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <>
+                  <AnimatePresence>
+                    {generating && (
+                      <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: "auto" }}
+                        exit={{ opacity: 0, height: 0 }}
+                        transition={{ duration: 0.3 }}
+                        style={{ overflow: "hidden" }}
+                      >
+                        <div
+                          style={{
+                            margin: "16px 16px 0",
+                            borderRadius: 16,
+                            border: `1px solid ${C.accentBorder}`,
+                            background: "rgba(124,58,237,0.06)",
+                            padding: "18px 20px",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 16,
+                          }}
+                        >
+                          <div style={{ position: "relative", width: 48, height: 48, flexShrink: 0 }}>
+                            <motion.div
+                              animate={{ rotate: 360 }}
+                              transition={{ repeat: Infinity, duration: 2, ease: "linear" }}
+                              style={{
+                                position: "absolute",
+                                inset: 0,
+                                borderRadius: 999,
+                                border: `2px solid ${C.accent}`,
+                                borderTopColor: "transparent",
+                              }}
+                            />
+                            <motion.div
+                              animate={{ rotate: -360 }}
+                              transition={{ repeat: Infinity, duration: 3, ease: "linear" }}
+                              style={{
+                                position: "absolute",
+                                inset: 6,
+                                borderRadius: 999,
+                                border: `1.5px solid ${C.accentBorder}`,
+                                borderBottomColor: "transparent",
+                              }}
+                            />
+                            <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center" }}>
+                              <Sparkles size={14} color="#a78bfa" />
+                            </div>
+                          </div>
+
+                          <div>
+                            <div style={{ fontSize: 14, fontWeight: 700, color: C.text, marginBottom: 3 }}>
+                              Generating your video…
+                            </div>
+                            <div style={{ fontSize: 12, color: C.textMuted }}>
+                              {mode} · {quality} · {ratio} · {duration} · {outputCount} output
+                              {outputCount > 1 ? "s" : ""}
+                            </div>
+                          </div>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+
+                  {!generating && contentFilter === "Images" && (
+                    <div style={{ height: "80vh", display: "grid", placeItems: "center" }}>
+                      <div style={{ textAlign: "center" }}>
+                        <div
+                          style={{
+                            width: 64,
+                            height: 64,
+                            borderRadius: 999,
+                            margin: "0 auto 14px",
+                            display: "grid",
+                            placeItems: "center",
+                            border: `1px solid ${C.border}`,
+                            background: C.surface,
+                          }}
+                        >
+                          <ImageIcon size={26} color={C.textDim} />
+                        </div>
+                        <p style={{ margin: "0 0 4px", color: C.text, fontSize: 15, fontWeight: 600 }}>
+                          Image Feed
+                        </p>
+                        <p style={{ margin: 0, color: C.textMuted, fontSize: 13 }}>
+                          Use the Image section for still generations.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {!generating && contentFilter === "Audio" && (
+                    <div style={{ height: "80vh", display: "grid", placeItems: "center" }}>
+                      <div style={{ textAlign: "center" }}>
+                        <div
+                          style={{
+                            width: 64,
+                            height: 64,
+                            borderRadius: 999,
+                            margin: "0 auto 14px",
+                            display: "grid",
+                            placeItems: "center",
+                            border: `1px solid ${C.border}`,
+                            background: C.surface,
+                          }}
+                        >
+                          <Music size={26} color={C.textDim} />
+                        </div>
+                        <p style={{ margin: "0 0 4px", color: C.text, fontSize: 15, fontWeight: 600 }}>
+                          Audio Generation
+                        </p>
+                        <p style={{ margin: 0, color: C.textMuted, fontSize: 13 }}>Coming soon.</p>
+                      </div>
+                    </div>
+                  )}
+
+                  {!generating &&
+                    (contentFilter === "All" || contentFilter === "Videos") &&
+                    filteredGroups.length === 0 && (
+                      <div style={{ height: "80vh", display: "grid", placeItems: "center" }}>
+                        <motion.div
+                          initial={{ opacity: 0, y: 10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          style={{ textAlign: "center", maxWidth: 300 }}
+                        >
+                          <div
+                            style={{
+                              width: 72,
+                              height: 72,
+                              borderRadius: 999,
+                              margin: "0 auto 18px",
+                              display: "grid",
+                              placeItems: "center",
+                              border: `1px solid ${C.border}`,
+                              background: C.surface,
+                            }}
+                          >
+                            <Video size={30} color={C.textDim} />
+                          </div>
+
+                          <p style={{ margin: "0 0 8px", color: C.text, fontSize: 16, fontWeight: 700 }}>
+                            Your video canvas is empty
+                          </p>
+
+                          <p
+                            style={{
+                              margin: "0 0 20px",
+                              color: C.textMuted,
+                              fontSize: 13,
+                              lineHeight: 1.7,
+                            }}
+                          >
+                            Describe your cinematic shot and hit Generate Video — your outputs will appear here.
+                          </p>
+
+                          <motion.button
+                            whileTap={{ scale: 0.96 }}
+                            onClick={() => textareaRef.current?.focus()}
+                            style={{
+                              height: 36,
+                              padding: "0 18px",
+                              borderRadius: radius.md,
+                              border: `1px solid ${C.accentBorder}`,
+                              background: C.accentSoft,
+                              color: "#c4b5fd",
+                              fontSize: 13,
+                              cursor: "pointer",
+                              fontFamily: "inherit",
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: 7,
+                            }}
+                          >
+                            <Plus size={13} /> Start with a video prompt
+                          </motion.button>
+                        </motion.div>
+                      </div>
+                    )}
+
+                  {(contentFilter === "All" || contentFilter === "Videos") &&
+                    filteredGroups.length > 0 && (
+                      <div
+                        style={{
+                          padding: "16px 16px 64px",
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: 16,
+                        }}
+                      >
+                        {filteredGroups.map((group, idx) => (
+                          <VideoOutputCard
+                            key={group.id}
+                            group={group}
+                            isLatest={idx === 0 && !generating}
+                            generating={generating}
+                            onDelete={deleteGroup}
+                            onToggleFavorite={toggleFavorite}
+                            onDownload={handleDownload}
+                            onShare={handleShare}
+                            onVariation={handleVariation}
+                          />
+                        ))}
+                      </div>
+                    )}
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  );
+}
