@@ -78,10 +78,9 @@ const PRESETS = [
   { id: 3, title: "Corporate", sub: "Minimal smooth camera" },
 ];
 const RESULT_TAGS = ["5s", "16:9", "720p"];
-
-const MODES = ["1K SD", "2K HD", "4K"];
+const DURATIONS = ["5s", "8s", "10s"];
 const RATIOS = ["Auto", "9:16", "2:3", "3:4", "1:1", "4:3", "3:2", "16:9", "21:9"];
-const OUTPUTS = [1, 2, 3, 4];
+const RESOLUTIONS = ["720p", "1080p"];
 
 function SidebarItem({ item }) {
   const Icon = item.icon;
@@ -344,15 +343,16 @@ export default function VideoPage() {
   const [notifState, setNotifState] = useState("idle");
 
   const [model] = useState("Kylor 1.0");
-  const [duration] = useState("5s");
+  const [duration, setDuration] = useState("5s");
   const [ratio, setRatio] = useState("16:9");
-  const [quality, setQuality] = useState("2K HD");
-  const [outputCount, setOutputCount] = useState(1);
+  const [quality, setQuality] = useState("720p");
 
   const [multiShot, setMultiShot] = useState(false);
   const [enhanceOn, setEnhanceOn] = useState(true);
 
   const [prompt, setPrompt] = useState("");
+  const [negativeOpen, setNegativeOpen] = useState(false);
+  const [negativePrompt, setNegativePrompt] = useState("");
   const [selectedPreset, setSelectedPreset] = useState(2);
   const [generating, setGenerating] = useState(false);
 
@@ -661,18 +661,103 @@ export default function VideoPage() {
                     }}
                   />
 
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                    <PillButton active={enhanceOn} onClick={() => setEnhanceOn(!enhanceOn)}>
-                      <Wand2 size={12} style={{ marginRight: 6 }} />
-                      Enhance on
-                    </PillButton>
-                    <PillButton active={true} onClick={() => {}}>
-                      <Music size={12} style={{ marginRight: 6 }} />
-                      On
-                    </PillButton>
-                    <PillButton active={false} onClick={() => {}}>
-                      @ Elements
-                    </PillButton>
+                  <AnimatePresence>
+                    {negativeOpen && (
+                      <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: "auto" }}
+                        exit={{ opacity: 0, height: 0 }}
+                        style={{ overflow: "hidden" }}
+                      >
+                        <div
+                          style={{
+                            borderTop: `1px solid ${C.border}`,
+                            marginTop: 2,
+                            paddingTop: 10,
+                          }}
+                        >
+                          <div
+                            style={{
+                              fontSize: 10.5,
+                              fontWeight: 700,
+                              letterSpacing: "0.08em",
+                              textTransform: "uppercase",
+                              color: "#f87171",
+                              marginBottom: 8,
+                            }}
+                          >
+                            Negative Prompt
+                          </div>
+
+                          <textarea
+                            value={negativePrompt}
+                            onChange={(e) => setNegativePrompt(e.target.value)}
+                            placeholder="What to avoid: blurry, distorted, watermark..."
+                            rows={3}
+                            style={{
+                              width: "100%",
+                              border: "1px solid rgba(248,113,113,0.25)",
+                              background: "rgba(248,113,113,0.04)",
+                              color: C.text,
+                              borderRadius: radius.sm,
+                              padding: "8px 10px",
+                              resize: "none",
+                              fontFamily: "inherit",
+                              fontSize: 12.5,
+                              lineHeight: 1.6,
+                              outline: "none",
+                              boxSizing: "border-box",
+                            }}
+                          />
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: 10,
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      <PillButton active={enhanceOn} onClick={() => setEnhanceOn(!enhanceOn)}>
+                        <Wand2 size={12} style={{ marginRight: 6 }} />
+                        Enhance on
+                      </PillButton>
+                      <PillButton active={true} onClick={() => {}}>
+                        <Music size={12} style={{ marginRight: 6 }} />
+                        On
+                      </PillButton>
+                      <PillButton active={false} onClick={() => {}}>
+                        @ Elements
+                      </PillButton>
+                    </div>
+
+                    <button
+                      onClick={() => setNegativeOpen((p) => !p)}
+                      style={{
+                        height: 34,
+                        padding: "0 12px",
+                        borderRadius: radius.full,
+                        border: `1px solid ${
+                          negativeOpen || negativePrompt ? "rgba(248,113,113,0.3)" : C.border
+                        }`,
+                        background:
+                          negativeOpen || negativePrompt
+                            ? "rgba(248,113,113,0.08)"
+                            : C.surface,
+                        color: negativeOpen || negativePrompt ? "#fca5a5" : C.textMuted,
+                        fontSize: 12,
+                        cursor: "pointer",
+                        fontFamily: "inherit",
+                      }}
+                    >
+                      Negative{negativePrompt ? " ✓" : ""}
+                    </button>
                   </div>
                 </div>
 
@@ -711,12 +796,33 @@ export default function VideoPage() {
                               textTransform: "uppercase",
                             }}
                           >
-                            Mode
+                            Resolution
                           </div>
                           <SegmentControl
-                            options={MODES}
+                            options={RESOLUTIONS}
                             value={quality}
                             onChange={setQuality}
+                            columns={2}
+                          />
+                        </div>
+
+                        <div>
+                          <div
+                            style={{
+                              fontSize: 11,
+                              color: C.textMuted,
+                              marginBottom: 8,
+                              fontWeight: 600,
+                              letterSpacing: "0.08em",
+                              textTransform: "uppercase",
+                            }}
+                          >
+                            Duration
+                          </div>
+                          <SegmentControl
+                            options={DURATIONS}
+                            value={duration}
+                            onChange={setDuration}
                             columns={3}
                           />
                         </div>
@@ -769,58 +875,6 @@ export default function VideoPage() {
                             ))}
                           </div>
                         </div>
-
-                        <div>
-                          <div
-                            style={{
-                              fontSize: 11,
-                              color: C.textMuted,
-                              marginBottom: 8,
-                              fontWeight: 600,
-                              letterSpacing: "0.08em",
-                              textTransform: "uppercase",
-                            }}
-                          >
-                            Output Count
-                          </div>
-                          <div
-                            style={{
-                              display: "grid",
-                              gridTemplateColumns: "repeat(4,1fr)",
-                              gap: 6,
-                            }}
-                          >
-                            {OUTPUTS.map((n) => (
-                              <motion.button
-                                key={n}
-                                whileTap={{ scale: 0.95 }}
-                                onClick={() => setOutputCount(n)}
-                                style={{
-                                  height: 34,
-                                  borderRadius: radius.sm,
-                                  border:
-                                    outputCount === n
-                                      ? `1px solid ${C.accentBorder}`
-                                      : `1px solid ${C.border}`,
-                                  background:
-                                    outputCount === n
-                                      ? "linear-gradient(160deg,rgba(79,70,229,0.18),rgba(124,58,237,0.12))"
-                                      : C.surface,
-                                  color: outputCount === n ? "white" : C.textMuted,
-                                  fontSize: 13,
-                                  cursor: "pointer",
-                                  fontFamily: "inherit",
-                                  transition: "all 0.15s ease",
-                                }}
-                              >
-                                {n}
-                              </motion.button>
-                            ))}
-                          </div>
-                          <p style={{ margin: "8px 0 0", fontSize: 11, color: C.textMuted }}>
-                            Max 4 per generation
-                          </p>
-                        </div>
                       </motion.div>
                     )}
                   </AnimatePresence>
@@ -849,7 +903,7 @@ export default function VideoPage() {
                     >
                       <Settings size={14} />
                       <span>
-                        {quality} · {ratio} · ×{outputCount}
+                        {quality} · {ratio} · {duration}
                       </span>
                       <motion.div
                         animate={{ rotate: settingsOpen ? 180 : 0 }}
@@ -1015,7 +1069,9 @@ export default function VideoPage() {
                       }}
                     >
                       <div>
-                        <div style={{ fontSize: 16, fontWeight: 900, marginBottom: 6 }}>Scene Setup</div>
+                        <div style={{ fontSize: 16, fontWeight: 900, marginBottom: 6 }}>
+                          Scene Setup
+                        </div>
                         <div style={{ fontSize: 13.5, color: C.textMuted, lineHeight: 1.7 }}>
                           Start with a reference frame or build from prompt. Lock the visual base
                           before motion is applied.
@@ -1106,8 +1162,17 @@ export default function VideoPage() {
                         flexDirection: "column",
                       }}
                     >
-                      <div style={{ fontSize: 16, fontWeight: 900, marginBottom: 6 }}>Motion Design</div>
-                      <div style={{ fontSize: 13.5, color: C.textMuted, lineHeight: 1.7, marginBottom: 18 }}>
+                      <div style={{ fontSize: 16, fontWeight: 900, marginBottom: 6 }}>
+                        Motion Design
+                      </div>
+                      <div
+                        style={{
+                          fontSize: 13.5,
+                          color: C.textMuted,
+                          lineHeight: 1.7,
+                          marginBottom: 18,
+                        }}
+                      >
                         Choose how the shot behaves — tracking, drift, orbit, or controlled cinematic motion.
                       </div>
 
