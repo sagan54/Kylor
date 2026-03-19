@@ -27,8 +27,9 @@ import {
   History,
   PanelsTopLeft,
   Zap,
+  ChevronDown,
 } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState, useEffect } from "react";
 
 const C = {
   accent: "#7c3aed",
@@ -77,6 +78,10 @@ const PRESETS = [
   { id: 3, title: "Corporate", sub: "Minimal smooth camera" },
 ];
 const RESULT_TAGS = ["5s", "16:9", "720p"];
+
+const MODES = ["1K SD", "2K HD", "4K"];
+const RATIOS = ["Auto", "9:16", "2:3", "3:4", "1:1", "4:3", "3:2", "16:9", "21:9"];
+const OUTPUTS = [1, 2, 3, 4];
 
 function SidebarItem({ item }) {
   const Icon = item.icon;
@@ -183,7 +188,7 @@ function SmallToggle({ checked, onChange }) {
   );
 }
 
-function FrameUploadCard({ title, optional, file, onFileChange }) {
+function FrameUploadCard({ title, file, onFileChange, onRemove }) {
   const inputRef = useRef(null);
 
   return (
@@ -201,6 +206,7 @@ function FrameUploadCard({ title, optional, file, onFileChange }) {
         flexDirection: "column",
         justifyContent: "space-between",
         cursor: "pointer",
+        position: "relative",
       }}
     >
       <input
@@ -215,22 +221,33 @@ function FrameUploadCard({ title, optional, file, onFileChange }) {
         }}
       />
 
-      <div style={{ display: "flex", justifyContent: "flex-end" }}>
-        {optional && (
-          <div
-            style={{
-              padding: "3px 8px",
-              borderRadius: radius.full,
-              background: "rgba(255,255,255,0.04)",
-              border: `1px solid ${C.border}`,
-              color: C.textDim,
-              fontSize: 10,
-            }}
-          >
-            Optional
-          </div>
-        )}
-      </div>
+      {file && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onRemove?.();
+          }}
+          style={{
+            position: "absolute",
+            top: 8,
+            right: 8,
+            width: 22,
+            height: 22,
+            borderRadius: 999,
+            border: `1px solid ${C.border}`,
+            background: "rgba(0,0,0,0.6)",
+            color: "white",
+            display: "grid",
+            placeItems: "center",
+            cursor: "pointer",
+            zIndex: 2,
+          }}
+        >
+          <X size={11} />
+        </button>
+      )}
+
+      <div />
 
       <div style={{ display: "grid", placeItems: "center", gap: 10, paddingBottom: 10 }}>
         <div
@@ -255,6 +272,7 @@ function FrameUploadCard({ title, optional, file, onFileChange }) {
             <ImagePlus size={18} color="rgba(255,255,255,0.72)" />
           )}
         </div>
+
         <div style={{ textAlign: "center" }}>
           <div style={{ fontSize: 13, color: C.textMuted }}>{title}</div>
           {file && (
@@ -278,15 +296,58 @@ function FrameUploadCard({ title, optional, file, onFileChange }) {
   );
 }
 
+function SegmentControl({ options, value, onChange, columns }) {
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: `repeat(${columns || options.length},1fr)`,
+        gap: 6,
+        padding: 4,
+        borderRadius: radius.lg,
+        background: "rgba(255,255,255,0.03)",
+        border: `1px solid ${C.border}`,
+      }}
+    >
+      {options.map((opt) => {
+        const active = opt === value;
+        return (
+          <motion.button
+            key={opt}
+            whileTap={{ scale: 0.96 }}
+            onClick={() => onChange(opt)}
+            style={{
+              height: 36,
+              borderRadius: radius.sm,
+              border: active ? `1px solid ${C.accentBorder}` : "1px solid transparent",
+              background: active
+                ? "linear-gradient(160deg,rgba(79,70,229,0.18),rgba(124,58,237,0.13))"
+                : "transparent",
+              color: active ? "white" : C.textMuted,
+              fontSize: 13,
+              cursor: "pointer",
+              fontFamily: "inherit",
+              transition: "all 0.16s ease",
+            }}
+          >
+            {opt}
+          </motion.button>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function VideoPage() {
   const [createTab, setCreateTab] = useState("Create Video");
   const [rightTab, setRightTab] = useState("How it works");
   const [notifState, setNotifState] = useState("idle");
 
   const [model] = useState("Kylor 1.0");
-  const [duration, setDuration] = useState("5s");
+  const [duration] = useState("5s");
   const [ratio, setRatio] = useState("16:9");
-  const [quality, setQuality] = useState("720p");
+  const [quality, setQuality] = useState("2K HD");
+  const [outputCount, setOutputCount] = useState(1);
 
   const [multiShot, setMultiShot] = useState(false);
   const [enhanceOn, setEnhanceOn] = useState(true);
@@ -298,7 +359,10 @@ export default function VideoPage() {
   const [startFrame, setStartFrame] = useState(null);
   const [endFrame, setEndFrame] = useState(null);
 
+  const [settingsOpen, setSettingsOpen] = useState(false);
+
   const promptRef = useRef(null);
+  const settingsRef = useRef(null);
 
   const presetGradients = useMemo(
     () => [
@@ -308,6 +372,16 @@ export default function VideoPage() {
     ],
     []
   );
+
+  useEffect(() => {
+    function handleOutside(e) {
+      if (settingsRef.current && !settingsRef.current.contains(e.target)) {
+        setSettingsOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleOutside);
+    return () => document.removeEventListener("mousedown", handleOutside);
+  }, []);
 
   async function handleAllowNotifications() {
     if (!("Notification" in window)) {
@@ -437,7 +511,9 @@ export default function VideoPage() {
                         fontWeight: active ? 700 : 500,
                         cursor: "pointer",
                         padding: 0,
-                        borderBottom: active ? "2px solid rgba(255,255,255,0.9)" : "2px solid transparent",
+                        borderBottom: active
+                          ? "2px solid rgba(255,255,255,0.9)"
+                          : "2px solid transparent",
                         paddingBottom: 8,
                         fontFamily: "inherit",
                       }}
@@ -473,30 +549,6 @@ export default function VideoPage() {
                   <div
                     style={{
                       position: "absolute",
-                      top: 10,
-                      right: 10,
-                    }}
-                  >
-                    <button
-                      style={{
-                        height: 30,
-                        padding: "0 12px",
-                        borderRadius: 10,
-                        border: `1px solid ${C.border}`,
-                        background: "rgba(255,255,255,0.06)",
-                        color: C.text,
-                        fontSize: 12,
-                        cursor: "pointer",
-                        fontFamily: "inherit",
-                      }}
-                    >
-                      Change
-                    </button>
-                  </div>
-
-                  <div
-                    style={{
-                      position: "absolute",
                       left: 14,
                       right: 14,
                       bottom: 14,
@@ -521,7 +573,14 @@ export default function VideoPage() {
                       VIDEO CORE
                     </div>
 
-                    <div style={{ fontSize: 12, color: "#c4b5fd", fontWeight: 800, marginBottom: 2 }}>
+                    <div
+                      style={{
+                        fontSize: 12,
+                        color: "#c4b5fd",
+                        fontWeight: 800,
+                        marginBottom: 2,
+                      }}
+                    >
                       Kylor motion preset
                     </div>
                     <div style={{ fontSize: 15, color: C.text, fontWeight: 800 }}>{model}</div>
@@ -534,15 +593,15 @@ export default function VideoPage() {
                 <div style={{ display: "flex", gap: 10 }}>
                   <FrameUploadCard
                     title="Start frame"
-                    optional
                     file={startFrame}
                     onFileChange={setStartFrame}
+                    onRemove={() => setStartFrame(null)}
                   />
                   <FrameUploadCard
                     title="End frame"
-                    optional
                     file={endFrame}
                     onFileChange={setEndFrame}
+                    onRemove={() => setEndFrame(null)}
                   />
                 </div>
 
@@ -556,7 +615,13 @@ export default function VideoPage() {
                     gap: 12,
                   }}
                 >
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                    }}
+                  >
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       <span style={{ fontSize: 13, color: C.textMuted }}>Multi-shot</span>
                       <div
@@ -611,141 +676,218 @@ export default function VideoPage() {
                   </div>
                 </div>
 
-                <div
-                  style={{
-                    borderRadius: 16,
-                    border: `1px solid ${C.border}`,
-                    background: C.panel2,
-                    padding: 12,
-                  }}
-                >
-                  <div
-                    style={{
-                      fontSize: 12,
-                      fontWeight: 700,
-                      color: C.textMuted,
-                      marginBottom: 8,
-                    }}
-                  >
-                    Model
-                  </div>
+                <div style={{ position: "relative" }} ref={settingsRef}>
+                  <AnimatePresence>
+                    {settingsOpen && (
+                      <motion.div
+                        initial={{ opacity: 0, y: 16, scale: 0.97 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: 10, scale: 0.97 }}
+                        transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+                        style={{
+                          position: "absolute",
+                          left: 0,
+                          right: 0,
+                          bottom: "calc(100% + 8px)",
+                          zIndex: 10,
+                          borderRadius: 18,
+                          border: `1px solid ${C.border}`,
+                          background: "rgba(14,16,26,0.99)",
+                          backdropFilter: "blur(16px)",
+                          boxShadow: "0 28px 80px rgba(0,0,0,0.5)",
+                          padding: 16,
+                          display: "grid",
+                          gap: 16,
+                        }}
+                      >
+                        <div>
+                          <div
+                            style={{
+                              fontSize: 11,
+                              color: C.textMuted,
+                              marginBottom: 8,
+                              fontWeight: 600,
+                              letterSpacing: "0.08em",
+                              textTransform: "uppercase",
+                            }}
+                          >
+                            Mode
+                          </div>
+                          <SegmentControl
+                            options={MODES}
+                            value={quality}
+                            onChange={setQuality}
+                            columns={3}
+                          />
+                        </div>
 
-                  <div
-                    style={{
-                      height: 42,
-                      borderRadius: 12,
-                      border: `1px solid ${C.border}`,
-                      background: "rgba(255,255,255,0.02)",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      padding: "0 12px",
-                    }}
-                  >
-                    <span style={{ fontSize: 13, fontWeight: 700 }}>{model}</span>
-                    <ChevronRight size={14} color={C.textMuted} />
-                  </div>
+                        <div>
+                          <div
+                            style={{
+                              fontSize: 11,
+                              color: C.textMuted,
+                              marginBottom: 8,
+                              fontWeight: 600,
+                              letterSpacing: "0.08em",
+                              textTransform: "uppercase",
+                            }}
+                          >
+                            Aspect Ratio
+                          </div>
+                          <div
+                            style={{
+                              display: "grid",
+                              gridTemplateColumns: "repeat(5,1fr)",
+                              gap: 6,
+                            }}
+                          >
+                            {RATIOS.map((r) => (
+                              <motion.button
+                                key={r}
+                                whileTap={{ scale: 0.95 }}
+                                onClick={() => setRatio(r)}
+                                style={{
+                                  height: 34,
+                                  borderRadius: radius.sm,
+                                  border:
+                                    ratio === r
+                                      ? `1px solid ${C.accentBorder}`
+                                      : `1px solid ${C.border}`,
+                                  background:
+                                    ratio === r
+                                      ? "linear-gradient(160deg,rgba(79,70,229,0.18),rgba(124,58,237,0.12))"
+                                      : C.surface,
+                                  color: ratio === r ? "white" : C.textMuted,
+                                  fontSize: 12,
+                                  cursor: "pointer",
+                                  fontFamily: "inherit",
+                                  transition: "all 0.15s ease",
+                                }}
+                              >
+                                {r}
+                              </motion.button>
+                            ))}
+                          </div>
+                        </div>
 
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8, marginTop: 10 }}>
-                    <button
-                      onClick={() => {
-                        const order = ["5s", "8s", "10s"];
-                        const next = order[(order.indexOf(duration) + 1) % order.length];
-                        setDuration(next);
-                      }}
+                        <div>
+                          <div
+                            style={{
+                              fontSize: 11,
+                              color: C.textMuted,
+                              marginBottom: 8,
+                              fontWeight: 600,
+                              letterSpacing: "0.08em",
+                              textTransform: "uppercase",
+                            }}
+                          >
+                            Output Count
+                          </div>
+                          <div
+                            style={{
+                              display: "grid",
+                              gridTemplateColumns: "repeat(4,1fr)",
+                              gap: 6,
+                            }}
+                          >
+                            {OUTPUTS.map((n) => (
+                              <motion.button
+                                key={n}
+                                whileTap={{ scale: 0.95 }}
+                                onClick={() => setOutputCount(n)}
+                                style={{
+                                  height: 34,
+                                  borderRadius: radius.sm,
+                                  border:
+                                    outputCount === n
+                                      ? `1px solid ${C.accentBorder}`
+                                      : `1px solid ${C.border}`,
+                                  background:
+                                    outputCount === n
+                                      ? "linear-gradient(160deg,rgba(79,70,229,0.18),rgba(124,58,237,0.12))"
+                                      : C.surface,
+                                  color: outputCount === n ? "white" : C.textMuted,
+                                  fontSize: 13,
+                                  cursor: "pointer",
+                                  fontFamily: "inherit",
+                                  transition: "all 0.15s ease",
+                                }}
+                              >
+                                {n}
+                              </motion.button>
+                            ))}
+                          </div>
+                          <p style={{ margin: "8px 0 0", fontSize: 11, color: C.textMuted }}>
+                            Max 4 per generation
+                          </p>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+
+                  <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: 10 }}>
+                    <motion.button
+                      whileHover={{ borderColor: C.borderHover }}
+                      whileTap={{ scale: 0.97 }}
+                      onClick={() => setSettingsOpen((p) => !p)}
                       style={{
-                        height: 40,
-                        borderRadius: 12,
-                        border: `1px solid ${C.border}`,
-                        background: "rgba(255,255,255,0.02)",
+                        height: 46,
+                        padding: "0 14px",
+                        borderRadius: radius.md,
+                        border: `1px solid ${settingsOpen ? C.accentBorder : C.border}`,
+                        background: settingsOpen ? C.accentSoft : "#0d0f18",
+                        color: "rgba(255,255,255,0.85)",
                         display: "flex",
                         alignItems: "center",
-                        justifyContent: "center",
-                        gap: 6,
-                        fontSize: 13,
-                        color: C.text,
+                        gap: 8,
                         cursor: "pointer",
+                        fontSize: 13,
                         fontFamily: "inherit",
+                        whiteSpace: "nowrap",
+                        transition: "all 0.15s ease",
                       }}
                     >
-                      <Clock3 size={13} /> {duration}
-                    </button>
+                      <Settings size={14} />
+                      <span>
+                        {quality} · {ratio} · ×{outputCount}
+                      </span>
+                      <motion.div
+                        animate={{ rotate: settingsOpen ? 180 : 0 }}
+                        transition={{ duration: 0.2 }}
+                      >
+                        <ChevronDown size={14} />
+                      </motion.div>
+                    </motion.button>
 
                     <button
-                      onClick={() => {
-                        const order = ["16:9", "9:16", "1:1"];
-                        const next = order[(order.indexOf(ratio) + 1) % order.length];
-                        setRatio(next);
-                      }}
+                      onClick={handleGenerate}
+                      disabled={!prompt.trim() || generating}
                       style={{
-                        height: 40,
-                        borderRadius: 12,
-                        border: `1px solid ${C.border}`,
-                        background: "rgba(255,255,255,0.02)",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        gap: 6,
-                        fontSize: 13,
-                        color: C.text,
-                        cursor: "pointer",
+                        height: 46,
+                        borderRadius: 14,
+                        border: `1px solid ${
+                          !prompt.trim() || generating ? C.border : C.accentBorder
+                        }`,
+                        background:
+                          !prompt.trim() || generating
+                            ? "rgba(255,255,255,0.06)"
+                            : "linear-gradient(135deg, rgba(79,70,229,0.95), rgba(124,58,237,0.92))",
+                        color: !prompt.trim() || generating ? C.textMuted : "white",
+                        fontSize: 17,
+                        fontWeight: 800,
+                        cursor: !prompt.trim() || generating ? "default" : "pointer",
                         fontFamily: "inherit",
+                        boxShadow:
+                          !prompt.trim() || generating
+                            ? "none"
+                            : "0 12px 26px rgba(124,58,237,0.22)",
+                        letterSpacing: "-0.01em",
                       }}
                     >
-                      <PanelsTopLeft size={13} /> {ratio}
-                    </button>
-
-                    <button
-                      onClick={() => {
-                        const order = ["720p", "1080p", "2K"];
-                        const next = order[(order.indexOf(quality) + 1) % order.length];
-                        setQuality(next);
-                      }}
-                      style={{
-                        height: 40,
-                        borderRadius: 12,
-                        border: `1px solid ${C.border}`,
-                        background: "rgba(255,255,255,0.02)",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        gap: 6,
-                        fontSize: 13,
-                        color: C.text,
-                        cursor: "pointer",
-                        fontFamily: "inherit",
-                      }}
-                    >
-                      <Zap size={13} /> {quality}
+                      {generating ? "Generating..." : "Generate"}
                     </button>
                   </div>
                 </div>
-
-                <button
-                  onClick={handleGenerate}
-                  disabled={!prompt.trim() || generating}
-                  style={{
-                    height: 52,
-                    borderRadius: 14,
-                    border: `1px solid ${!prompt.trim() || generating ? C.border : C.accentBorder}`,
-                    background:
-                      !prompt.trim() || generating
-                        ? "rgba(255,255,255,0.06)"
-                        : "linear-gradient(135deg, rgba(79,70,229,0.95), rgba(124,58,237,0.92))",
-                    color: !prompt.trim() || generating ? C.textMuted : "white",
-                    fontSize: 17,
-                    fontWeight: 800,
-                    cursor: !prompt.trim() || generating ? "default" : "pointer",
-                    fontFamily: "inherit",
-                    boxShadow:
-                      !prompt.trim() || generating
-                        ? "none"
-                        : "0 12px 26px rgba(124,58,237,0.22)",
-                    letterSpacing: "-0.01em",
-                  }}
-                >
-                  {generating ? "Generating..." : "Generate Video"}
-                </button>
               </div>
             </div>
           </section>
@@ -916,7 +1058,9 @@ export default function VideoPage() {
                           >
                             <ImagePlus size={24} />
                           </div>
-                          <div style={{ fontSize: 22, fontWeight: 900, marginBottom: 8 }}>Upload Frame</div>
+                          <div style={{ fontSize: 22, fontWeight: 900, marginBottom: 8 }}>
+                            Upload Frame
+                          </div>
                           <div style={{ fontSize: 13.5, color: C.textMuted }}>
                             Drag image, paste from clipboard, or start from prompt
                           </div>
@@ -986,11 +1130,26 @@ export default function VideoPage() {
                                 fontFamily: "inherit",
                               }}
                             >
-                              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                                <div style={{ fontSize: 14, fontWeight: 800, color: C.text }}>{preset.title}</div>
+                              <div
+                                style={{
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "space-between",
+                                }}
+                              >
+                                <div style={{ fontSize: 14, fontWeight: 800, color: C.text }}>
+                                  {preset.title}
+                                </div>
                                 {active && <Check size={14} color="#c4b5fd" />}
                               </div>
-                              <div style={{ fontSize: 12.5, color: C.textMuted, marginTop: 6, lineHeight: 1.6 }}>
+                              <div
+                                style={{
+                                  fontSize: 12.5,
+                                  color: C.textMuted,
+                                  marginTop: 6,
+                                  lineHeight: 1.6,
+                                }}
+                              >
                                 {preset.sub}
                               </div>
                             </button>
@@ -1013,7 +1172,9 @@ export default function VideoPage() {
                       }}
                     >
                       <div>
-                        <div style={{ fontSize: 16, fontWeight: 900, marginBottom: 6 }}>Render Preview</div>
+                        <div style={{ fontSize: 16, fontWeight: 900, marginBottom: 6 }}>
+                          Render Preview
+                        </div>
                         <div style={{ fontSize: 13.5, color: C.textMuted, lineHeight: 1.7 }}>
                           Final output preview with your selected frame, preset, and scene motion.
                         </div>
@@ -1118,7 +1279,9 @@ export default function VideoPage() {
                     minHeight: "calc(100vh - 40px)",
                   }}
                 >
-                  <div style={{ fontSize: 22, fontWeight: 800, marginBottom: 18 }}>Recent Video Jobs</div>
+                  <div style={{ fontSize: 22, fontWeight: 800, marginBottom: 18 }}>
+                    Recent Video Jobs
+                  </div>
 
                   <div style={{ display: "grid", gap: 14 }}>
                     {[1, 2].map((item) => (
@@ -1159,7 +1322,14 @@ export default function VideoPage() {
                         </div>
 
                         <div style={{ padding: 16 }}>
-                          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
+                          <div
+                            style={{
+                              display: "flex",
+                              gap: 6,
+                              flexWrap: "wrap",
+                              marginBottom: 10,
+                            }}
+                          >
                             {RESULT_TAGS.map((tag) => (
                               <div
                                 key={tag}
