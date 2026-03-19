@@ -349,6 +349,8 @@ export default function VideoPage() {
 
   const [multiShot, setMultiShot] = useState(false);
   const [enhanceOn, setEnhanceOn] = useState(true);
+  const [musicOn, setMusicOn] = useState(true);
+  const [elementsOpen, setElementsOpen] = useState(false);
 
   const [prompt, setPrompt] = useState("");
   const [negativeOpen, setNegativeOpen] = useState(false);
@@ -716,48 +718,103 @@ export default function VideoPage() {
 
                   <div
                     style={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
+                      borderTop: `1px solid ${C.border}`,
+                      paddingTop: 12,
+                      display: "grid",
                       gap: 10,
-                      flexWrap: "wrap",
                     }}
                   >
-                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                      <PillButton active={enhanceOn} onClick={() => setEnhanceOn(!enhanceOn)}>
-                        <Wand2 size={12} style={{ marginRight: 6 }} />
-                        Enhance on
-                      </PillButton>
-                      <PillButton active={true} onClick={() => {}}>
-                        <Music size={12} style={{ marginRight: 6 }} />
-                        On
-                      </PillButton>
-                      <PillButton active={false} onClick={() => {}}>
-                        @ Elements
-                      </PillButton>
-                    </div>
-
-                    <button
-                      onClick={() => setNegativeOpen((p) => !p)}
+                    <div
                       style={{
-                        height: 34,
-                        padding: "0 12px",
-                        borderRadius: radius.full,
-                        border: `1px solid ${
-                          negativeOpen || negativePrompt ? "rgba(248,113,113,0.3)" : C.border
-                        }`,
-                        background:
-                          negativeOpen || negativePrompt
-                            ? "rgba(248,113,113,0.08)"
-                            : C.surface,
-                        color: negativeOpen || negativePrompt ? "#fca5a5" : C.textMuted,
-                        fontSize: 12,
-                        cursor: "pointer",
-                        fontFamily: "inherit",
+                        display: "flex",
+                        gap: 8,
+                        flexWrap: "wrap",
+                        alignItems: "center",
                       }}
                     >
-                      Negative{negativePrompt ? " ✓" : ""}
-                    </button>
+                      <PillButton active={enhanceOn} onClick={() => setEnhanceOn(!enhanceOn)}>
+                        <Wand2 size={12} style={{ marginRight: 6 }} />
+                        {enhanceOn ? "Enhance on" : "Enhance off"}
+                      </PillButton>
+
+                      <PillButton active={musicOn} onClick={() => setMusicOn(!musicOn)}>
+                        <Music size={12} style={{ marginRight: 6 }} />
+                        {musicOn ? "On" : "Off"}
+                      </PillButton>
+
+                      <PillButton active={elementsOpen} onClick={() => setElementsOpen((p) => !p)}>
+                        @ Elements
+                      </PillButton>
+
+                      <button
+                        onClick={() => setNegativeOpen((p) => !p)}
+                        style={{
+                          height: 34,
+                          padding: "0 12px",
+                          borderRadius: radius.full,
+                          border: `1px solid ${
+                            negativeOpen || negativePrompt ? "rgba(248,113,113,0.3)" : C.border
+                          }`,
+                          background:
+                            negativeOpen || negativePrompt
+                              ? "rgba(248,113,113,0.08)"
+                              : C.surface,
+                          color: negativeOpen || negativePrompt ? "#fca5a5" : C.textMuted,
+                          fontSize: 12,
+                          cursor: "pointer",
+                          fontFamily: "inherit",
+                        }}
+                      >
+                        Negative{negativePrompt ? " ✓" : ""}
+                      </button>
+                    </div>
+
+                    <AnimatePresence>
+                      {elementsOpen && (
+                        <motion.div
+                          initial={{ opacity: 0, y: 8, height: 0 }}
+                          animate={{ opacity: 1, y: 0, height: "auto" }}
+                          exit={{ opacity: 0, y: 6, height: 0 }}
+                          style={{ overflow: "hidden" }}
+                        >
+                          <div
+                            style={{
+                              border: `1px solid ${C.border}`,
+                              background: "rgba(255,255,255,0.02)",
+                              borderRadius: 14,
+                              padding: 10,
+                              display: "flex",
+                              gap: 8,
+                              flexWrap: "wrap",
+                            }}
+                          >
+                            {["Rain", "Smoke", "Fire", "Snow", "Cars", "Crowd"].map((item) => (
+                              <button
+                                key={item}
+                                style={{
+                                  height: 30,
+                                  padding: "0 12px",
+                                  borderRadius: 999,
+                                  border: `1px solid ${C.border}`,
+                                  background: "rgba(255,255,255,0.03)",
+                                  color: C.textMuted,
+                                  fontSize: 12,
+                                  cursor: "pointer",
+                                  fontFamily: "inherit",
+                                }}
+                                onClick={() => {
+                                  setPrompt((prev) =>
+                                    prev ? `${prev}, ${item.toLowerCase()}` : item.toLowerCase()
+                                  );
+                                }}
+                              >
+                                {item}
+                              </button>
+                            ))}
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
                   </div>
                 </div>
 
@@ -880,129 +937,123 @@ export default function VideoPage() {
                   </AnimatePresence>
 
                   <div style={{ display: "grid", gap: 10 }}>
-  <motion.button
-    whileHover={{ borderColor: C.borderHover }}
-    whileTap={{ scale: 0.97 }}
-    onClick={() => setSettingsOpen((p) => !p)}
-    style={{
-      height: 46,
-      width: "100%",
-      padding: "0 14px",
-      borderRadius: radius.md,
-      border: `1px solid ${settingsOpen ? C.accentBorder : C.border}`,
-      background: settingsOpen ? C.accentSoft : "#0d0f18",
-      color: "rgba(255,255,255,0.85)",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "space-between",
-      gap: 8,
-      cursor: "pointer",
-      fontSize: 13,
-      fontFamily: "inherit",
-      transition: "all 0.15s ease",
-    }}
-  >
-    <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
-      <Settings size={14} />
-      <span
-        style={{
-          whiteSpace: "nowrap",
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-        }}
-      >
-        {quality} · {ratio} · {duration}
-      </span>
-    </div>
+                    <motion.button
+                      whileHover={{ borderColor: C.borderHover }}
+                      whileTap={{ scale: 0.97 }}
+                      onClick={() => setSettingsOpen((p) => !p)}
+                      style={{
+                        height: 46,
+                        width: "100%",
+                        padding: "0 14px",
+                        borderRadius: radius.md,
+                        border: `1px solid ${settingsOpen ? C.accentBorder : C.border}`,
+                        background: settingsOpen ? C.accentSoft : "#0d0f18",
+                        color: "rgba(255,255,255,0.85)",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        gap: 8,
+                        cursor: "pointer",
+                        fontSize: 13,
+                        fontFamily: "inherit",
+                        transition: "all 0.15s ease",
+                      }}
+                    >
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+                        <Settings size={14} />
+                        <span
+                          style={{
+                            whiteSpace: "nowrap",
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                          }}
+                        >
+                          {quality} · {ratio} · {duration}
+                        </span>
+                      </div>
 
-    <motion.div
-      animate={{ rotate: settingsOpen ? 180 : 0 }}
-      transition={{ duration: 0.2 }}
-      style={{ flexShrink: 0 }}
-    >
-      <ChevronDown size={14} />
-    </motion.div>
-  </motion.button>
+                      <motion.div
+                        animate={{ rotate: settingsOpen ? 180 : 0 }}
+                        transition={{ duration: 0.2 }}
+                        style={{ flexShrink: 0 }}
+                      >
+                        <ChevronDown size={14} />
+                      </motion.div>
+                    </motion.button>
 
-  <motion.button
-    whileHover={
-      prompt.trim() && !generating
-        ? { boxShadow: "0 18px 40px rgba(124,58,237,0.42)" }
-        : {}
-    }
-    whileTap={
-      prompt.trim() && !generating
-        ? { scale: 0.98 }
-        : {}
-    }
-    onClick={handleGenerate}
-    disabled={generating}
-    style={{
-      height: 46,
-      width: "100%",
-      borderRadius: radius.md,
-      border: "none",
-      background:
-        prompt.trim() && !generating
-          ? "linear-gradient(135deg,#4f46e5,#7c3aed)"
-          : "rgba(255,255,255,0.06)",
-      color:
-        prompt.trim() && !generating
-          ? "white"
-          : C.textMuted,
-      cursor:
-        prompt.trim() && !generating
-          ? "pointer"
-          : "default",
-      boxShadow:
-        prompt.trim() && !generating
-          ? "0 10px 28px rgba(124,58,237,0.28)"
-          : "none",
-      display: "inline-flex",
-      alignItems: "center",
-      justifyContent: "center",
-      gap: 8,
-      fontFamily: "inherit",
-      fontSize: 15,
-      fontWeight: 700,
-      transition: "all 0.2s ease",
-    }}
-  >
-    <AnimatePresence mode="wait">
-      {generating ? (
-        <motion.span
-          key="gen"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          style={{ display: "flex", alignItems: "center", gap: 8 }}
-        >
-          <motion.div
-            animate={{ rotate: 360 }}
-            transition={{
-              repeat: Infinity,
-              duration: 1,
-              ease: "linear",
-            }}
-          >
-            <Zap size={15} />
-          </motion.div>
-          Generating…
-        </motion.span>
-      ) : (
-        <motion.span
-          key="idle"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          style={{ display: "flex", alignItems: "center", gap: 8 }}
-        >
-          <Wand2 size={15} /> Generate <ChevronRight size={15} />
-        </motion.span>
-      )}
-    </AnimatePresence>
-  </motion.button>
-</div>
+                    <motion.button
+                      whileHover={
+                        prompt.trim() && !generating
+                          ? { boxShadow: "0 18px 40px rgba(124,58,237,0.42)" }
+                          : {}
+                      }
+                      whileTap={
+                        prompt.trim() && !generating
+                          ? { scale: 0.98 }
+                          : {}
+                      }
+                      onClick={handleGenerate}
+                      disabled={generating}
+                      style={{
+                        height: 46,
+                        width: "100%",
+                        borderRadius: radius.md,
+                        border: "none",
+                        background:
+                          prompt.trim() && !generating
+                            ? "linear-gradient(135deg,#4f46e5,#7c3aed)"
+                            : "rgba(255,255,255,0.06)",
+                        color: prompt.trim() && !generating ? "white" : C.textMuted,
+                        cursor: prompt.trim() && !generating ? "pointer" : "default",
+                        boxShadow:
+                          prompt.trim() && !generating
+                            ? "0 10px 28px rgba(124,58,237,0.28)"
+                            : "none",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        gap: 8,
+                        fontFamily: "inherit",
+                        fontSize: 15,
+                        fontWeight: 700,
+                        transition: "all 0.2s ease",
+                      }}
+                    >
+                      <AnimatePresence mode="wait">
+                        {generating ? (
+                          <motion.span
+                            key="gen"
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            style={{ display: "flex", alignItems: "center", gap: 8 }}
+                          >
+                            <motion.div
+                              animate={{ rotate: 360 }}
+                              transition={{
+                                repeat: Infinity,
+                                duration: 1,
+                                ease: "linear",
+                              }}
+                            >
+                              <Zap size={15} />
+                            </motion.div>
+                            Generating…
+                          </motion.span>
+                        ) : (
+                          <motion.span
+                            key="idle"
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            style={{ display: "flex", alignItems: "center", gap: 8 }}
+                          >
+                            <Wand2 size={15} /> Generate <ChevronRight size={15} />
+                          </motion.span>
+                        )}
+                      </AnimatePresence>
+                    </motion.button>
+                  </div>
                 </div>
               </div>
             </div>
