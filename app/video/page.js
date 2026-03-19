@@ -879,13 +879,14 @@ export default function VideoPage() {
                     )}
                   </AnimatePresence>
 
-                  <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: 10 }}>
+                  <div style={{ display: "grid", gap: 10 }}>
   <motion.button
     whileHover={{ borderColor: C.borderHover }}
     whileTap={{ scale: 0.97 }}
     onClick={() => setSettingsOpen((p) => !p)}
     style={{
       height: 46,
+      width: "100%",
       padding: "0 14px",
       borderRadius: radius.md,
       border: `1px solid ${settingsOpen ? C.accentBorder : C.border}`,
@@ -893,21 +894,31 @@ export default function VideoPage() {
       color: "rgba(255,255,255,0.85)",
       display: "flex",
       alignItems: "center",
+      justifyContent: "space-between",
       gap: 8,
       cursor: "pointer",
       fontSize: 13,
       fontFamily: "inherit",
-      whiteSpace: "nowrap",
       transition: "all 0.15s ease",
     }}
   >
-    <Settings size={14} />
-    <span>
-      {quality} · {ratio} · {duration}
-    </span>
+    <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+      <Settings size={14} />
+      <span
+        style={{
+          whiteSpace: "nowrap",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+        }}
+      >
+        {quality} · {ratio} · {duration}
+      </span>
+    </div>
+
     <motion.div
       animate={{ rotate: settingsOpen ? 180 : 0 }}
       transition={{ duration: 0.2 }}
+      style={{ flexShrink: 0 }}
     >
       <ChevronDown size={14} />
     </motion.div>
