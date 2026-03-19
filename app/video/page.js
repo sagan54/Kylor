@@ -27,6 +27,7 @@ import {
   Wand2,
   History,
   PanelsTopLeft,
+  Zap,
 } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 
