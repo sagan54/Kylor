@@ -880,67 +880,118 @@ export default function VideoPage() {
                   </AnimatePresence>
 
                   <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: 10 }}>
-                    <motion.button
-                      whileHover={{ borderColor: C.borderHover }}
-                      whileTap={{ scale: 0.97 }}
-                      onClick={() => setSettingsOpen((p) => !p)}
-                      style={{
-                        height: 46,
-                        padding: "0 14px",
-                        borderRadius: radius.md,
-                        border: `1px solid ${settingsOpen ? C.accentBorder : C.border}`,
-                        background: settingsOpen ? C.accentSoft : "#0d0f18",
-                        color: "rgba(255,255,255,0.85)",
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 8,
-                        cursor: "pointer",
-                        fontSize: 13,
-                        fontFamily: "inherit",
-                        whiteSpace: "nowrap",
-                        transition: "all 0.15s ease",
-                      }}
-                    >
-                      <Settings size={14} />
-                      <span>
-                        {quality} · {ratio} · {duration}
-                      </span>
-                      <motion.div
-                        animate={{ rotate: settingsOpen ? 180 : 0 }}
-                        transition={{ duration: 0.2 }}
-                      >
-                        <ChevronDown size={14} />
-                      </motion.div>
-                    </motion.button>
+  <motion.button
+    whileHover={{ borderColor: C.borderHover }}
+    whileTap={{ scale: 0.97 }}
+    onClick={() => setSettingsOpen((p) => !p)}
+    style={{
+      height: 46,
+      padding: "0 14px",
+      borderRadius: radius.md,
+      border: `1px solid ${settingsOpen ? C.accentBorder : C.border}`,
+      background: settingsOpen ? C.accentSoft : "#0d0f18",
+      color: "rgba(255,255,255,0.85)",
+      display: "flex",
+      alignItems: "center",
+      gap: 8,
+      cursor: "pointer",
+      fontSize: 13,
+      fontFamily: "inherit",
+      whiteSpace: "nowrap",
+      transition: "all 0.15s ease",
+    }}
+  >
+    <Settings size={14} />
+    <span>
+      {quality} · {ratio} · {duration}
+    </span>
+    <motion.div
+      animate={{ rotate: settingsOpen ? 180 : 0 }}
+      transition={{ duration: 0.2 }}
+    >
+      <ChevronDown size={14} />
+    </motion.div>
+  </motion.button>
 
-                    <button
-                      onClick={handleGenerate}
-                      disabled={!prompt.trim() || generating}
-                      style={{
-                        height: 46,
-                        borderRadius: 14,
-                        border: `1px solid ${
-                          !prompt.trim() || generating ? C.border : C.accentBorder
-                        }`,
-                        background:
-                          !prompt.trim() || generating
-                            ? "rgba(255,255,255,0.06)"
-                            : "linear-gradient(135deg, rgba(79,70,229,0.95), rgba(124,58,237,0.92))",
-                        color: !prompt.trim() || generating ? C.textMuted : "white",
-                        fontSize: 17,
-                        fontWeight: 800,
-                        cursor: !prompt.trim() || generating ? "default" : "pointer",
-                        fontFamily: "inherit",
-                        boxShadow:
-                          !prompt.trim() || generating
-                            ? "none"
-                            : "0 12px 26px rgba(124,58,237,0.22)",
-                        letterSpacing: "-0.01em",
-                      }}
-                    >
-                      {generating ? "Generating..." : "Generate"}
-                    </button>
-                  </div>
+  <motion.button
+    whileHover={
+      prompt.trim() && !generating
+        ? { boxShadow: "0 18px 40px rgba(124,58,237,0.42)" }
+        : {}
+    }
+    whileTap={
+      prompt.trim() && !generating
+        ? { scale: 0.98 }
+        : {}
+    }
+    onClick={handleGenerate}
+    disabled={generating}
+    style={{
+      height: 46,
+      width: "100%",
+      borderRadius: radius.md,
+      border: "none",
+      background:
+        prompt.trim() && !generating
+          ? "linear-gradient(135deg,#4f46e5,#7c3aed)"
+          : "rgba(255,255,255,0.06)",
+      color:
+        prompt.trim() && !generating
+          ? "white"
+          : C.textMuted,
+      cursor:
+        prompt.trim() && !generating
+          ? "pointer"
+          : "default",
+      boxShadow:
+        prompt.trim() && !generating
+          ? "0 10px 28px rgba(124,58,237,0.28)"
+          : "none",
+      display: "inline-flex",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 8,
+      fontFamily: "inherit",
+      fontSize: 15,
+      fontWeight: 700,
+      transition: "all 0.2s ease",
+    }}
+  >
+    <AnimatePresence mode="wait">
+      {generating ? (
+        <motion.span
+          key="gen"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          style={{ display: "flex", alignItems: "center", gap: 8 }}
+        >
+          <motion.div
+            animate={{ rotate: 360 }}
+            transition={{
+              repeat: Infinity,
+              duration: 1,
+              ease: "linear",
+            }}
+          >
+            <Zap size={15} />
+          </motion.div>
+          Generating…
+        </motion.span>
+      ) : (
+        <motion.span
+          key="idle"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          style={{ display: "flex", alignItems: "center", gap: 8 }}
+        >
+          <Wand2 size={15} /> Generate <ChevronRight size={15} />
+        </motion.span>
+      )}
+    </AnimatePresence>
+  </motion.button>
+</div>
                 </div>
               </div>
             </div>
