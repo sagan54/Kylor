@@ -12,27 +12,18 @@ import {
   Orbit,
   FolderKanban,
   Settings,
-  Grid3X3,
-  List,
   ChevronRight,
-  Bell,
-  BellOff,
   X,
   ChevronDown,
-  Folder,
-  Upload,
-  Zap,
   Download,
   Share2,
   Trash2,
-  Plus,
   Music,
   Check,
   Copy,
   Play,
   Clock3,
   ImagePlus,
-  SlidersHorizontal,
   Wand2,
   History,
   PanelsTopLeft,
@@ -80,10 +71,6 @@ const SIDEBAR_ITEMS = [
 
 const CREATE_TABS = ["Create Video", "Edit Video", "Motion Control"];
 const RIGHT_TABS = ["History", "How it works"];
-const MODELS = ["Kling 3.0", "Kylor V1", "Kylor Motion"];
-const DURATIONS = ["5s", "8s", "10s"];
-const RATIOS = ["16:9", "9:16", "1:1"];
-const QUALITIES = ["720p", "1080p", "2K"];
 const PRESETS = [
   { id: 1, title: "Tracking", sub: "Dynamic follow movement" },
   { id: 2, title: "Flock", sub: "Organic chaotic motion" },
@@ -158,6 +145,8 @@ function PillButton({ active, onClick, children }) {
         fontWeight: 600,
         cursor: "pointer",
         fontFamily: "inherit",
+        display: "inline-flex",
+        alignItems: "center",
       }}
     >
       {children}
@@ -249,71 +238,15 @@ function FrameUploadCard({ title, optional }) {
   );
 }
 
-function PresetCard({ title, sub, active, onClick, gradient }) {
-  return (
-    <motion.button
-      whileTap={{ scale: 0.98 }}
-      onClick={onClick}
-      style={{
-        border: `1px solid ${active ? C.accentBorder : C.border}`,
-        background: gradient,
-        borderRadius: 20,
-        padding: 0,
-        overflow: "hidden",
-        cursor: "pointer",
-        minHeight: 286,
-        position: "relative",
-      }}
-    >
-      <div
-        style={{
-          position: "absolute",
-          inset: 0,
-          background:
-            active
-              ? "inset 0 0 0 2px rgba(196,181,253,0.85)"
-              : "inset 0 0 0 1px rgba(255,255,255,0.02)",
-          pointerEvents: "none",
-          borderRadius: 20,
-        }}
-      />
-      <div
-        style={{
-          position: "absolute",
-          inset: 0,
-          background:
-            "radial-gradient(circle at 25% 20%, rgba(255,255,255,0.14), transparent 22%), radial-gradient(circle at 70% 70%, rgba(124,58,237,0.22), transparent 30%)",
-        }}
-      />
-      <div
-        style={{
-          position: "absolute",
-          left: 14,
-          right: 14,
-          bottom: 14,
-          textAlign: "left",
-        }}
-      >
-        <div style={{ fontSize: 12, fontWeight: 800, color: C.text, marginBottom: 6 }}>
-          {title.toUpperCase()}
-        </div>
-        <div style={{ fontSize: 12, color: "rgba(255,255,255,0.62)", lineHeight: 1.5 }}>
-          {sub}
-        </div>
-      </div>
-    </motion.button>
-  );
-}
-
 export default function VideoPage() {
   const [createTab, setCreateTab] = useState("Create Video");
   const [rightTab, setRightTab] = useState("How it works");
   const [notifState, setNotifState] = useState("idle");
 
-  const [model, setModel] = useState("Kling 3.0");
-  const [duration, setDuration] = useState("5s");
-  const [ratio, setRatio] = useState("16:9");
-  const [quality, setQuality] = useState("720p");
+  const [model] = useState("Kling 3.0");
+  const [duration] = useState("5s");
+  const [ratio] = useState("16:9");
+  const [quality] = useState("720p");
 
   const [multiShot, setMultiShot] = useState(false);
   const [enhanceOn, setEnhanceOn] = useState(true);
@@ -326,9 +259,9 @@ export default function VideoPage() {
 
   const presetGradients = useMemo(
     () => [
-      "linear-gradient(135deg, rgba(255,255,255,0.06), rgba(124,58,237,0.08), rgba(255,255,255,0.02))",
-      "linear-gradient(135deg, rgba(79,70,229,0.18), rgba(124,58,237,0.12), rgba(255,255,255,0.04))",
-      "linear-gradient(135deg, rgba(255,255,255,0.05), rgba(79,70,229,0.08), rgba(255,255,255,0.02))",
+      "linear-gradient(135deg, rgba(255,255,255,0.04), rgba(124,58,237,0.05), rgba(255,255,255,0.015))",
+      "linear-gradient(135deg, rgba(79,70,229,0.12), rgba(124,58,237,0.10), rgba(255,255,255,0.03))",
+      "linear-gradient(135deg, rgba(255,255,255,0.035), rgba(79,70,229,0.06), rgba(255,255,255,0.015))",
     ],
     []
   );
@@ -475,13 +408,14 @@ export default function VideoPage() {
               <div style={{ padding: 12, display: "grid", gap: 12 }}>
                 <div
                   style={{
-                    borderRadius: 16,
+                    borderRadius: 18,
                     overflow: "hidden",
                     border: `1px solid ${C.border}`,
-                    minHeight: 114,
+                    minHeight: 132,
                     position: "relative",
                     background:
-                      "linear-gradient(135deg, rgba(255,255,255,0.10), rgba(124,58,237,0.10), rgba(255,255,255,0.03))",
+                      "linear-gradient(145deg, rgba(79,70,229,0.16), rgba(124,58,237,0.10), rgba(255,255,255,0.02))",
+                    boxShadow: "inset 0 1px 0 rgba(255,255,255,0.03)",
                   }}
                 >
                   <div
@@ -489,9 +423,10 @@ export default function VideoPage() {
                       position: "absolute",
                       inset: 0,
                       background:
-                        "radial-gradient(circle at 20% 20%, rgba(255,255,255,0.16), transparent 18%), linear-gradient(180deg, transparent 20%, rgba(0,0,0,0.28) 100%)",
+                        "radial-gradient(circle at 20% 20%, rgba(255,255,255,0.10), transparent 18%), radial-gradient(circle at 75% 75%, rgba(124,58,237,0.18), transparent 24%)",
                     }}
                   />
+
                   <div
                     style={{
                       position: "absolute",
@@ -505,7 +440,7 @@ export default function VideoPage() {
                         padding: "0 12px",
                         borderRadius: 10,
                         border: `1px solid ${C.border}`,
-                        background: "rgba(255,255,255,0.08)",
+                        background: "rgba(255,255,255,0.06)",
                         color: C.text,
                         fontSize: 12,
                         cursor: "pointer",
@@ -519,15 +454,37 @@ export default function VideoPage() {
                   <div
                     style={{
                       position: "absolute",
-                      left: 12,
-                      right: 12,
-                      bottom: 12,
+                      left: 14,
+                      right: 14,
+                      bottom: 14,
                     }}
                   >
-                    <div style={{ fontSize: 12, color: "#d8ff3f", fontWeight: 800, marginBottom: 4 }}>
-                      GENERAL
+                    <div
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 6,
+                        marginBottom: 8,
+                        padding: "4px 10px",
+                        borderRadius: 999,
+                        border: `1px solid ${C.accentBorder}`,
+                        background: "rgba(124,58,237,0.10)",
+                        color: "#c4b5fd",
+                        fontSize: 10.5,
+                        fontWeight: 700,
+                      }}
+                    >
+                      <Video size={11} />
+                      VIDEO CORE
                     </div>
-                    <div style={{ fontSize: 13, color: "rgba(255,255,255,0.65)" }}>{model}</div>
+
+                    <div style={{ fontSize: 12, color: "#d8ff3f", fontWeight: 800, marginBottom: 2 }}>
+                      Kylor motion preset
+                    </div>
+                    <div style={{ fontSize: 15, color: C.text, fontWeight: 800 }}>{model}</div>
+                    <div style={{ fontSize: 12, color: C.textMuted, marginTop: 4 }}>
+                      Optimized for cinematic scene movement
+                    </div>
                   </div>
                 </div>
 
@@ -695,19 +652,20 @@ export default function VideoPage() {
                     background:
                       !prompt.trim() || generating
                         ? "rgba(255,255,255,0.06)"
-                        : "linear-gradient(135deg,#5b3ff5,#7c3aed)",
+                        : "linear-gradient(135deg, rgba(79,70,229,0.95), rgba(124,58,237,0.92))",
                     color: !prompt.trim() || generating ? C.textMuted : "white",
-                    fontSize: 18,
+                    fontSize: 17,
                     fontWeight: 800,
                     cursor: !prompt.trim() || generating ? "default" : "pointer",
                     fontFamily: "inherit",
                     boxShadow:
                       !prompt.trim() || generating
                         ? "none"
-                        : "0 14px 30px rgba(124,58,237,0.26)",
+                        : "0 12px 26px rgba(124,58,237,0.22)",
+                    letterSpacing: "-0.01em",
                   }}
                 >
-                  {generating ? "Generating..." : "Generate"}
+                  {generating ? "Generating..." : "Generate Video"}
                 </button>
               </div>
             </div>
@@ -768,16 +726,39 @@ export default function VideoPage() {
                   <div style={{ marginBottom: 28 }}>
                     <div
                       style={{
-                        fontSize: 34,
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 8,
+                        padding: "6px 12px",
+                        borderRadius: 999,
+                        border: `1px solid ${C.accentBorder}`,
+                        background: C.accentSoft,
+                        color: "#c4b5fd",
+                        fontSize: 11,
+                        fontWeight: 800,
+                        letterSpacing: "0.08em",
+                        textTransform: "uppercase",
+                        marginBottom: 14,
+                      }}
+                    >
+                      <Sparkles size={12} />
+                      Kylor Video Studio
+                    </div>
+
+                    <div
+                      style={{
+                        fontSize: 32,
                         fontWeight: 900,
                         lineHeight: 1.08,
                         color: C.text,
                         marginBottom: 10,
                         letterSpacing: "-0.03em",
+                        maxWidth: 760,
                       }}
                     >
-                      MAKE VIDEOS IN ONE CLICK
+                      Direct cinematic motion with frames, presets, and scene control
                     </div>
+
                     <div
                       style={{
                         fontSize: 15,
@@ -786,27 +767,49 @@ export default function VideoPage() {
                         maxWidth: 860,
                       }}
                     >
-                      Use Kylor’s cinematic workflow for framing, camera motion, and high-quality
-                      AI video generation — while keeping the same premium dark production interface.
+                      Build AI video shots inside Kylor’s production workflow — from reference
+                      frames and camera behavior to final rendered motion.
                     </div>
                   </div>
 
                   <div
                     style={{
                       display: "grid",
-                      gridTemplateColumns: "1.15fr 1fr 1fr",
-                      gap: 28,
+                      gridTemplateColumns: "1.15fr 0.95fr 1fr",
+                      gap: 24,
                       alignItems: "stretch",
                     }}
                   >
-                    <div>
+                    <div
+                      style={{
+                        borderRadius: 24,
+                        border: `1px solid ${C.border}`,
+                        background:
+                          "linear-gradient(180deg, rgba(255,255,255,0.025), rgba(124,58,237,0.035), rgba(255,255,255,0.015))",
+                        padding: 20,
+                        display: "flex",
+                        flexDirection: "column",
+                        justifyContent: "space-between",
+                        minHeight: 420,
+                      }}
+                    >
+                      <div>
+                        <div style={{ fontSize: 16, fontWeight: 900, marginBottom: 6 }}>Scene Setup</div>
+                        <div style={{ fontSize: 13.5, color: C.textMuted, lineHeight: 1.7 }}>
+                          Start with a reference frame or build from prompt. Lock the visual base
+                          before motion is applied.
+                        </div>
+                      </div>
+
                       <div
                         style={{
-                          borderRadius: 24,
-                          border: `1px solid ${C.border}`,
-                          minHeight: 360,
-                          background:
-                            "linear-gradient(135deg, rgba(255,255,255,0.03), rgba(124,58,237,0.05), rgba(255,255,255,0.02))",
+                          marginTop: 18,
+                          borderRadius: 22,
+                          border: `1px dashed ${C.border}`,
+                          minHeight: 220,
+                          display: "grid",
+                          placeItems: "center",
+                          background: "rgba(255,255,255,0.015)",
                           position: "relative",
                           overflow: "hidden",
                         }}
@@ -816,151 +819,208 @@ export default function VideoPage() {
                             position: "absolute",
                             inset: 0,
                             background:
-                              "radial-gradient(circle at 30% 25%, rgba(255,255,255,0.10), transparent 18%), radial-gradient(circle at 70% 80%, rgba(124,58,237,0.18), transparent 26%)",
+                              "radial-gradient(circle at 30% 25%, rgba(255,255,255,0.08), transparent 20%), radial-gradient(circle at 70% 80%, rgba(124,58,237,0.16), transparent 28%)",
                           }}
                         />
-                        <div
-                          style={{
-                            position: "absolute",
-                            left: "50%",
-                            top: "50%",
-                            transform: "translate(-50%,-50%)",
-                            width: 310,
-                            height: 220,
-                            borderRadius: 26,
-                            border: "2px dashed rgba(255,255,255,0.08)",
-                            display: "grid",
-                            placeItems: "center",
-                          }}
-                        >
-                          <div style={{ textAlign: "center" }}>
-                            <div
-                              style={{
-                                width: 62,
-                                height: 62,
-                                borderRadius: 18,
-                                margin: "0 auto 16px",
-                                border: `1px solid ${C.border}`,
-                                background: "rgba(255,255,255,0.03)",
-                                display: "grid",
-                                placeItems: "center",
-                              }}
-                            >
-                              <ImagePlus size={26} color="rgba(255,255,255,0.8)" />
-                            </div>
-                            <div style={{ fontSize: 20, fontWeight: 900, marginBottom: 8 }}>
-                              UPLOAD IMAGE
-                            </div>
-                            <div style={{ fontSize: 14, color: C.textMuted }}>
-                              Drag a frame or paste from clipboard
-                            </div>
-                          </div>
-                        </div>
-
-                        <div
-                          style={{
-                            position: "absolute",
-                            left: 36,
-                            bottom: -6,
-                            width: 250,
-                            height: 120,
-                            borderRadius: 22,
-                            transform: "rotate(-8deg)",
-                            background:
-                              "linear-gradient(135deg, rgba(79,70,229,0.4), rgba(255,255,255,0.08), rgba(124,58,237,0.34))",
-                            border: "3px solid #d8ff3f",
-                            boxShadow: "0 10px 30px rgba(0,0,0,0.28)",
-                          }}
-                        />
-                      </div>
-
-                      <div style={{ marginTop: 14 }}>
-                        <div style={{ fontSize: 16, fontWeight: 900, marginBottom: 8 }}>ADD IMAGE</div>
-                        <div style={{ fontSize: 14, color: C.textMuted, lineHeight: 1.7 }}>
-                          Upload or generate a frame to start your animation pipeline.
-                        </div>
-                      </div>
-                    </div>
-
-                    <div>
-                      <div
-                        style={{
-                          borderRadius: 24,
-                          border: `1px solid ${C.border}`,
-                          minHeight: 360,
-                          background:
-                            "linear-gradient(135deg, rgba(255,255,255,0.03), rgba(124,58,237,0.06), rgba(255,255,255,0.015))",
-                          padding: 20,
-                          display: "grid",
-                          gridTemplateColumns: "repeat(3,1fr)",
-                          gap: 14,
-                          alignItems: "center",
-                        }}
-                      >
-                        {PRESETS.map((preset, idx) => (
-                          <PresetCard
-                            key={preset.id}
-                            title={preset.title}
-                            sub={preset.sub}
-                            active={selectedPreset === preset.id}
-                            onClick={() => setSelectedPreset(preset.id)}
-                            gradient={presetGradients[idx]}
-                          />
-                        ))}
-                      </div>
-
-                      <div style={{ marginTop: 14 }}>
-                        <div style={{ fontSize: 16, fontWeight: 900, marginBottom: 8 }}>
-                          CHOOSE PRESET
-                        </div>
-                        <div style={{ fontSize: 14, color: C.textMuted, lineHeight: 1.7 }}>
-                          Pick a preset to control image movement and shot behavior.
-                        </div>
-                      </div>
-                    </div>
-
-                    <div>
-                      <div
-                        style={{
-                          borderRadius: 24,
-                          border: `1px solid ${C.border}`,
-                          minHeight: 360,
-                          background:
-                            "linear-gradient(135deg, rgba(255,255,255,0.02), rgba(124,58,237,0.07), rgba(255,255,255,0.015))",
-                          padding: 18,
-                          display: "grid",
-                          placeItems: "center",
-                        }}
-                      >
-                        <div
-                          style={{
-                            width: "100%",
-                            aspectRatio: "16/10",
-                            borderRadius: 26,
-                            border: "6px solid rgba(255,255,255,0.95)",
-                            background:
-                              "linear-gradient(135deg, rgba(0,255,180,0.08), rgba(255,80,0,0.12), rgba(124,58,237,0.12), rgba(0,0,0,0.45))",
-                            position: "relative",
-                            overflow: "hidden",
-                          }}
-                        >
+                        <div style={{ textAlign: "center", position: "relative", zIndex: 2 }}>
                           <div
                             style={{
-                              position: "absolute",
-                              inset: 0,
-                              background:
-                                "linear-gradient(90deg, rgba(0,255,180,0.14), transparent 30%, rgba(255,80,0,0.16) 80%), radial-gradient(circle at 20% 70%, rgba(0,255,180,0.18), transparent 18%)",
-                              filter: "blur(2px)",
+                              width: 56,
+                              height: 56,
+                              borderRadius: 16,
+                              margin: "0 auto 14px",
+                              border: `1px solid ${C.border}`,
+                              background: "rgba(255,255,255,0.03)",
+                              display: "grid",
+                              placeItems: "center",
                             }}
-                          />
+                          >
+                            <ImagePlus size={24} />
+                          </div>
+                          <div style={{ fontSize: 22, fontWeight: 900, marginBottom: 8 }}>Upload Frame</div>
+                          <div style={{ fontSize: 13.5, color: C.textMuted }}>
+                            Drag image, paste from clipboard, or start from prompt
+                          </div>
                         </div>
                       </div>
 
-                      <div style={{ marginTop: 14 }}>
-                        <div style={{ fontSize: 16, fontWeight: 900, marginBottom: 8 }}>GET VIDEO</div>
-                        <div style={{ fontSize: 14, color: C.textMuted, lineHeight: 1.7 }}>
-                          Click generate to create your final animated cinematic video.
+                      <div
+                        style={{
+                          marginTop: 18,
+                          display: "grid",
+                          gridTemplateColumns: "repeat(3,1fr)",
+                          gap: 10,
+                        }}
+                      >
+                        {["Frame", "Character", "Style"].map((item) => (
+                          <div
+                            key={item}
+                            style={{
+                              borderRadius: 14,
+                              border: `1px solid ${C.border}`,
+                              background: "rgba(255,255,255,0.02)",
+                              padding: "12px 10px",
+                              textAlign: "center",
+                              fontSize: 12.5,
+                              color: C.textMuted,
+                            }}
+                          >
+                            {item}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div
+                      style={{
+                        borderRadius: 24,
+                        border: `1px solid ${C.border}`,
+                        background:
+                          "linear-gradient(180deg, rgba(255,255,255,0.025), rgba(124,58,237,0.03), rgba(255,255,255,0.015))",
+                        padding: 20,
+                        minHeight: 420,
+                        display: "flex",
+                        flexDirection: "column",
+                      }}
+                    >
+                      <div style={{ fontSize: 16, fontWeight: 900, marginBottom: 6 }}>Motion Design</div>
+                      <div style={{ fontSize: 13.5, color: C.textMuted, lineHeight: 1.7, marginBottom: 18 }}>
+                        Choose how the shot behaves — tracking, drift, orbit, or controlled cinematic motion.
+                      </div>
+
+                      <div style={{ display: "grid", gap: 12 }}>
+                        {PRESETS.map((preset, idx) => {
+                          const active = selectedPreset === preset.id;
+                          return (
+                            <button
+                              key={preset.id}
+                              onClick={() => setSelectedPreset(preset.id)}
+                              style={{
+                                borderRadius: 18,
+                                border: `1px solid ${active ? C.accentBorder : C.border}`,
+                                background: active
+                                  ? "linear-gradient(135deg, rgba(79,70,229,0.14), rgba(124,58,237,0.12))"
+                                  : presetGradients[idx],
+                                padding: 14,
+                                textAlign: "left",
+                                cursor: "pointer",
+                                fontFamily: "inherit",
+                              }}
+                            >
+                              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                                <div style={{ fontSize: 14, fontWeight: 800, color: C.text }}>{preset.title}</div>
+                                {active && <Check size={14} color="#c4b5fd" />}
+                              </div>
+                              <div style={{ fontSize: 12.5, color: C.textMuted, marginTop: 6, lineHeight: 1.6 }}>
+                                {preset.sub}
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div
+                      style={{
+                        borderRadius: 24,
+                        border: `1px solid ${C.border}`,
+                        background:
+                          "linear-gradient(180deg, rgba(255,255,255,0.02), rgba(124,58,237,0.03), rgba(255,255,255,0.015))",
+                        padding: 20,
+                        minHeight: 420,
+                        display: "flex",
+                        flexDirection: "column",
+                        justifyContent: "space-between",
+                      }}
+                    >
+                      <div>
+                        <div style={{ fontSize: 16, fontWeight: 900, marginBottom: 6 }}>Render Preview</div>
+                        <div style={{ fontSize: 13.5, color: C.textMuted, lineHeight: 1.7 }}>
+                          Final output preview with your selected frame, preset, and scene motion.
                         </div>
+                      </div>
+
+                      <div
+                        style={{
+                          marginTop: 20,
+                          borderRadius: 24,
+                          border: `1px solid ${C.border}`,
+                          background:
+                            "linear-gradient(135deg, rgba(0,255,180,0.05), rgba(255,80,0,0.08), rgba(124,58,237,0.10), rgba(255,255,255,0.02))",
+                          aspectRatio: "16/10",
+                          position: "relative",
+                          overflow: "hidden",
+                        }}
+                      >
+                        <div
+                          style={{
+                            position: "absolute",
+                            inset: 14,
+                            borderRadius: 18,
+                            border: "2px solid rgba(255,255,255,0.82)",
+                          }}
+                        />
+                        <div
+                          style={{
+                            position: "absolute",
+                            left: 16,
+                            right: 16,
+                            bottom: 14,
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                          }}
+                        >
+                          <div style={{ display: "flex", gap: 6 }}>
+                            {["Preview", "720p"].map((tag) => (
+                              <div
+                                key={tag}
+                                style={{
+                                  padding: "6px 10px",
+                                  borderRadius: 999,
+                                  background: "rgba(0,0,0,0.36)",
+                                  border: `1px solid rgba(255,255,255,0.12)`,
+                                  fontSize: 11,
+                                  color: "rgba(255,255,255,0.84)",
+                                }}
+                              >
+                                {tag}
+                              </div>
+                            ))}
+                          </div>
+
+                          <div
+                            style={{
+                              width: 42,
+                              height: 42,
+                              borderRadius: 999,
+                              background: "rgba(0,0,0,0.38)",
+                              border: `1px solid rgba(255,255,255,0.14)`,
+                              display: "grid",
+                              placeItems: "center",
+                            }}
+                          >
+                            <Play size={15} fill="white" color="white" />
+                          </div>
+                        </div>
+                      </div>
+
+                      <div style={{ marginTop: 18, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        {["Prompt-led", "Motion preset", "Render ready"].map((tag) => (
+                          <div
+                            key={tag}
+                            style={{
+                              padding: "7px 12px",
+                              borderRadius: 999,
+                              border: `1px solid ${C.border}`,
+                              background: "rgba(255,255,255,0.03)",
+                              fontSize: 12,
+                              color: C.textMuted,
+                            }}
+                          >
+                            {tag}
+                          </div>
+                        ))}
                       </div>
                     </div>
                   </div>
