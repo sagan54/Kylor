@@ -14,7 +14,6 @@ import {
   Settings,
   ChevronRight,
   X,
-  ChevronDown,
   Download,
   Share2,
   Trash2,
@@ -184,9 +183,12 @@ function SmallToggle({ checked, onChange }) {
   );
 }
 
-function FrameUploadCard({ title, optional }) {
+function FrameUploadCard({ title, optional, file, onFileChange }) {
+  const inputRef = useRef(null);
+
   return (
     <div
+      onClick={() => inputRef.current?.click()}
       style={{
         flex: 1,
         minWidth: 0,
@@ -198,8 +200,21 @@ function FrameUploadCard({ title, optional }) {
         display: "flex",
         flexDirection: "column",
         justifyContent: "space-between",
+        cursor: "pointer",
       }}
     >
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/*"
+        style={{ display: "none" }}
+        onChange={(e) => {
+          const selected = e.target.files?.[0] || null;
+          onFileChange?.(selected);
+          e.target.value = "";
+        }}
+      />
+
       <div style={{ display: "flex", justifyContent: "flex-end" }}>
         {optional && (
           <div
@@ -227,12 +242,36 @@ function FrameUploadCard({ title, optional }) {
             background: "rgba(255,255,255,0.03)",
             display: "grid",
             placeItems: "center",
+            overflow: "hidden",
           }}
         >
-          <ImagePlus size={18} color="rgba(255,255,255,0.72)" />
+          {file ? (
+            <img
+              src={URL.createObjectURL(file)}
+              alt={title}
+              style={{ width: "100%", height: "100%", objectFit: "cover" }}
+            />
+          ) : (
+            <ImagePlus size={18} color="rgba(255,255,255,0.72)" />
+          )}
         </div>
         <div style={{ textAlign: "center" }}>
           <div style={{ fontSize: 13, color: C.textMuted }}>{title}</div>
+          {file && (
+            <div
+              style={{
+                fontSize: 10.5,
+                color: "#c4b5fd",
+                marginTop: 4,
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                maxWidth: 110,
+              }}
+            >
+              {file.name}
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -244,10 +283,10 @@ export default function VideoPage() {
   const [rightTab, setRightTab] = useState("How it works");
   const [notifState, setNotifState] = useState("idle");
 
-  const [model] = useState("Kling 3.0");
-  const [duration] = useState("5s");
-  const [ratio] = useState("16:9");
-  const [quality] = useState("720p");
+  const [model] = useState("Kylor 1.0");
+  const [duration, setDuration] = useState("5s");
+  const [ratio, setRatio] = useState("16:9");
+  const [quality, setQuality] = useState("720p");
 
   const [multiShot, setMultiShot] = useState(false);
   const [enhanceOn, setEnhanceOn] = useState(true);
@@ -255,6 +294,9 @@ export default function VideoPage() {
   const [prompt, setPrompt] = useState("");
   const [selectedPreset, setSelectedPreset] = useState(2);
   const [generating, setGenerating] = useState(false);
+
+  const [startFrame, setStartFrame] = useState(null);
+  const [endFrame, setEndFrame] = useState(null);
 
   const promptRef = useRef(null);
 
@@ -479,7 +521,7 @@ export default function VideoPage() {
                       VIDEO CORE
                     </div>
 
-                    <div style={{ fontSize: 12, color: "#d8ff3f", fontWeight: 800, marginBottom: 2 }}>
+                    <div style={{ fontSize: 12, color: "#c4b5fd", fontWeight: 800, marginBottom: 2 }}>
                       Kylor motion preset
                     </div>
                     <div style={{ fontSize: 15, color: C.text, fontWeight: 800 }}>{model}</div>
@@ -490,8 +532,18 @@ export default function VideoPage() {
                 </div>
 
                 <div style={{ display: "flex", gap: 10 }}>
-                  <FrameUploadCard title="Start frame" optional />
-                  <FrameUploadCard title="End frame" optional />
+                  <FrameUploadCard
+                    title="Start frame"
+                    optional
+                    file={startFrame}
+                    onFileChange={setStartFrame}
+                  />
+                  <FrameUploadCard
+                    title="End frame"
+                    optional
+                    file={endFrame}
+                    onFileChange={setEndFrame}
+                  />
                 </div>
 
                 <div
@@ -595,7 +647,12 @@ export default function VideoPage() {
                   </div>
 
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8, marginTop: 10 }}>
-                    <div
+                    <button
+                      onClick={() => {
+                        const order = ["5s", "8s", "10s"];
+                        const next = order[(order.indexOf(duration) + 1) % order.length];
+                        setDuration(next);
+                      }}
                       style={{
                         height: 40,
                         borderRadius: 12,
@@ -606,11 +663,20 @@ export default function VideoPage() {
                         justifyContent: "center",
                         gap: 6,
                         fontSize: 13,
+                        color: C.text,
+                        cursor: "pointer",
+                        fontFamily: "inherit",
                       }}
                     >
                       <Clock3 size={13} /> {duration}
-                    </div>
-                    <div
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        const order = ["16:9", "9:16", "1:1"];
+                        const next = order[(order.indexOf(ratio) + 1) % order.length];
+                        setRatio(next);
+                      }}
                       style={{
                         height: 40,
                         borderRadius: 12,
@@ -621,11 +687,20 @@ export default function VideoPage() {
                         justifyContent: "center",
                         gap: 6,
                         fontSize: 13,
+                        color: C.text,
+                        cursor: "pointer",
+                        fontFamily: "inherit",
                       }}
                     >
                       <PanelsTopLeft size={13} /> {ratio}
-                    </div>
-                    <div
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        const order = ["720p", "1080p", "2K"];
+                        const next = order[(order.indexOf(quality) + 1) % order.length];
+                        setQuality(next);
+                      }}
                       style={{
                         height: 40,
                         borderRadius: 12,
@@ -636,10 +711,13 @@ export default function VideoPage() {
                         justifyContent: "center",
                         gap: 6,
                         fontSize: 13,
+                        color: C.text,
+                        cursor: "pointer",
+                        fontFamily: "inherit",
                       }}
                     >
                       <Zap size={13} /> {quality}
-                    </div>
+                    </button>
                   </div>
                 </div>
 
@@ -947,7 +1025,7 @@ export default function VideoPage() {
                           borderRadius: 24,
                           border: `1px solid ${C.border}`,
                           background:
-                            "linear-gradient(135deg, rgba(0,255,180,0.05), rgba(255,80,0,0.08), rgba(124,58,237,0.10), rgba(255,255,255,0.02))",
+                            "linear-gradient(135deg, rgba(79,70,229,0.06), rgba(124,58,237,0.08), rgba(255,255,255,0.02), rgba(5,7,12,0.35))",
                           aspectRatio: "16/10",
                           position: "relative",
                           overflow: "hidden",
@@ -973,7 +1051,7 @@ export default function VideoPage() {
                           }}
                         >
                           <div style={{ display: "flex", gap: 6 }}>
-                            {["Preview", "720p"].map((tag) => (
+                            {["Preview", quality].map((tag) => (
                               <div
                                 key={tag}
                                 style={{
