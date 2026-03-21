@@ -207,23 +207,34 @@ function getApiQuality(m) {
 }
 
 async function downloadImage(url, filename = "kylor-output.png") {
+  if (!url || typeof url !== "string") return;
+
   try {
     const res = await fetch(url);
+    if (!res.ok) throw new Error(`Download failed: ${res.status}`);
+
     const blob = await res.blob();
+    const objectUrl = URL.createObjectURL(blob);
+
     const a = Object.assign(document.createElement("a"), {
-      href: URL.createObjectURL(blob),
+      href: objectUrl,
       download: filename,
     });
+
     document.body.appendChild(a);
     a.click();
     a.remove();
+
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
   } catch {
-    window.open(url, "_blank");
+    window.open(url, "_blank", "noopener,noreferrer");
   }
 }
 
 async function shareImage({ url, title, text }) {
   try {
+    if (!url || typeof url !== "string") return false;
+
     if (navigator.share) {
       await navigator.share({ title, text, url });
       return true;
@@ -805,8 +816,8 @@ function GenerationCard({
               activeColor: "#fbbf24",
               activeFill: "#fbbf24",
             },
-            { icon: Download, action: () => onDownload?.(featured) },
-            { icon: Share2, action: () => onShare?.(featured) },
+            { icon: Download, action: () => featured?.url && onDownload?.(featured) },
+            { icon: Share2, action: () => featured?.url && onShare?.(featured) },
             { icon: Trash2, action: () => onDelete?.(group.id), danger: true },
           ].map(({ icon: Icon, action, active, activeColor, activeFill, danger }, i) => (
             <button
@@ -1148,7 +1159,7 @@ function GenerationCard({
           </div>
 
           <button
-            onClick={() => onDownload?.(featured)}
+            onClick={() => featured?.url && onDownload?.(featured)}
             style={{
               height: 40,
               borderRadius: radius.sm,
@@ -1380,83 +1391,84 @@ export default function ImagePage() {
   }, [selectedCharacter]);
 
   useEffect(() => {
-  let mounted = true;
+    let mounted = true;
 
-  async function init() {
-    try {
-      const raw = localStorage.getItem(SESSION_KEY);
-      if (raw) {
-        const cached = JSON.parse(raw);
-        if (mounted && Array.isArray(cached) && cached.length > 0) {
-          setGroups(cached);
+    async function init() {
+      try {
+        const raw = localStorage.getItem(SESSION_KEY);
+        if (raw) {
+          const cached = JSON.parse(raw);
+          if (mounted && Array.isArray(cached) && cached.length > 0) {
+            setGroups(cached);
+          }
         }
+      } catch {}
+
+      const { data: { session } } = await supabase.auth.getSession();
+      let uid = session?.user?.id ?? null;
+
+      if (!uid) {
+        const { data: { user } } = await supabase.auth.getUser();
+        uid = user?.id ?? null;
       }
-    } catch {}
 
-    const { data: { session } } = await supabase.auth.getSession();
-    let uid = session?.user?.id ?? null;
+      if (!mounted) return;
 
-    if (!uid) {
-      const { data: { user } } = await supabase.auth.getUser();
-      uid = user?.id ?? null;
-    }
+      setUserId(uid);
 
-    if (!mounted) return;
+      if (!uid) {
+        setDbLoaded(true);
+        return;
+      }
 
-    setUserId(uid);
+      const fresh = await sbLoadAll(uid);
 
-    if (!uid) {
+      if (!mounted) return;
+
+      setGroups(fresh);
       setDbLoaded(true);
-      return;
+
+      try {
+        localStorage.setItem(SESSION_KEY, JSON.stringify(fresh));
+      } catch {}
     }
 
-    const fresh = await sbLoadAll(uid);
+    init();
 
-    if (!mounted) return;
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      let uid = session?.user?.id ?? null;
 
-    setGroups(fresh);
-    setDbLoaded(true);
+      if (!uid) {
+        const { data: { user } } = await supabase.auth.getUser();
+        uid = user?.id ?? null;
+      }
 
-    try {
-      localStorage.setItem(SESSION_KEY, JSON.stringify(fresh));
-    } catch {}
-  }
+      if (!mounted) return;
 
-  init();
+      setUserId(uid);
 
-  const {
-    data: { subscription },
-  } = supabase.auth.onAuthStateChange(async (_event, session) => {
-    let uid = session?.user?.id ?? null;
+      if (!uid) return;
 
-    if (!uid) {
-      const { data: { user } } = await supabase.auth.getUser();
-      uid = user?.id ?? null;
-    }
+      const fresh = await sbLoadAll(uid);
 
-    if (!mounted) return;
+      if (!mounted) return;
 
-    setUserId(uid);
+      setGroups(fresh);
+      setDbLoaded(true);
 
-    if (!uid) return;
+      try {
+        localStorage.setItem(SESSION_KEY, JSON.stringify(fresh));
+      } catch {}
+    });
 
-    const fresh = await sbLoadAll(uid);
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
+  }, []);
 
-    if (!mounted) return;
-
-    setGroups(fresh);
-    setDbLoaded(true);
-
-    try {
-      localStorage.setItem(SESSION_KEY, JSON.stringify(fresh));
-    } catch {}
-  });
-
-  return () => {
-    mounted = false;
-    subscription.unsubscribe();
-  };
-}, []);
   useEffect(() => {
     function handleOutside(e) {
       if (panelRef.current && !panelRef.current.contains(e.target)) {
@@ -1534,13 +1546,17 @@ export default function ImagePage() {
   }
 
   async function handleDownload(img) {
-    if (!img?.url) return;
+    if (!img?.url || typeof img.url !== "string") return;
     await downloadImage(img.url, `kylor-${Date.now()}.png`);
   }
 
   async function handleShare(img) {
-    if (!img?.url) return;
-    await shareImage({ url: img.url, title: "Kylor image", text: img.prompt || "" });
+    if (!img?.url || typeof img.url !== "string") return;
+    await shareImage({
+      url: img.url,
+      title: "Kylor image",
+      text: "Created with Kylor",
+    });
   }
 
   async function clearAll() {
@@ -2184,26 +2200,26 @@ export default function ImagePage() {
                       Defined Character Prompt
                     </div>
 
-                   <div
-  style={{
-    width: "100%",
-    maxHeight: 150,
-    overflowY: "auto",
-    paddingRight: 4,
-    background: "transparent",
-    color: "rgba(255,255,255,0.88)",
-    fontFamily: "inherit",
-    fontSize: 13,
-    lineHeight: 1.65,
-    boxSizing: "border-box",
-    scrollbarWidth: "thin",
-    scrollbarColor: "dark grey",
-    whiteSpace: "pre-wrap",
-    wordBreak: "break-word",
-  }}
->
-  {prompt}
-</div>
+                    <div
+                      style={{
+                        width: "100%",
+                        maxHeight: 150,
+                        overflowY: "auto",
+                        paddingRight: 4,
+                        background: "transparent",
+                        color: "rgba(255,255,255,0.88)",
+                        fontFamily: "inherit",
+                        fontSize: 13,
+                        lineHeight: 1.65,
+                        boxSizing: "border-box",
+                        scrollbarWidth: "thin",
+                        scrollbarColor: "dark grey",
+                        whiteSpace: "pre-wrap",
+                        wordBreak: "break-word",
+                      }}
+                    >
+                      {prompt}
+                    </div>
                   </div>
                 )}
 
