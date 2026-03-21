@@ -14,6 +14,7 @@
     "next": "latest",
     "openai": "^6.27.0",
     "react": "latest",
-    "react-dom": "latest"
+    "react-dom": "latest",
+    "replicate": "^1.4.0"
   }
 }
