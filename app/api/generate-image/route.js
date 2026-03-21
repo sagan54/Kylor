@@ -46,15 +46,26 @@ export async function POST(req) {
       ? referenceImages.map(normalizeReferenceImage).filter(Boolean).slice(0, 5)
       : [];
 
-    const identityPrompt = refs.length
-      ? [
-          "Use the provided reference image(s) as the same real person.",
-          "Preserve the exact identity, face shape, jawline, nose, eyes, lips, eyebrows, skin tone, and hairstyle.",
-          "Do not beautify, idealize, age-shift, masculinize, or change facial structure.",
-          "Keep the same person, only change pose, framing, and scene as requested.",
-          prompt,
-        ].join(" ")
-      : prompt;
+    const hasRefs = refs.length > 0;
+
+    let identityPrompt;
+
+    if (hasRefs) {
+      identityPrompt = [
+        "Use the provided reference image(s) as the same real person.",
+        "Preserve the exact identity, face shape, jawline, nose, eyes, lips, eyebrows, skin tone, and hairstyle.",
+        "Do not beautify, idealize, age-shift, masculinize, feminize, or change facial structure.",
+        "Keep the same person, only change pose, framing, outfit, and scene as requested.",
+        prompt,
+      ].join(" ");
+    } else {
+      identityPrompt = [
+        "Generate a realistic human image.",
+        "Maintain coherent and believable facial structure, skin tone, hairstyle, and body proportions.",
+        "Do not beautify excessively or create artificial CGI-like skin.",
+        prompt,
+      ].join(" ");
+    }
 
     const realismBoost = [
       "photorealistic",
@@ -82,13 +93,20 @@ export async function POST(req) {
     const aspect_ratio = mapSizeToAspectRatio(size);
 
     const requests = Array.from({ length: safeN }, async () => {
-      const input = {
-        prompt: finalPrompt,
-        aspect_ratio,
-        output_format: "png",
-      };
+      const input = hasRefs
+        ? {
+            prompt: finalPrompt,
+            aspect_ratio,
+            output_format: "png",
+            reference_images: refs,
+          }
+        : {
+            prompt: finalPrompt,
+            aspect_ratio,
+            output_format: "png",
+          };
 
-      const output = await replicate.run("black-forest-labs/flux-2-pro", {
+      const output = await replicate.run("black-forest-labs/flux-1.1-pro", {
         input,
       });
 
@@ -109,9 +127,10 @@ export async function POST(req) {
       image: images[0],
       images,
       meta: {
-        model: "black-forest-labs/flux-2-pro",
+        model: "black-forest-labs/flux-1.1-pro",
         quality,
         referenceCount: refs.length,
+        usedReferences: hasRefs,
       },
     });
   } catch (error) {
