@@ -426,10 +426,17 @@ function OutputCard({ item, onDelete, onOpen }) {
         overflow: "hidden", cursor: item.url && item.url !== "__FAILED__" ? "zoom-in" : "default", position: "relative",
         background: CARD_GRADIENTS[getIdNumber(item.id) % CARD_GRADIENTS.length], aspectRatio: "2/3", transition: "border-color 0.16s ease" }}>
       {item.url && item.url !== "__FAILED__" ? (
-        <img src={item.url} alt={item.scene} style={{
-          width: "100%", height: "100%", objectFit: "cover", position: "absolute", inset: 0,
-          transform: item.scene === "Right Profile Full-Body" ? "scaleX(-1)" : "none",
-        }} />
+        <img
+  src={item.url}
+  alt={item.scene}
+  style={{
+    width: "100%",
+    height: "100%",
+    objectFit: "cover",
+    position: "absolute",
+    inset: 0,
+  }}
+/>
       ) : item.url === "__FAILED__" ? (
         <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", padding: 16, textAlign: "center" }}>
           <div><div style={{ fontSize: 13, fontWeight: 700, color: "white", marginBottom: 6 }}>Failed</div><div style={{ fontSize: 11.5, color: C.textMuted }}>{item.scene}</div></div>
@@ -486,7 +493,8 @@ export default function ConsistencyPage() {
   const [outputs,         setOutputs]         = useState([]);
   const [generating,      setGenerating]      = useState(false);
   const [formSection,     setFormSection]     = useState("traits");
-  const [lightboxItem,    setLightboxItem]    = useState(null);
+  const [lightboxItem, setLightboxItem] = useState(null);
+const [lightboxIndex, setLightboxIndex] = useState(0);
   const [userId,          setUserId]          = useState(null);
   const [saving,          setSaving]          = useState(false);
   const [characterImages, setCharacterImages] = useState([]);
@@ -494,12 +502,16 @@ export default function ConsistencyPage() {
   const canvasRef = useRef(null);
   const generatingRef = useRef(false);
 
-  const activeChar  = characters.find(c => c.id === activeCharId) || null;
-  const charOutputs = outputs.filter(o => o.charId === activeCharId);
-  const visibleCharOutputs = charOutputs.filter(o => o.url && o.url !== "__FAILED__");
-  const frontOutput = visibleCharOutputs.find(o => o.scene === "Front Full-Body");
-  const otherOutputs = visibleCharOutputs.filter(o => o.scene !== "Front Full-Body");
-  const shouldShowGenerateMorePanel = !!frontOutput && otherOutputs.length < 4;
+  const activeChar = characters.find(c => c.id === activeCharId) || null;
+const charOutputs = outputs.filter(o => o.charId === activeCharId);
+const visibleCharOutputs = charOutputs.filter(o => o.url && o.url !== "__FAILED__");
+const orderedVisibleOutputs = CHARACTER_PACK_VIEWS
+  .map(view => visibleCharOutputs.find(o => o.scene === view.label))
+  .filter(Boolean);
+
+const frontOutput = visibleCharOutputs.find(o => o.scene === "Front Full-Body");
+const otherOutputs = visibleCharOutputs.filter(o => o.scene !== "Front Full-Body");
+const shouldShowGenerateMorePanel = !!frontOutput && otherOutputs.length < 4;
 
   const updateCharactersCache = useCallback((chars) => {
     try {
@@ -969,6 +981,27 @@ export default function ConsistencyPage() {
       setCharacterImages(rows.filter(r => r.character_id === char.id));
     }
   }
+  function openLightboxForItem(item) {
+  const index = orderedVisibleOutputs.findIndex(o => o.id === item.id);
+  setLightboxIndex(index >= 0 ? index : 0);
+  setLightboxItem(item);
+}
+
+function goPrevLightbox() {
+  if (!orderedVisibleOutputs.length) return;
+  const nextIndex =
+    lightboxIndex <= 0 ? orderedVisibleOutputs.length - 1 : lightboxIndex - 1;
+  setLightboxIndex(nextIndex);
+  setLightboxItem(orderedVisibleOutputs[nextIndex]);
+}
+
+function goNextLightbox() {
+  if (!orderedVisibleOutputs.length) return;
+  const nextIndex =
+    lightboxIndex >= orderedVisibleOutputs.length - 1 ? 0 : lightboxIndex + 1;
+  setLightboxIndex(nextIndex);
+  setLightboxItem(orderedVisibleOutputs[nextIndex]);
+}
 
   async function deleteAllOutputs() {
     setOutputs(prev => prev.filter(o => o.charId !== activeCharId));
@@ -1610,11 +1643,15 @@ export default function ConsistencyPage() {
                       {charOutputs.map((item, i) => (
                         outputView === "grid" ? (
                           <motion.div key={item.id} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}>
-                            <OutputCard item={item} onDelete={() => deleteOutput(item.id)} onOpen={setLightboxItem} />
+                            <OutputCard
+  item={item}
+  onDelete={() => deleteOutput(item.id)}
+  onOpen={openLightboxForItem}
+/>
                           </motion.div>
                         ) : (
                           <motion.div key={item.id} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.04 }}
-                            onClick={() => item.url && item.url !== "__FAILED__" && setLightboxItem(item)}
+                            onClick={() => item.url && item.url !== "__FAILED__" && openLightboxForItem(item)}
                             style={{ display: "flex", alignItems: "center", gap: 14, padding: "10px 14px", borderRadius: radius.md, border: `1px solid ${C.border}`, background: C.surface, cursor: item.url && item.url !== "__FAILED__" ? "zoom-in" : "default" }}>
                             <div style={{ width: 52, height: 52, borderRadius: radius.sm, flexShrink: 0, overflow: "hidden", border: `1px solid ${C.border}`, background: CARD_GRADIENTS[getIdNumber(item.id) % CARD_GRADIENTS.length] }}>
                               {item.url && item.url !== "__FAILED__" && <img src={item.url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />}
@@ -1649,7 +1686,11 @@ export default function ConsistencyPage() {
                 {activeChar && shouldShowGenerateMorePanel && (
                   <div style={{ display: "grid", gridTemplateColumns: "210px 1fr", gap: 16, alignItems: "stretch" }}>
                     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                      <OutputCard item={frontOutput} onDelete={() => deleteOutput(frontOutput.id)} onOpen={setLightboxItem} />
+                      <OutputCard
+  item={frontOutput}
+  onDelete={() => deleteOutput(frontOutput.id)}
+  onOpen={openLightboxForItem}
+/>
                       <motion.button whileHover={!generating ? { borderColor: C.accentBorder, color: "#c4b5fd" } : {}} whileTap={!generating ? { scale: 0.97 } : {}}
                         onClick={handleGenerate} disabled={generating}
                         style={{ height: 36, borderRadius: radius.sm, border: `1px solid ${C.border}`, background: C.surface, color: C.textMuted, cursor: generating ? "default" : "pointer", fontSize: 12, fontWeight: 600, fontFamily: "inherit", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, transition: "all 0.15s ease" }}>
@@ -1724,28 +1765,155 @@ export default function ConsistencyPage() {
       </div>
 
       <AnimatePresence>
-        {lightboxItem && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setLightboxItem(null)}
-            style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,0.92)", backdropFilter: "blur(14px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
-            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} transition={{ duration: 0.25, ease: [0.22,1,0.36,1] }}
-              onClick={e => e.stopPropagation()} style={{ position: "relative", maxWidth: "90vw", maxHeight: "90vh", borderRadius: radius.xl, overflow: "hidden", boxShadow: "0 40px 100px rgba(0,0,0,0.7)" }}>
-              <img src={lightboxItem.url} alt={lightboxItem.scene} style={{ display: "block", maxWidth: "90vw", maxHeight: "88vh", objectFit: "contain" }} />
-              <div style={{ position: "absolute", top: 14, right: 14, display: "flex", gap: 8 }}>
-                {[Download, X].map((Icon, i) => (
-                  <motion.button key={i} whileTap={{ scale: 0.9 }} onClick={() => { if (i === 1) setLightboxItem(null); }}
-                    style={{ width: 40, height: 40, borderRadius: 12, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(0,0,0,0.6)", backdropFilter: "blur(8px)", color: "white", display: "grid", placeItems: "center", cursor: "pointer" }}>
-                    <Icon size={15} />
-                  </motion.button>
-                ))}
-              </div>
-              <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, background: "linear-gradient(to top,rgba(0,0,0,0.8),transparent)", padding: "40px 20px 18px" }}>
-                <p style={{ margin: "0 0 4px", fontSize: 14, fontWeight: 600, color: "white" }}>{lightboxItem.scene || "Portrait"}</p>
-                <p style={{ margin: 0, fontSize: 12, color: C.textMuted }}>{new Date(lightboxItem.createdAt).toLocaleString()}</p>
-              </div>
-            </motion.div>
-          </motion.div>
+  {lightboxItem && (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      onClick={() => setLightboxItem(null)}
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 9999,
+        background: "rgba(0,0,0,0.92)",
+        backdropFilter: "blur(14px)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 24,
+      }}
+    >
+      <motion.div
+        initial={{ scale: 0.9, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.9, opacity: 0 }}
+        transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          position: "relative",
+          maxWidth: "90vw",
+          maxHeight: "90vh",
+          borderRadius: radius.xl,
+          overflow: "hidden",
+          boxShadow: "0 40px 100px rgba(0,0,0,0.7)",
+        }}
+      >
+        <img
+          src={lightboxItem.url}
+          alt={lightboxItem.scene}
+          style={{
+            display: "block",
+            maxWidth: "90vw",
+            maxHeight: "88vh",
+            objectFit: "contain",
+          }}
+        />
+
+        {orderedVisibleOutputs.length > 1 && (
+          <>
+            <motion.button
+              whileTap={{ scale: 0.92 }}
+              onClick={goPrevLightbox}
+              style={{
+                position: "absolute",
+                left: 18,
+                top: "50%",
+                transform: "translateY(-50%)",
+                width: 44,
+                height: 44,
+                borderRadius: 14,
+                border: "1px solid rgba(255,255,255,0.12)",
+                background: "rgba(0,0,0,0.6)",
+                backdropFilter: "blur(8px)",
+                color: "white",
+                display: "grid",
+                placeItems: "center",
+                cursor: "pointer",
+              }}
+            >
+              <ChevronLeft size={18} />
+            </motion.button>
+
+            <motion.button
+              whileTap={{ scale: 0.92 }}
+              onClick={goNextLightbox}
+              style={{
+                position: "absolute",
+                right: 18,
+                top: "50%",
+                transform: "translateY(-50%)",
+                width: 44,
+                height: 44,
+                borderRadius: 14,
+                border: "1px solid rgba(255,255,255,0.12)",
+                background: "rgba(0,0,0,0.6)",
+                backdropFilter: "blur(8px)",
+                color: "white",
+                display: "grid",
+                placeItems: "center",
+                cursor: "pointer",
+              }}
+            >
+              <ChevronRight size={18} />
+            </motion.button>
+          </>
         )}
-      </AnimatePresence>
+
+        <div style={{ position: "absolute", top: 14, right: 14, display: "flex", gap: 8 }}>
+          {[Download, X].map((Icon, i) => (
+            <motion.button
+              key={i}
+              whileTap={{ scale: 0.9 }}
+              onClick={() => {
+                if (i === 0 && lightboxItem?.url) {
+                  const a = document.createElement("a");
+                  a.href = lightboxItem.url;
+                  a.download = `${lightboxItem.scene || "character"}.png`;
+                  document.body.appendChild(a);
+                  a.click();
+                  a.remove();
+                }
+                if (i === 1) setLightboxItem(null);
+              }}
+              style={{
+                width: 40,
+                height: 40,
+                borderRadius: 12,
+                border: "1px solid rgba(255,255,255,0.12)",
+                background: "rgba(0,0,0,0.6)",
+                backdropFilter: "blur(8px)",
+                color: "white",
+                display: "grid",
+                placeItems: "center",
+                cursor: "pointer",
+              }}
+            >
+              <Icon size={15} />
+            </motion.button>
+          ))}
+        </div>
+
+        <div
+          style={{
+            position: "absolute",
+            bottom: 0,
+            left: 0,
+            right: 0,
+            background: "linear-gradient(to top,rgba(0,0,0,0.8),transparent)",
+            padding: "40px 20px 18px",
+          }}
+        >
+          <p style={{ margin: "0 0 4px", fontSize: 14, fontWeight: 600, color: "white" }}>
+            {lightboxItem.scene || "Portrait"}
+          </p>
+          <p style={{ margin: 0, fontSize: 12, color: C.textMuted }}>
+            {new Date(lightboxItem.createdAt).toLocaleString()}
+          </p>
+        </div>
+      </motion.div>
+    </motion.div>
+  )}
+</AnimatePresence>
     </main>
   );
 }
