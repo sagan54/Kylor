@@ -90,6 +90,7 @@ const TOOLS = [
 // ─── Sidebar Item ─────────────────────────────────────────────────────────────
 function SidebarItem({ item }) {
   const Icon = item.icon;
+
   const inner = (
     <motion.div
       whileHover={{ scale: 1.03 }}
@@ -121,6 +122,7 @@ function SidebarItem({ item }) {
       >
         <Icon size={17} />
       </div>
+
       <span style={{ fontSize: "10.5px", textAlign: "center", lineHeight: 1.2 }}>
         {item.label}
       </span>
@@ -236,7 +238,15 @@ function ProfilePopup({ session, credits, onClose, onLogout }) {
         zIndex: 300,
       }}
     >
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "14px", marginBottom: "18px" }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: "14px",
+          marginBottom: "18px",
+        }}
+      >
         <div style={{ display: "flex", alignItems: "center", gap: "14px", minWidth: 0 }}>
           <div
             style={{
@@ -267,6 +277,7 @@ function ProfilePopup({ session, credits, onClose, onLogout }) {
             >
               {email}
             </div>
+
             <div
               style={{
                 display: "inline-flex",
@@ -344,11 +355,27 @@ function ProfilePopup({ session, credits, onClose, onLogout }) {
 
       <div style={{ height: "1px", background: C.border, margin: "0 0 18px" }} />
 
-      <div style={{ marginBottom: "14px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+      <div
+        style={{
+          marginBottom: "14px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+        }}
+      >
         <div style={{ color: "rgba(255,255,255,0.9)", fontWeight: 700, fontSize: "15px" }}>
           My Workspace
         </div>
-        <div style={{ display: "inline-flex", alignItems: "center", gap: "6px", color: C.textMuted, fontSize: "13px" }}>
+
+        <div
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "6px",
+            color: C.textMuted,
+            fontSize: "13px",
+          }}
+        >
           All
           <ChevronRight size={14} />
         </div>
@@ -521,39 +548,13 @@ export default function Home() {
         .eq("user_id", userId)
         .maybeSingle();
 
-      if (!error && data) {
-        setCredits(data.credits || 0);
-        return;
-      }
-
-      async function loadCredits(userId) {
-  if (!userId) {
-    setCredits(0);
-    return;
-  }
-
-  const { data, error } = await supabase
-    .from("user_credits")
-    .select("credits")
-    .eq("user_id", userId)
-    .maybeSingle();
-
-  if (error) {
-    console.error("Credits load error:", error);
-    setCredits(0);
-    return;
-  }
-
-  setCredits(data?.credits || 0);
-}
-
-      if (upsertError) {
-        console.error("Failed to create default credits row:", upsertError);
+      if (error) {
+        console.error("Credits load error:", error);
         setCredits(0);
         return;
       }
 
-      setCredits(0);
+      setCredits(data?.credits || 0);
     }
 
     async function loadSessionAndCredits() {
@@ -611,6 +612,7 @@ export default function Home() {
     await supabase.auth.signOut();
     setSession(null);
     setCredits(0);
+    setProfileOpen(false);
   }
 
   const quickActions = [
@@ -668,7 +670,10 @@ export default function Home() {
             ))}
           </div>
 
-          <div ref={profileWrapRef} style={{ marginTop: "auto", paddingTop: "14px", position: "relative" }}>
+          <div
+            ref={profileWrapRef}
+            style={{ marginTop: "auto", paddingTop: "14px", position: "relative" }}
+          >
             <SidebarProfile
               credits={credits}
               isOpen={profileOpen}
@@ -731,6 +736,7 @@ export default function Home() {
                     Dashboard
                   </motion.div>
                 </Link>
+
                 <motion.button
                   whileHover={{ borderColor: C.borderHover }}
                   whileTap={{ scale: 0.97 }}
@@ -776,6 +782,7 @@ export default function Home() {
                     Login
                   </motion.div>
                 </Link>
+
                 <Link href="/signup" style={{ textDecoration: "none" }}>
                   <motion.div
                     whileHover={{ boxShadow: `0 14px 32px rgba(124,58,237,0.38)` }}
@@ -861,6 +868,7 @@ export default function Home() {
                   >
                     Kylor AI
                   </h1>
+
                   <p
                     style={{
                       margin: "0 0 8px",
@@ -872,6 +880,7 @@ export default function Home() {
                   >
                     A cinematic AI production workspace for story, image, video, character consistency, and motion-driven creative workflows.
                   </p>
+
                   <p style={{ margin: 0, color: C.textDim, fontSize: "14px" }}>
                     Start free. Build your first cinematic project in minutes.
                   </p>
@@ -898,6 +907,7 @@ export default function Home() {
                         <div style={{ fontSize: "11.5px", color: C.textMuted, marginBottom: "8px" }}>
                           {action.subtitle}
                         </div>
+
                         <div
                           style={{
                             display: "flex",
@@ -913,6 +923,7 @@ export default function Home() {
                         </div>
                       </motion.div>
                     );
+
                     return action.href === "#" ? (
                       <div key={action.title}>{inner}</div>
                     ) : (
@@ -1046,6 +1057,7 @@ export default function Home() {
                         {session ? "Open Story Engine" : "Get Started"}
                       </motion.div>
                     </Link>
+
                     <motion.div
                       whileHover={{ borderColor: C.borderHover }}
                       style={{
@@ -1198,6 +1210,7 @@ export default function Home() {
             >
               {TOOLS.map((tool) => {
                 const Icon = tool.icon;
+
                 const inner = (
                   <motion.div
                     key={tool.title}
@@ -1331,10 +1344,12 @@ export default function Home() {
                 >
                   Ready to build?
                 </div>
+
                 <p style={{ margin: 0, color: C.textMuted, fontSize: "14.5px", lineHeight: 1.7 }}>
                   Start with Story Engine — the first live module of Kylor AI's cinematic production platform.
                 </p>
               </div>
+
               <div style={{ display: "flex", gap: "10px", flexShrink: 0 }}>
                 <Link href={session ? "/story" : "/signup"} style={{ textDecoration: "none" }}>
                   <motion.div
@@ -1360,6 +1375,7 @@ export default function Home() {
                     {session ? "Open Story Engine" : "Get Started Free"}
                   </motion.div>
                 </Link>
+
                 {!session && (
                   <Link href="/login" style={{ textDecoration: "none" }}>
                     <motion.div
