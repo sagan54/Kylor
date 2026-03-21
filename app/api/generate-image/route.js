@@ -7,10 +7,7 @@ const replicate = new Replicate({
 function normalizeReferenceImage(image) {
   if (!image || typeof image !== "string") return null;
 
-  // Keep data URLs as-is
   if (image.startsWith("data:image/")) return image;
-
-  // Allow normal https public URLs (for Supabase public bucket refs)
   if (image.startsWith("http://") || image.startsWith("https://")) return image;
 
   return null;
@@ -43,13 +40,12 @@ export async function POST(req) {
       return Response.json({ error: "Prompt is required" }, { status: 400 });
     }
 
-    const safeN = Math.min(Math.max(Number(n) || 1, 1), 1);
+    const safeN = Math.min(Math.max(Number(n) || 1, 1), 4);
 
     const refs = Array.isArray(referenceImages)
       ? referenceImages.map(normalizeReferenceImage).filter(Boolean).slice(0, 5)
       : [];
 
-    // Identity-preserving prompt when refs exist
     const identityPrompt = refs.length
       ? [
           "Use the provided reference image(s) as the same real person.",
@@ -60,7 +56,6 @@ export async function POST(req) {
         ].join(" ")
       : prompt;
 
-    // Realism boost to reduce plastic / fake skin look
     const realismBoost = [
       "photorealistic",
       "natural skin texture",
