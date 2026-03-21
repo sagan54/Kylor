@@ -719,48 +719,76 @@ export default function ConsistencyPage() {
   }, [activeCharId, characters, generatingMore]);
 
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(SESSION_KEY);
-      if (raw) {
-        const cached = JSON.parse(raw);
-        if (Array.isArray(cached) && cached.length > 0) {
-          setCharacters(hydrateCachedCharacters(cached));
-        }
+  let mounted = true;
+
+  try {
+    const raw = localStorage.getItem(SESSION_KEY);
+    if (raw) {
+      const cached = JSON.parse(raw);
+      if (Array.isArray(cached) && cached.length > 0) {
+        setCharacters(hydrateCachedCharacters(cached));
       }
-    } catch {}
+    }
+  } catch {}
 
-    (async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      let uid = session?.user?.id ?? null;
+  async function bootstrapCharacters() {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
 
-      if (!uid) {
-        const { data: { user } } = await supabase.auth.getUser();
-        uid = user?.id ?? null;
+    const uid = session?.user?.id ?? null;
+
+    if (!mounted) return;
+
+    setUserId(uid);
+
+    if (!uid) return;
+
+    const { data, error } = await supabase
+      .from("characters")
+      .select("id, name, description, prompt, reference_image, generated_images, cover_image, style, seed, created_at, trigger_token, status, lora_path, base_model, locked_traits, metadata")
+      .eq("user_id", uid)
+      .order("created_at", { ascending: false });
+
+    if (!mounted) return;
+
+    if (error) {
+      console.error("Failed to load saved characters:", error);
+      return;
+    }
+
+    if (data && !generatingRef.current) {
+      const allImageRows = await loadCharacterImages(null, data);
+      if (!mounted) return;
+
+      const grouped = new Map();
+      for (const img of allImageRows) {
+        if (!grouped.has(img.character_id)) grouped.set(img.character_id, []);
+        grouped.get(img.character_id).push(img);
       }
 
-      setUserId(uid);
-      if (!uid) return;
+      const mapped = data.map(row => rowToCharacter(row, grouped.get(row.id) || []));
+      setCharacters(mapped);
+      updateCharactersCache(mapped);
+    }
+  }
 
-      const { data, error } = await supabase
-        .from("characters")
-        .select("id, name, description, prompt, reference_image, generated_images, cover_image, style, seed, created_at, trigger_token, status, lora_path, base_model, locked_traits, metadata")
-        .eq("user_id", uid)
-        .order("created_at", { ascending: false });
+  bootstrapCharacters();
 
-      if (!error && data && !generatingRef.current) {
-        const allImageRows = await loadCharacterImages(null, data);
-        const grouped = new Map();
-        for (const img of allImageRows) {
-          if (!grouped.has(img.character_id)) grouped.set(img.character_id, []);
-          grouped.get(img.character_id).push(img);
-        }
+  const {
+    data: { subscription },
+  } = supabase.auth.onAuthStateChange((event, session) => {
+    if (!mounted) return;
 
-        const mapped = data.map(row => rowToCharacter(row, grouped.get(row.id) || []));
-        setCharacters(mapped);
-        updateCharactersCache(mapped);
-      }
-    })();
-  }, [hydrateCachedCharacters, updateCharactersCache]);
+    const uid = session?.user?.id ?? null;
+    setUserId(uid);
+  });
+
+  return () => {
+    mounted = false;
+    subscription.unsubscribe();
+  };
+}, [hydrateCachedCharacters, updateCharactersCache]);
 
   async function saveCharacter() {
     if (!charName.trim()) return;

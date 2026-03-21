@@ -536,57 +536,70 @@ export default function Home() {
   const profileWrapRef = useRef(null);
 
   useEffect(() => {
-    async function loadCredits(userId) {
-      if (!userId) {
-        setCredits(0);
-        return;
-      }
+  let mounted = true;
 
-      const { data, error } = await supabase
-        .from("user_credits")
-        .select("credits")
-        .eq("user_id", userId)
-        .maybeSingle();
-
-      if (error) {
-        console.error("Credits load error:", error);
-        setCredits(0);
-        return;
-      }
-
-      setCredits(data?.credits || 0);
+  async function loadCredits(userId) {
+    if (!userId) {
+      if (mounted) setCredits(0);
+      return;
     }
 
-    async function loadSessionAndCredits() {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
+    const { data, error } = await supabase
+      .from("user_credits")
+      .select("credits")
+      .eq("user_id", userId)
+      .maybeSingle();
 
-      setSession(session);
+    if (!mounted) return;
 
-      if (session?.user?.id) {
-        await loadCredits(session.user.id);
-      } else {
-        setCredits(0);
-      }
+    if (error) {
+      console.error("Credits load error:", error);
+      setCredits(0);
+      return;
     }
 
-    loadSessionAndCredits();
+    setCredits(data?.credits || 0);
+  }
 
+  async function bootstrap() {
     const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      setSession(session);
+      data: { session },
+    } = await supabase.auth.getSession();
 
-      if (session?.user?.id) {
-        await loadCredits(session.user.id);
-      } else {
-        setCredits(0);
-      }
-    });
+    if (!mounted) return;
 
-    return () => subscription.unsubscribe();
-  }, []);
+    setSession(session);
+
+    if (session?.user?.id) {
+      loadCredits(session.user.id);
+    } else {
+      setCredits(0);
+    }
+  }
+
+  bootstrap();
+
+  const {
+    data: { subscription },
+  } = supabase.auth.onAuthStateChange((event, session) => {
+    if (!mounted) return;
+
+    setSession(session);
+
+    if (session?.user?.id) {
+      setTimeout(() => {
+        if (mounted) loadCredits(session.user.id);
+      }, 0);
+    } else {
+      setCredits(0);
+    }
+  });
+
+  return () => {
+    mounted = false;
+    subscription.unsubscribe();
+  };
+}, []);
 
   useEffect(() => {
     function handleClickOutside(e) {

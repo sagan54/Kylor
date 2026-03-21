@@ -13,24 +13,34 @@ export default function LoginPage() {
   const [message, setMessage] = useState("");
 
   async function handleLogin(e) {
-    e.preventDefault();
-    setLoading(true);
-    setMessage("");
+  e.preventDefault();
+  setLoading(true);
+  setMessage("");
 
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+  const { error } = await supabase.auth.signInWithPassword({
+    email,
+    password,
+  });
 
-    if (error) {
-      setMessage(error.message);
-      setLoading(false);
-      return;
-    }
-
+  if (error) {
+    setMessage(error.message);
     setLoading(false);
-    router.push("/");
+    return;
   }
+
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+
+  if (!session) {
+    setMessage("Login succeeded, but session could not be restored. Please try again.");
+    setLoading(false);
+    return;
+  }
+
+  setLoading(false);
+  router.replace("/");
+}
 
   return (
     <main
