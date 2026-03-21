@@ -14,7 +14,7 @@ import {
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { supabase } from "../../lib/supabase";
 
-const CHAR_BUCKET = "character-refs";
+const CHAR_BUCKET = "characters";
 const SESSION_KEY = "kylor_chars_cache_v2";
 
 const C = {
@@ -48,11 +48,11 @@ const HAIR_COLORS = ["Black", "Brown", "Blonde", "Red", "White", "Silver", "Blue
 const EYE_COLORS  = ["Brown", "Blue", "Green", "Hazel", "Grey", "Amber"];
 const BUILD_TYPES = ["Slim", "Athletic", "Average", "Muscular", "Stocky", "Curvy"];
 const CHARACTER_PACK_VIEWS = [
-  { key: "front",   label: "Front Full-Body",        shot: "single person, front-facing, full-body, standing straight, arms relaxed, centered composition",                                                         size: "1024x1536" },
-  { key: "left",    label: "Left Profile Full-Body",  shot: "single person, strict left side profile, facing the left edge of the frame, full-body, standing straight, arms relaxed, centered composition",        size: "1024x1536" },
-  { key: "right",   label: "Right Profile Full-Body", shot: "single person, strict right side profile, facing the right edge of the frame, full-body, standing straight, arms relaxed, centered composition",      size: "1024x1536" },
-  { key: "back",    label: "Back Full-Body",           shot: "single person, full-body back view, facing away from camera, standing straight, arms relaxed, centered composition",                                  size: "1024x1536" },
-  { key: "closeup", label: "Upper-Body Close-Up",     shot: "single person, upper-body close-up portrait, facing camera, centered composition",                                                                    size: "1024x1024" },
+  { key: "front",   label: "Front Full-Body",         shot: "single person, front-facing, full-body, standing straight, arms relaxed, centered composition",                                                    size: "1024x1536" },
+  { key: "left",    label: "Left Profile Full-Body",  shot: "single person, strict left side profile, facing the left edge of the frame, full-body, standing straight, arms relaxed, centered composition",   size: "1024x1536" },
+  { key: "right",   label: "Right Profile Full-Body", shot: "single person, strict right side profile, facing the right edge of the frame, full-body, standing straight, arms relaxed, centered composition", size: "1024x1536" },
+  { key: "back",    label: "Back Full-Body",          shot: "single person, full-body back view, facing away from camera, standing straight, arms relaxed, centered composition",                             size: "1024x1536" },
+  { key: "closeup", label: "Upper-Body Close-Up",     shot: "single person, upper-body close-up portrait, facing camera, centered composition",                                                               size: "1024x1024" },
 ];
 const CARD_GRADIENTS = [
   "linear-gradient(135deg, rgba(79,70,229,0.55), rgba(124,58,237,0.3))",
@@ -78,21 +78,124 @@ function getIdNumber(id) {
   return Math.abs(hash);
 }
 
+function makeTriggerToken(name) {
+  const cleaned = (name || "character")
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, "_")
+    .replace(/[^a-z0-9_]/g, "");
+  const suffix = Math.random().toString(36).slice(2, 6);
+  return `kylorchar_${cleaned || "character"}_${suffix}`;
+}
+
 function buildTraitsPayload({ charDesc, gender, ageRange, ethnicity, hairStyle, hairColor, eyeColor, build, charLocked, extraPrompt }) {
-  return JSON.stringify({ charDesc: charDesc || "", gender: gender || "", ageRange: ageRange || "", ethnicity: ethnicity || "", hairStyle: hairStyle || "", hairColor: hairColor || "", eyeColor: eyeColor || "", build: build || "", charLocked: !!charLocked, extraPrompt: extraPrompt || "" });
+  return JSON.stringify({
+    charDesc: charDesc || "",
+    gender: gender || "",
+    ageRange: ageRange || "",
+    ethnicity: ethnicity || "",
+    hairStyle: hairStyle || "",
+    hairColor: hairColor || "",
+    eyeColor: eyeColor || "",
+    build: build || "",
+    charLocked: !!charLocked,
+    extraPrompt: extraPrompt || "",
+  });
 }
 
 function parseTraitsPayload(value) {
   try {
     const p = JSON.parse(value || "{}");
-    return { charDesc: p.charDesc || "", gender: p.gender || "", ageRange: p.ageRange || "", ethnicity: p.ethnicity || "", hairStyle: p.hairStyle || "", hairColor: p.hairColor || "", eyeColor: p.eyeColor || "", build: p.build || "", charLocked: !!p.charLocked, extraPrompt: p.extraPrompt || "" };
-  } catch { return { charDesc: "", gender: "", ageRange: "", ethnicity: "", hairStyle: "", hairColor: "", eyeColor: "", build: "", charLocked: false, extraPrompt: "" }; }
+    return {
+      charDesc: p.charDesc || "",
+      gender: p.gender || "",
+      ageRange: p.ageRange || "",
+      ethnicity: p.ethnicity || "",
+      hairStyle: p.hairStyle || "",
+      hairColor: p.hairColor || "",
+      eyeColor: p.eyeColor || "",
+      build: p.build || "",
+      charLocked: !!p.charLocked,
+      extraPrompt: p.extraPrompt || "",
+    };
+  } catch {
+    return {
+      charDesc: "",
+      gender: "",
+      ageRange: "",
+      ethnicity: "",
+      hairStyle: "",
+      hairColor: "",
+      eyeColor: "",
+      build: "",
+      charLocked: false,
+      extraPrompt: "",
+    };
+  }
 }
 
-function rowToCharacter(row) {
-  const traits = parseTraitsPayload(row.prompt);
-  const generatedImages = Array.isArray(row.generated_images) ? row.generated_images : [];
-  const refUrls = row.reference_image ? [row.reference_image] : [];
+function normalizeLockedTraits(row) {
+  const promptTraits = parseTraitsPayload(row.prompt);
+  const locked = row.locked_traits && typeof row.locked_traits === "object" ? row.locked_traits : {};
+  return {
+    charDesc: promptTraits.charDesc || row.description || "",
+    gender: locked.gender || promptTraits.gender || "",
+    ageRange: locked.age || locked.ageRange || promptTraits.ageRange || "",
+    ethnicity: locked.ethnicity || promptTraits.ethnicity || "",
+    hairStyle: locked.hair_style || locked.hairStyle || promptTraits.hairStyle || "",
+    hairColor: locked.hair_color || locked.hairColor || promptTraits.hairColor || "",
+    eyeColor: locked.eye_color || locked.eyeColor || promptTraits.eyeColor || "",
+    build: locked.build || promptTraits.build || "",
+    charLocked: typeof locked.charLocked === "boolean" ? locked.charLocked : promptTraits.charLocked || false,
+    extraPrompt: promptTraits.extraPrompt || "",
+  };
+}
+
+function rowToCharacter(row, imageRows = []) {
+  const traits = normalizeLockedTraits(row);
+
+  const uploadImages = imageRows
+    .filter(img => img.source_type === "upload")
+    .sort((a, b) => {
+      const aSort = a.sort_order ?? 0;
+      const bSort = b.sort_order ?? 0;
+      if (aSort !== bSort) return aSort - bSort;
+      return new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime();
+    });
+
+  const generatedRows = imageRows
+    .filter(img => img.source_type === "generated")
+    .sort((a, b) => {
+      const aSort = a.sort_order ?? 0;
+      const bSort = b.sort_order ?? 0;
+      if (aSort !== bSort) return aSort - bSort;
+      return new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime();
+    });
+
+  const fallbackGeneratedImages = Array.isArray(row.generated_images) ? row.generated_images : [];
+  const generatedImages = generatedRows.length > 0 ? generatedRows.map(img => img.image_url).filter(Boolean) : fallbackGeneratedImages;
+
+  const refEntries = uploadImages.length > 0
+    ? uploadImages.map(img => ({
+        id: img.id,
+        file: null,
+        previewUrl: img.image_url,
+        storagePath: img.storage_path || null,
+        sourceType: img.source_type || "upload",
+        isCanon: !!img.is_canon,
+        isCover: !!img.is_cover,
+        packView: img.pack_view || null,
+      }))
+    : (row.reference_image ? [{
+        id: null,
+        file: null,
+        previewUrl: row.reference_image,
+        storagePath: null,
+        sourceType: "upload",
+        isCanon: false,
+        isCover: true,
+        packView: null,
+      }] : []);
 
   return {
     id: row.id,
@@ -111,7 +214,11 @@ function rowToCharacter(row) {
     style: row.style || null,
     extraPrompt: traits.extraPrompt || "",
     createdAt: row.created_at,
-    refEntries: refUrls.map(url => ({ file: null, previewUrl: url })),
+    refEntries,
+    triggerToken: row.trigger_token || "",
+    status: row.status || "draft",
+    loraPath: row.lora_path || null,
+    coverImage: row.cover_image || refEntries[0]?.previewUrl || null,
   };
 }
 
@@ -193,20 +300,47 @@ function Select({ label, options, value, onChange }) {
 function RefUpload({ entries, onEntries, label, hint, max = 5 }) {
   const [drag, setDrag] = useState(false);
   const inputRef = useRef(null);
+
   function addFiles(fileList) {
     const valid = Array.from(fileList).filter(f => f.type.startsWith("image/"));
     if (!valid.length) return;
+
     onEntries(prev => {
       const slots = max - prev.length;
       if (slots <= 0) return prev;
-      return [...prev, ...valid.slice(0, slots).map(file => ({ file, previewUrl: URL.createObjectURL(file) }))];
+      return [...prev, ...valid.slice(0, slots).map(file => ({
+        id: null,
+        file,
+        previewUrl: URL.createObjectURL(file),
+        storagePath: null,
+        sourceType: "upload",
+        isCanon: false,
+        isCover: false,
+        packView: null,
+      }))];
     });
   }
+
   function removeEntry(i) {
-    onEntries(prev => { URL.revokeObjectURL(prev[i].previewUrl); return prev.filter((_, j) => j !== i); });
+    onEntries(prev => {
+      const entry = prev[i];
+      if (entry?.file && entry?.previewUrl?.startsWith("blob:")) URL.revokeObjectURL(entry.previewUrl);
+      return prev.filter((_, j) => j !== i);
+    });
   }
-  const onDrop = useCallback(e => { e.preventDefault(); setDrag(false); addFiles(e.dataTransfer.files); }, [onEntries, max]);
-  const onInputChange = useCallback(e => { const c = Array.from(e.target.files || []); e.target.value = ""; if (c.length) addFiles(c); }, [onEntries, max]);
+
+  const onDrop = useCallback(e => {
+    e.preventDefault();
+    setDrag(false);
+    addFiles(e.dataTransfer.files);
+  }, [onEntries, max]);
+
+  const onInputChange = useCallback(e => {
+    const c = Array.from(e.target.files || []);
+    e.target.value = "";
+    if (c.length) addFiles(c);
+  }, [onEntries, max]);
+
   return (
     <div style={{ display: "grid", gap: 8 }}>
       <motion.div onDragOver={e => { e.preventDefault(); setDrag(true); }} onDragLeave={() => setDrag(false)}
@@ -224,7 +358,7 @@ function RefUpload({ entries, onEntries, label, hint, max = 5 }) {
       {entries.length > 0 && (
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
           {entries.map((entry, i) => (
-            <motion.div key={entry.previewUrl} initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }}
+            <motion.div key={`${entry.previewUrl}-${i}`} initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }}
               style={{ position: "relative", width: 52, height: 52, borderRadius: 9, overflow: "hidden", border: `1.5px solid ${C.accentBorder}`, flexShrink: 0 }}>
               <img src={entry.previewUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
               <button onClick={e => { e.stopPropagation(); removeEntry(i); }}
@@ -335,12 +469,13 @@ export default function ConsistencyPage() {
   const [extraPrompt, setExtraPrompt] = useState("");
   const charLimit = 1000;
 
-  const [outputs,      setOutputs]      = useState([]);
-  const [generating,   setGenerating]   = useState(false);
-  const [formSection,  setFormSection]  = useState("traits");
-  const [lightboxItem, setLightboxItem] = useState(null);
-  const [userId,       setUserId]       = useState(null);
-  const [saving,       setSaving]       = useState(false);
+  const [outputs,         setOutputs]         = useState([]);
+  const [generating,      setGenerating]      = useState(false);
+  const [formSection,     setFormSection]     = useState("traits");
+  const [lightboxItem,    setLightboxItem]    = useState(null);
+  const [userId,          setUserId]          = useState(null);
+  const [saving,          setSaving]          = useState(false);
+  const [characterImages, setCharacterImages] = useState([]);
 
   const canvasRef = useRef(null);
   const generatingRef = useRef(false);
@@ -352,14 +487,196 @@ export default function ConsistencyPage() {
   const otherOutputs = visibleCharOutputs.filter(o => o.scene !== "Front Full-Body");
   const shouldShowGenerateMorePanel = !!frontOutput && otherOutputs.length < 4;
 
+  const updateCharactersCache = useCallback((chars) => {
+    try {
+      localStorage.setItem(SESSION_KEY, JSON.stringify(chars));
+    } catch {}
+  }, []);
+
+  const hydrateCachedCharacters = useCallback((cached) => {
+    if (!Array.isArray(cached)) return [];
+    return cached.map(item => {
+      if (item && Array.isArray(item.refEntries)) return item;
+      return rowToCharacter(item || {}, []);
+    });
+  }, []);
+
+  async function loadCharacterImages(characterId, allCharacters = null) {
+    if (!characterId && !allCharacters?.length) {
+      setCharacterImages([]);
+      return [];
+    }
+
+    const ids = allCharacters?.length ? allCharacters.map(c => c.id) : [characterId];
+
+    const { data, error } = await supabase
+      .from("character_images")
+      .select("*")
+      .in("character_id", ids)
+      .order("sort_order", { ascending: true })
+      .order("created_at", { ascending: true });
+
+    if (error) {
+      console.error("Failed to load character images:", error);
+      return [];
+    }
+
+    if (!allCharacters?.length && characterId) {
+      setCharacterImages((data || []).filter(img => img.character_id === characterId));
+    }
+
+    return data || [];
+  }
+
+  async function uploadCharacterRefs(characterId, entries) {
+    if (!userId || !characterId || !entries?.length) return [];
+
+    const rows = [];
+
+    for (let i = 0; i < entries.length; i++) {
+      const entry = entries[i];
+      if (!entry?.file) continue;
+
+      try {
+        const rawExt = entry.file.name?.split(".")?.pop()?.toLowerCase();
+        const ext = rawExt || (entry.file.type === "image/webp" ? "webp" : entry.file.type === "image/jpeg" ? "jpg" : "png");
+        const fileName = `${Date.now()}_${i}.${ext}`;
+        const storagePath = `${userId}/${characterId}/refs/${fileName}`;
+
+        const { error: uploadError } = await supabase.storage
+          .from(CHAR_BUCKET)
+          .upload(storagePath, entry.file, { contentType: entry.file.type, upsert: false });
+
+        if (uploadError) {
+          console.error("Ref upload failed:", uploadError);
+          continue;
+        }
+
+        const { data: publicUrlData } = supabase.storage.from(CHAR_BUCKET).getPublicUrl(storagePath);
+        const imageUrl = publicUrlData?.publicUrl || null;
+        if (!imageUrl) continue;
+
+        const { data: row, error: rowError } = await supabase
+          .from("character_images")
+          .insert({
+            user_id: userId,
+            character_id: characterId,
+            image_url: imageUrl,
+            storage_path: storagePath,
+            source_type: "upload",
+            sort_order: i,
+          })
+          .select()
+          .single();
+
+        if (rowError) {
+          console.error("character_images insert error:", rowError);
+          continue;
+        }
+
+        rows.push(row);
+      } catch (err) {
+        console.error("Ref upload exception:", err);
+      }
+    }
+
+    return rows;
+  }
+
+  async function insertGeneratedCharacterImage(characterId, imageUrl, scene, sortOrder = 0, isCover = false) {
+    if (!userId || !characterId || !imageUrl) return null;
+
+    const packViewKey = CHARACTER_PACK_VIEWS.find(v => v.label === scene)?.key || null;
+
+    const { data, error } = await supabase
+      .from("character_images")
+      .insert({
+        user_id: userId,
+        character_id: characterId,
+        image_url: imageUrl,
+        source_type: "generated",
+        is_cover: !!isCover,
+        pack_view: packViewKey,
+        sort_order: sortOrder,
+        metadata: { scene },
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error("Failed to insert generated character image:", error);
+      return null;
+    }
+
+    return data;
+  }
+
+  async function markAsCanon(imageId) {
+    const { error } = await supabase
+      .from("character_images")
+      .update({ is_canon: true })
+      .eq("id", imageId);
+
+    if (error) {
+      console.error(error);
+      alert("Failed to mark image as canon.");
+      return;
+    }
+
+    if (activeChar?.id) {
+      const rows = await loadCharacterImages(activeChar.id);
+      const refRows = rows.filter(r => r.character_id === activeChar.id);
+      setCharacterImages(refRows);
+    }
+  }
+
+  async function markAsCover(image) {
+    if (!activeChar?.id || !image?.id) return;
+
+    await supabase
+      .from("character_images")
+      .update({ is_cover: false })
+      .eq("character_id", activeChar.id);
+
+    const { error: imageError } = await supabase
+      .from("character_images")
+      .update({ is_cover: true })
+      .eq("id", image.id);
+
+    if (imageError) {
+      console.error(imageError);
+      return;
+    }
+
+    const { error: charError } = await supabase
+      .from("characters")
+      .update({ cover_image: image.image_url })
+      .eq("id", activeChar.id)
+      .eq("user_id", userId);
+
+    if (charError) {
+      console.error(charError);
+      return;
+    }
+
+    const rows = await loadCharacterImages(activeChar.id);
+    const refRows = rows.filter(r => r.character_id === activeChar.id);
+    setCharacterImages(refRows);
+  }
+
   useEffect(() => {
     if (!activeCharId) return;
-    setCharacters(p => p.map(c => c.id === activeCharId ? { ...c, refEntries } : c));
-  }, [refEntries, activeCharId]);
+    setCharacters(prev => {
+      const updated = prev.map(c => c.id === activeCharId ? { ...c, refEntries } : c);
+      updateCharactersCache(updated);
+      return updated;
+    });
+  }, [refEntries, activeCharId, updateCharactersCache]);
 
   useEffect(() => {
     if (!activeCharId) {
       setOutputs([]);
+      setCharacterImages([]);
       return;
     }
 
@@ -368,9 +685,22 @@ export default function ConsistencyPage() {
     const current = characters.find(c => c.id === activeCharId);
     if (!current) {
       setOutputs([]);
+      setCharacterImages([]);
       return;
     }
 
+    setCharacterImages(
+      (current.refEntries || []).map((entry, i) => ({
+        id: entry.id || `local-${i}`,
+        character_id: current.id,
+        image_url: entry.previewUrl,
+        storage_path: entry.storagePath || null,
+        source_type: entry.sourceType || "upload",
+        is_canon: !!entry.isCanon,
+        is_cover: !!entry.isCover,
+        pack_view: entry.packView || null,
+      }))
+    );
     setOutputs(outputsFromCharacter(current));
   }, [activeCharId, characters, generatingMore]);
 
@@ -380,7 +710,7 @@ export default function ConsistencyPage() {
       if (raw) {
         const cached = JSON.parse(raw);
         if (Array.isArray(cached) && cached.length > 0) {
-          setCharacters(cached.map(rowToCharacter));
+          setCharacters(hydrateCachedCharacters(cached));
         }
       }
     } catch {}
@@ -399,124 +729,248 @@ export default function ConsistencyPage() {
 
       const { data, error } = await supabase
         .from("characters")
-        .select("id, name, description, prompt, reference_image, generated_images, cover_image, style, created_at")
+        .select("id, name, description, prompt, reference_image, generated_images, cover_image, style, seed, created_at, trigger_token, status, lora_path, base_model, locked_traits, metadata")
         .eq("user_id", uid)
         .order("created_at", { ascending: false });
 
       if (!error && data && !generatingRef.current) {
-        setCharacters(data.map(rowToCharacter));
-        try {
-          localStorage.setItem(SESSION_KEY, JSON.stringify(data));
-        } catch {}
+        const allImageRows = await loadCharacterImages(null, data);
+        const grouped = new Map();
+        for (const img of allImageRows) {
+          if (!grouped.has(img.character_id)) grouped.set(img.character_id, []);
+          grouped.get(img.character_id).push(img);
+        }
+
+        const mapped = data.map(row => rowToCharacter(row, grouped.get(row.id) || []));
+        setCharacters(mapped);
+        updateCharactersCache(mapped);
       }
     })();
-  }, []);
+  }, [hydrateCachedCharacters, updateCharactersCache]);
 
   async function saveCharacter() {
     if (!charName.trim()) return;
-    if (!userId) { alert("Please log in first to save characters."); return; }
+    if (!userId) {
+      alert("Please log in first to save characters.");
+      return;
+    }
+
     setSaving(true);
+
     try {
-      let refUrls = [];
-      if (refEntries.length > 0) {
-        const uploads = await Promise.all(refEntries.map(async (entry, i) => {
-          if (!entry.file) return entry.previewUrl;
-          try {
-            const ext = entry.file.type === "image/webp" ? "webp" : entry.file.type === "image/jpeg" ? "jpg" : "png";
-            const path = `${userId}/${Date.now()}-ref${i}.${ext}`;
-            const { error: uploadError } = await supabase.storage.from(CHAR_BUCKET).upload(path, entry.file, { contentType: entry.file.type, upsert: true });
-            if (uploadError) { console.error("Ref upload failed:", uploadError); return null; }
-            const { data: publicUrlData } = supabase.storage.from(CHAR_BUCKET).getPublicUrl(path);
-            return publicUrlData?.publicUrl ?? null;
-          } catch (err) { console.error("Ref upload exception:", err); return null; }
-        }));
-        refUrls = uploads.filter(Boolean);
-      }
-
-      const promptPayload = buildTraitsPayload({ charDesc, gender, ageRange, ethnicity, hairStyle, hairColor, eyeColor, build, charLocked, extraPrompt });
-      const { data, error } = await supabase.from("characters").insert([{
-        user_id: userId, name: charName.trim(), description: charDesc.trim(),
-        prompt: promptPayload, reference_image: refUrls[0] || null,
-        generated_images: [], cover_image: refUrls[0] || null, style: null, seed: null,
-      }]).select().single();
-
-      if (error || !data) { console.error("Character save failed:", error); alert(`Failed to save: ${error?.message}`); setSaving(false); return; }
-
-      const newChar = {
-        id: data.id, name: charName.trim(), desc: charDesc.trim(), gender, ageRange, ethnicity,
-        hairStyle, hairColor, eyeColor, build,
-        refEntries: refUrls.map(url => ({ file: null, previewUrl: url })),
-        locked: charLocked, generations: 0, generatedImages: [], style: null,
-        extraPrompt: extraPrompt || "", createdAt: data.created_at,
+      const lockedTraits = {
+        gender: gender || "",
+        age: ageRange || "",
+        ethnicity: ethnicity || "",
+        hair_style: hairStyle || "",
+        hair_color: hairColor || "",
+        eye_color: eyeColor || "",
+        build: build || "",
+        charLocked: !!charLocked,
       };
 
+      const promptPayload = buildTraitsPayload({
+        charDesc,
+        gender,
+        ageRange,
+        ethnicity,
+        hairStyle,
+        hairColor,
+        eyeColor,
+        build,
+        charLocked,
+        extraPrompt,
+      });
+
+      const existingChar = activeCharId ? characters.find(c => c.id === activeCharId) : null;
+      const triggerToken = existingChar?.triggerToken || makeTriggerToken(charName);
+
+      const payload = {
+        user_id: userId,
+        name: charName.trim(),
+        description: charDesc.trim(),
+        prompt: promptPayload,
+        style: existingChar?.style || null,
+        seed: null,
+        status: "ready",
+        trigger_token: triggerToken,
+        locked_traits: lockedTraits,
+      };
+
+      let result;
+
+      if (existingChar?.id) {
+        result = await supabase
+          .from("characters")
+          .update(payload)
+          .eq("id", existingChar.id)
+          .eq("user_id", userId)
+          .select()
+          .single();
+      } else {
+        result = await supabase
+          .from("characters")
+          .insert([payload])
+          .select()
+          .single();
+      }
+
+      const { data, error } = result;
+      if (error || !data) {
+        console.error("Character save failed:", error);
+        alert(`Failed to save: ${error?.message}`);
+        setSaving(false);
+        return;
+      }
+
+      const uploadedRows = await uploadCharacterRefs(data.id, refEntries);
+      const existingRemoteRefs = refEntries
+        .filter(entry => !entry.file && entry.previewUrl)
+        .map((entry, i) => ({
+          id: entry.id || null,
+          character_id: data.id,
+          image_url: entry.previewUrl,
+          storage_path: entry.storagePath || null,
+          source_type: entry.sourceType || "upload",
+          is_canon: !!entry.isCanon,
+          is_cover: !!entry.isCover,
+          pack_view: entry.packView || null,
+          sort_order: i,
+          created_at: new Date().toISOString(),
+        }));
+
+      const combinedRefRows = [...existingRemoteRefs, ...uploadedRows];
+      const firstRefUrl = combinedRefRows[0]?.image_url || existingChar?.coverImage || null;
+
+      await supabase
+        .from("characters")
+        .update({
+          reference_image: firstRefUrl,
+          cover_image: data.cover_image || firstRefUrl,
+        })
+        .eq("id", data.id)
+        .eq("user_id", userId);
+
+      const savedChar = rowToCharacter(
+        { ...data, reference_image: firstRefUrl, cover_image: data.cover_image || firstRefUrl, prompt: promptPayload, locked_traits: lockedTraits },
+        combinedRefRows
+      );
+
       setCharacters(prev => {
-        const updated = [newChar, ...prev];
-        try {
-          const raw = localStorage.getItem(SESSION_KEY);
-          const cached = raw ? JSON.parse(raw) : [];
-          localStorage.setItem(SESSION_KEY, JSON.stringify([{
-            id: data.id, user_id: userId, name: newChar.name, description: newChar.desc,
-            prompt: promptPayload, reference_image: refUrls[0] || null,
-            generated_images: [], cover_image: null, style: null, seed: null, created_at: newChar.createdAt,
-          }, ...cached]));
-        } catch {}
+        const exists = prev.some(c => c.id === savedChar.id);
+        const updated = exists ? prev.map(c => c.id === savedChar.id ? { ...c, ...savedChar } : c) : [savedChar, ...prev];
+        updateCharactersCache(updated);
         return updated;
       });
+
+      setCharacterImages(combinedRefRows);
       setActiveCharId(data.id);
-      setCharName(""); setCharDesc(""); setGender(""); setAgeRange(""); setEthnicity("");
-      setHairStyle(""); setHairColor(""); setEyeColor(""); setBuild("");
-      setRefEntries([]); setCharLocked(false);
+      setRefEntries(savedChar.refEntries);
+
+      if (!existingChar?.id) {
+        setCharName("");
+        setCharDesc("");
+        setGender("");
+        setAgeRange("");
+        setEthnicity("");
+        setHairStyle("");
+        setHairColor("");
+        setEyeColor("");
+        setBuild("");
+        setRefEntries([]);
+        setCharLocked(false);
+        setExtraPrompt("");
+      }
+
       setFormSection("generate");
       setActiveView("generate");
-    } catch (err) { console.error("Save exception:", err); alert("Failed to save character."); }
-    finally { setSaving(false); }
+    } catch (err) {
+      console.error("Save exception:", err);
+      alert("Failed to save character.");
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function deleteOutput(outputId) {
     const output = outputs.find(o => o.id === outputId);
-    setOutputs(p => p.filter(o => o.id !== outputId));
+    setOutputs(prev => prev.filter(o => o.id !== outputId));
+
     if (!output?.url || output.url === "__FAILED__" || !userId) return;
+
     const char = characters.find(c => c.id === output.charId);
     if (!char) return;
+
     const updatedImages = (char.generatedImages || []).filter(url => url !== output.url);
-    await supabase.from("characters").update({ generated_images: updatedImages }).eq("id", char.id).eq("user_id", userId);
-    setCharacters(p => p.map(c => c.id === char.id ? { ...c, generatedImages: updatedImages, generations: updatedImages.length } : c));
-    try {
-      const raw = localStorage.getItem(SESSION_KEY);
-      if (raw) {
-        const cached = JSON.parse(raw).map(row => row.id === char.id ? { ...row, generated_images: updatedImages } : row);
-        localStorage.setItem(SESSION_KEY, JSON.stringify(cached));
-      }
-    } catch {}
+
+    await supabase
+      .from("characters")
+      .update({ generated_images: updatedImages })
+      .eq("id", char.id)
+      .eq("user_id", userId);
+
+    await supabase
+      .from("character_images")
+      .delete()
+      .eq("character_id", char.id)
+      .eq("image_url", output.url)
+      .eq("source_type", "generated");
+
+    setCharacters(prev => {
+      const updated = prev.map(c => c.id === char.id ? { ...c, generatedImages: updatedImages, generations: updatedImages.length } : c);
+      updateCharactersCache(updated);
+      return updated;
+    });
+
+    if (activeCharId === char.id) {
+      const rows = await loadCharacterImages(char.id);
+      setCharacterImages(rows.filter(r => r.character_id === char.id));
+    }
   }
 
   async function deleteAllOutputs() {
-    setOutputs(p => p.filter(o => o.charId !== activeCharId));
+    setOutputs(prev => prev.filter(o => o.charId !== activeCharId));
     if (!activeCharId || !userId) return;
-    await supabase.from("characters").update({ generated_images: [], cover_image: null }).eq("id", activeCharId).eq("user_id", userId);
-    setCharacters(p => p.map(c => c.id === activeCharId ? { ...c, generatedImages: [], generations: 0 } : c));
-    try {
-      const raw = localStorage.getItem(SESSION_KEY);
-      if (raw) {
-        const cached = JSON.parse(raw).map(row => row.id === activeCharId ? { ...row, generated_images: [], cover_image: null } : row);
-        localStorage.setItem(SESSION_KEY, JSON.stringify(cached));
-      }
-    } catch {}
+
+    await supabase
+      .from("characters")
+      .update({ generated_images: [], cover_image: null })
+      .eq("id", activeCharId)
+      .eq("user_id", userId);
+
+    await supabase
+      .from("character_images")
+      .delete()
+      .eq("character_id", activeCharId)
+      .eq("source_type", "generated");
+
+    setCharacters(prev => {
+      const updated = prev.map(c => c.id === activeCharId ? { ...c, generatedImages: [], generations: 0, coverImage: c.refEntries[0]?.previewUrl || null } : c);
+      updateCharactersCache(updated);
+      return updated;
+    });
+
+    const rows = await loadCharacterImages(activeCharId);
+    setCharacterImages(rows.filter(r => r.character_id === activeCharId));
   }
 
   async function deleteCharacter(id) {
-    setCharacters(p => {
-      const updated = p.filter(c => c.id !== id);
-      try {
-        const raw = localStorage.getItem(SESSION_KEY);
-        if (raw) localStorage.setItem(SESSION_KEY, JSON.stringify(JSON.parse(raw).filter(r => r.id !== id)));
-      } catch {}
+    setCharacters(prev => {
+      const updated = prev.filter(c => c.id !== id);
+      updateCharactersCache(updated);
       return updated;
     });
-    setOutputs(p => p.filter(o => o.charId !== id));
-    if (activeCharId === id) { const next = characters.find(c => c.id !== id); setActiveCharId(next?.id ?? null); }
-    if (userId && !String(id).startsWith("local-")) { await supabase.from("characters").delete().eq("id", id).eq("user_id", userId); }
+
+    setOutputs(prev => prev.filter(o => o.charId !== id));
+
+    if (activeCharId === id) {
+      const next = characters.find(c => c.id !== id);
+      setActiveCharId(next?.id ?? null);
+    }
+
+    if (userId && !String(id).startsWith("local-")) {
+      await supabase.from("characters").delete().eq("id", id).eq("user_id", userId);
+    }
   }
 
   function loadCharacterIntoForm(char) {
@@ -529,7 +983,7 @@ export default function ConsistencyPage() {
     setHairColor(char.hairColor);
     setEyeColor(char.eyeColor);
     setBuild(char.build);
-    setRefEntries([...char.refEntries]);
+    setRefEntries([...(char.refEntries || [])]);
     setCharLocked(char.locked);
     setExtraPrompt(char.extraPrompt || "");
     setActiveCharId(char.id);
@@ -538,93 +992,174 @@ export default function ConsistencyPage() {
 
   function sendToImageGen() {
     if (!activeChar || charOutputs.length === 0) return;
-    const traitDesc = [activeChar.gender, activeChar.ageRange, activeChar.ethnicity,
+
+    const traitDesc = [
+      activeChar.gender,
+      activeChar.ageRange,
+      activeChar.ethnicity,
       activeChar.hairColor && activeChar.hairStyle ? `${activeChar.hairColor} ${activeChar.hairStyle} hair` : null,
-      activeChar.eyeColor ? `${activeChar.eyeColor} eyes` : null, activeChar.build ? `${activeChar.build} build` : null,
+      activeChar.eyeColor ? `${activeChar.eyeColor} eyes` : null,
+      activeChar.build ? `${activeChar.build} build` : null,
     ].filter(Boolean).join(", ");
-    const charPrompt = [`Use the saved character ${activeChar.name}`, traitDesc ? `same identity and physical traits: ${traitDesc}` : null, activeChar.desc || null,
+
+    const charPrompt = [
+      `Use the saved character ${activeChar.name}`,
+      activeChar.triggerToken ? `Trigger token: ${activeChar.triggerToken}` : null,
+      traitDesc ? `same identity and physical traits: ${traitDesc}` : null,
+      activeChar.desc || null,
       activeChar.refEntries.length > 0 ? `Maintain exact facial features, skin tone, and distinguishing characteristics of this specific person.` : null,
     ].filter(Boolean).join(". ");
+
     try {
       sessionStorage.setItem("kylor_prefill_prompt", charPrompt);
       sessionStorage.setItem("kylor_selected_character_id", String(activeChar.id));
       sessionStorage.setItem("kylor_selected_character_payload", JSON.stringify(activeChar));
     } catch {}
+
     router.push("/image");
   }
 
   async function generateOtherProfiles() {
     if (!activeChar || generatingMore) return;
+
     const existingFront = charOutputs.find(o => o.scene === "Front Full-Body" && o.url && o.url !== "__FAILED__");
-    if (!existingFront) { alert("Generate the first image first."); return; }
+    if (!existingFront) {
+      alert("Generate the first image first.");
+      return;
+    }
+
     setGeneratingMore(true);
+
     const views = [
-      { key: "left",  label: "Left Profile Full-Body",  shot: "single person, left side profile, full-body, facing left, standing straight, arms relaxed, centered composition",   size: "1024x1536" },
-      { key: "right", label: "Right Profile Full-Body", shot: "single person, right side profile, full-body, facing right, standing straight, arms relaxed, centered composition",  size: "1024x1536" },
-      { key: "back",  label: "Back Full-Body",           shot: "single person, back view, full-body, standing straight, arms relaxed, centered composition",                        size: "1024x1536" },
-      { key: "close", label: "Upper-Body Close-Up",      shot: "single person, upper body portrait, facing camera, shoulders visible, neutral expression",                          size: "1024x1024" },
+      { key: "left",  label: "Left Profile Full-Body",  shot: "single person, left side profile, full-body, facing left, standing straight, arms relaxed, centered composition",  size: "1024x1536" },
+      { key: "right", label: "Right Profile Full-Body", shot: "single person, right side profile, full-body, facing right, standing straight, arms relaxed, centered composition", size: "1024x1536" },
+      { key: "back",  label: "Back Full-Body",          shot: "single person, back view, full-body, standing straight, arms relaxed, centered composition",                     size: "1024x1536" },
+      { key: "close", label: "Upper-Body Close-Up",     shot: "single person, upper body portrait, facing camera, shoulders visible, neutral expression",                       size: "1024x1024" },
     ];
-    const traitDesc = [activeChar.gender, activeChar.ageRange, activeChar.ethnicity,
+
+    const traitDesc = [
+      activeChar.gender,
+      activeChar.ageRange,
+      activeChar.ethnicity,
       activeChar.hairColor && activeChar.hairStyle ? `${activeChar.hairColor} ${activeChar.hairStyle} hair` : null,
-      activeChar.eyeColor ? `${activeChar.eyeColor} eyes` : null, activeChar.build ? `${activeChar.build} build` : null,
+      activeChar.eyeColor ? `${activeChar.eyeColor} eyes` : null,
+      activeChar.build ? `${activeChar.build} build` : null,
     ].filter(Boolean).join(", ");
+
     let accumulatedImages = [...(activeChar.generatedImages || []).filter(Boolean)];
+
     try {
       for (const view of views) {
-        const placeholder = { id: `${activeCharId}-${view.key}-${Date.now()}`, charId: activeCharId, prompt: view.shot, scene: view.label, url: null, createdAt: new Date().toISOString() };
+        const placeholder = {
+          id: `${activeCharId}-${view.key}-${Date.now()}`,
+          charId: activeCharId,
+          prompt: view.shot,
+          scene: view.label,
+          url: null,
+          createdAt: new Date().toISOString(),
+        };
+
         setOutputs(prev => [...prev.filter(o => !(o.charId === activeCharId && o.scene === view.label)), placeholder]);
+
         const finalPrompt = [
           `CRITICAL: Generate the EXACT SAME person named ${activeChar.name} as in all previous images. Same face — identical facial bone structure, jawline, nose, lips, eye shape and color, eyebrow shape, skin tone, hairline, and hairstyle. Do NOT change any facial feature. Do NOT generate a similar-looking person — generate THIS exact person in a different pose.`,
+          activeChar.triggerToken ? `Character token: ${activeChar.triggerToken}.` : null,
           traitDesc ? `Exact physical traits (must match precisely): ${traitDesc}.` : null,
           activeChar.desc ? `Fixed character details: ${activeChar.desc}.` : null,
           extraPrompt.trim() ? `Locked style notes: ${extraPrompt.trim()}.` : null,
           `Shot type: ${view.shot}.`,
           "Plain neutral studio background. Exactly one person only. No collage. No multiple people. No split screen. No character sheet. No text. No watermark.",
         ].filter(Boolean).join(" ");
-        const res = await fetch("/api/generate-image", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt: finalPrompt, size: view.size, n: 1, characterSeed: String(activeChar.id) }) });
+
+        const res = await fetch("/api/generate-image", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            prompt: finalPrompt,
+            size: view.size,
+            n: 1,
+            characterSeed: String(activeChar.id),
+          }),
+        });
+
         const data = await res.json();
         const url = Array.isArray(data?.images) ? data.images[0] : data?.image ?? null;
+
         setOutputs(prev => prev.map(o => o.id === placeholder.id ? { ...o, url: url || "__FAILED__" } : o));
+
         if (url) {
           accumulatedImages = [...accumulatedImages, url];
-          await supabase.from("characters").update({ generated_images: accumulatedImages }).eq("id", activeCharId).eq("user_id", userId);
-          setCharacters(prev => prev.map(c => c.id === activeCharId ? { ...c, generatedImages: accumulatedImages, generations: accumulatedImages.length } : c));
-          try {
-            const raw = localStorage.getItem(SESSION_KEY);
-            if (raw) {
-              const cached = JSON.parse(raw).map(row => row.id === activeCharId ? { ...row, generated_images: accumulatedImages } : row);
-              localStorage.setItem(SESSION_KEY, JSON.stringify(cached));
-            }
-          } catch {}
+
+          await insertGeneratedCharacterImage(activeCharId, url, view.label, accumulatedImages.length - 1, false);
+
+          await supabase
+            .from("characters")
+            .update({ generated_images: accumulatedImages })
+            .eq("id", activeCharId)
+            .eq("user_id", userId);
+
+          setCharacters(prev => {
+            const updated = prev.map(c => c.id === activeCharId ? { ...c, generatedImages: accumulatedImages, generations: accumulatedImages.length } : c);
+            updateCharactersCache(updated);
+            return updated;
+          });
+
+          const rows = await loadCharacterImages(activeCharId);
+          setCharacterImages(rows.filter(r => r.character_id === activeCharId));
         }
       }
-    } catch (err) { console.error("Generate other profiles failed:", err); }
-    finally { setGeneratingMore(false); }
+    } catch (err) {
+      console.error("Generate other profiles failed:", err);
+    } finally {
+      setGeneratingMore(false);
+    }
   }
 
   async function handleGenerate() {
     if (!activeChar || generating) return;
+
     generatingRef.current = true;
     setGenerating(true);
 
     const frontView = CHARACTER_PACK_VIEWS[0];
-    const traitDesc = [activeChar.gender, activeChar.ageRange, activeChar.ethnicity,
+    const traitDesc = [
+      activeChar.gender,
+      activeChar.ageRange,
+      activeChar.ethnicity,
       activeChar.hairColor && activeChar.hairStyle ? `${activeChar.hairColor} ${activeChar.hairStyle} hair` : null,
-      activeChar.eyeColor ? `${activeChar.eyeColor} eyes` : null, activeChar.build ? `${activeChar.build} build` : null,
+      activeChar.eyeColor ? `${activeChar.eyeColor} eyes` : null,
+      activeChar.build ? `${activeChar.build} build` : null,
     ].filter(Boolean).join(", ");
+
     const effectiveRefs = activeChar.refEntries.length > 0 ? activeChar.refEntries : refEntries;
     const hasRefs = effectiveRefs.length > 0;
-    const frontOutputItem = { id: `${activeCharId}-${frontView.key}-${Date.now()}`, charId: activeCharId, prompt: frontView.shot, scene: frontView.label, url: null, createdAt: new Date().toISOString() };
+
+    const frontOutputItem = {
+      id: `${activeCharId}-${frontView.key}-${Date.now()}`,
+      charId: activeCharId,
+      prompt: frontView.shot,
+      scene: frontView.label,
+      url: null,
+      createdAt: new Date().toISOString(),
+    };
 
     setOutputs(prev => [frontOutputItem, ...prev.filter(o => o.charId !== activeCharId)]);
     canvasRef.current?.scrollTo({ top: 0, behavior: "smooth" });
 
     try {
-      const uploadedRefs = hasRefs ? (await Promise.all(effectiveRefs.map(async e => { if (e.file) return fileToBase64(e.file); if (e.previewUrl) return e.previewUrl; return null; }))).filter(Boolean) : [];
+      const uploadedRefs = hasRefs
+        ? (await Promise.all(effectiveRefs.map(async e => {
+            if (e.file) return fileToBase64(e.file);
+            if (e.previewUrl) return e.previewUrl;
+            return null;
+          }))).filter(Boolean)
+        : [];
+
       const finalPrompt = [
         hasRefs
           ? `CRITICAL: You must generate the EXACT SAME real person named ${activeChar.name} from the reference photos. Copy their face exactly — same facial bone structure, same jawline shape, same nose shape and width, same lip shape, same eye shape and spacing, same eyebrow thickness and arch, same exact skin tone and texture, same hairline. This is a SPECIFIC REAL HUMAN — do NOT idealise, do NOT change any facial feature, do NOT generate a similar-looking person. Generate THIS exact person.`
           : `Generate a character named ${activeChar.name} with completely consistent appearance. Lock all facial features and do not vary them.`,
+        activeChar.triggerToken ? `Character token: ${activeChar.triggerToken}.` : null,
         traitDesc ? `Exact physical traits (must match precisely): ${traitDesc}.` : null,
         activeChar.desc ? `Additional fixed character details: ${activeChar.desc}.` : null,
         extraPrompt.trim() ? `Locked style notes: ${extraPrompt.trim()}.` : null,
@@ -635,31 +1170,81 @@ export default function ConsistencyPage() {
 
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 120000);
+
       let data = null;
       try {
-        const res = await fetch("/api/generate-image", { method: "POST", headers: { "Content-Type": "application/json" }, signal: controller.signal, body: JSON.stringify({ prompt: finalPrompt, size: frontView.size, n: 1, referenceImages: uploadedRefs, characterSeed: String(activeChar.id) }) });
+        const res = await fetch("/api/generate-image", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          signal: controller.signal,
+          body: JSON.stringify({
+            prompt: finalPrompt,
+            size: frontView.size,
+            n: 1,
+            referenceImages: uploadedRefs,
+            characterSeed: String(activeChar.id),
+          }),
+        });
         data = await res.json();
-      } finally { clearTimeout(timeout); }
+      } finally {
+        clearTimeout(timeout);
+      }
 
       const url = Array.isArray(data?.images) ? data.images[0] : data?.image ?? null;
       setOutputs(prev => prev.map(o => o.id === frontOutputItem.id ? { ...o, url: url || "__FAILED__" } : o));
 
       if (url) {
-        const updatedChar = { ...activeChar, generations: 1, generatedImages: [url], extraPrompt: extraPrompt || activeChar.extraPrompt || "" };
-        setCharacters(prev => prev.map(c => c.id === activeCharId ? updatedChar : c));
+        await insertGeneratedCharacterImage(activeCharId, url, frontView.label, 0, true);
+
+        const updatedChar = {
+          ...activeChar,
+          generations: 1,
+          generatedImages: [url],
+          extraPrompt: extraPrompt || activeChar.extraPrompt || "",
+          coverImage: url,
+        };
+
+        setCharacters(prev => {
+          const updated = prev.map(c => c.id === activeCharId ? updatedChar : c);
+          updateCharactersCache(updated);
+          return updated;
+        });
+
         if (userId && !String(activeCharId).startsWith("local-")) {
-          await supabase.from("characters").update({
-            generated_images: [url], cover_image: url,
-            prompt: buildTraitsPayload({ charDesc: activeChar.desc, gender: activeChar.gender, ageRange: activeChar.ageRange, ethnicity: activeChar.ethnicity, hairStyle: activeChar.hairStyle, hairColor: activeChar.hairColor, eyeColor: activeChar.eyeColor, build: activeChar.build, charLocked: activeChar.locked, extraPrompt }),
-          }).eq("id", activeCharId).eq("user_id", userId);
-          try {
-            const raw = localStorage.getItem(SESSION_KEY);
-            if (raw) {
-              const cached = JSON.parse(raw).map(row => row.id === activeCharId ? { ...row, generated_images: [url], cover_image: url } : row);
-              localStorage.setItem(SESSION_KEY, JSON.stringify(cached));
-            }
-          } catch {}
+          await supabase
+            .from("characters")
+            .update({
+              generated_images: [url],
+              cover_image: url,
+              prompt: buildTraitsPayload({
+                charDesc: activeChar.desc,
+                gender: activeChar.gender,
+                ageRange: activeChar.ageRange,
+                ethnicity: activeChar.ethnicity,
+                hairStyle: activeChar.hairStyle,
+                hairColor: activeChar.hairColor,
+                eyeColor: activeChar.eyeColor,
+                build: activeChar.build,
+                charLocked: activeChar.locked,
+                extraPrompt,
+              }),
+              locked_traits: {
+                gender: activeChar.gender || "",
+                age: activeChar.ageRange || "",
+                ethnicity: activeChar.ethnicity || "",
+                hair_style: activeChar.hairStyle || "",
+                hair_color: activeChar.hairColor || "",
+                eye_color: activeChar.eyeColor || "",
+                build: activeChar.build || "",
+                charLocked: !!activeChar.locked,
+              },
+            })
+            .eq("id", activeCharId)
+            .eq("user_id", userId);
         }
+
+        const rows = await loadCharacterImages(activeCharId);
+        setCharacterImages(rows.filter(r => r.character_id === activeCharId));
       }
     } catch (err) {
       console.error("Generate failed:", err);
@@ -672,9 +1257,18 @@ export default function ConsistencyPage() {
 
   function resetToLanding() {
     setActiveCharId(null);
-    setCharName(""); setCharDesc(""); setGender(""); setAgeRange(""); setEthnicity("");
-    setHairStyle(""); setHairColor(""); setEyeColor(""); setBuild("");
-    setRefEntries([]); setCharLocked(false); setExtraPrompt("");
+    setCharName("");
+    setCharDesc("");
+    setGender("");
+    setAgeRange("");
+    setEthnicity("");
+    setHairStyle("");
+    setHairColor("");
+    setEyeColor("");
+    setBuild("");
+    setRefEntries([]);
+    setCharLocked(false);
+    setExtraPrompt("");
     setFormSection("traits");
     setActiveView("generate");
   }
@@ -1071,9 +1665,12 @@ export default function ConsistencyPage() {
                     {characters.map((char, i) => (
                       <motion.div key={char.id} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}>
                         <div style={{ position: "relative" }}>
-                          <CharacterCard char={char} isActive={char.id === activeCharId}
+                          <CharacterCard
+                            char={char}
+                            isActive={char.id === activeCharId}
                             onClick={() => { loadCharacterIntoForm(char); setActiveView("generate"); }}
-                            onDelete={() => deleteCharacter(char.id)} />
+                            onDelete={() => deleteCharacter(char.id)}
+                          />
                           <button onClick={e => { e.stopPropagation(); deleteCharacter(char.id); }}
                             style={{ position: "absolute", top: 8, right: 8, width: 26, height: 26, borderRadius: 8, border: `1px solid rgba(248,113,113,0.25)`, background: "rgba(248,113,113,0.1)", color: "#f87171", display: "grid", placeItems: "center", cursor: "pointer" }}>
                             <Trash2 size={11} />
