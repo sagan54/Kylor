@@ -26,6 +26,30 @@ function mapSizeToAspectRatio(size) {
   }
 }
 
+async function fileOutputToUrl(output) {
+  if (!output) return null;
+
+  if (typeof output === "string") return output;
+
+  if (Array.isArray(output)) {
+    const first = output[0];
+    if (!first) return null;
+
+    if (typeof first === "string") return first;
+    if (typeof first.url === "function") return await first.url();
+    if (typeof first.url === "string") return first.url;
+
+    const s = typeof first.toString === "function" ? first.toString() : null;
+    return s && s !== "[object Object]" ? s : null;
+  }
+
+  if (typeof output.url === "function") return await output.url();
+  if (typeof output.url === "string") return output.url;
+
+  const s = typeof output.toString === "function" ? output.toString() : null;
+  return s && s !== "[object Object]" ? s : null;
+}
+
 export async function POST(req) {
   try {
     const {
@@ -86,9 +110,9 @@ export async function POST(req) {
       input,
     });
 
-    const images = Array.isArray(output)
-      ? output.filter(Boolean)
-      : [output].filter(Boolean);
+    const firstUrl = await fileOutputToUrl(output);
+
+    const images = firstUrl ? [firstUrl] : [];
 
     if (!images.length) {
       return Response.json(
