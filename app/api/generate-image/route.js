@@ -1,7 +1,7 @@
-import OpenAI from "openai";
+import Replicate from "replicate";
 
-const client = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
+const replicate = new Replicate({
+  auth: process.env.REPLICATE_API_TOKEN,
 });
 
 function normalizeReferenceImage(image) {
@@ -14,6 +14,19 @@ function normalizeReferenceImage(image) {
   if (image.startsWith("http://") || image.startsWith("https://")) return image;
 
   return null;
+}
+
+function mapSizeToAspectRatio(size) {
+  switch (size) {
+    case "1024x1536":
+      return "2:3";
+    case "1536x1024":
+      return "3:2";
+    case "1024x1024":
+      return "1:1";
+    default:
+      return "1:1";
+  }
 }
 
 export async function POST(req) {
@@ -30,56 +43,69 @@ export async function POST(req) {
       return Response.json({ error: "Prompt is required" }, { status: 400 });
     }
 
-    const safeN = Math.min(Math.max(Number(n) || 1, 1), 4);
+    const safeN = Math.min(Math.max(Number(n) || 1, 1), 1);
 
     const refs = Array.isArray(referenceImages)
       ? referenceImages.map(normalizeReferenceImage).filter(Boolean).slice(0, 5)
       : [];
 
-    // Stronger identity-preserving prompt when refs exist
-    const finalPrompt = refs.length
+    // Identity-preserving prompt when refs exist
+    const identityPrompt = refs.length
       ? [
           "Use the provided reference image(s) as the same real person.",
           "Preserve the exact identity, face shape, jawline, nose, eyes, lips, eyebrows, skin tone, and hairstyle.",
           "Do not beautify, idealize, age-shift, masculinize, or change facial structure.",
-          "Keep the same person, only change pose / framing / scene as requested.",
+          "Keep the same person, only change pose, framing, and scene as requested.",
           prompt,
         ].join(" ")
       : prompt;
 
-    let result;
+    // Realism boost to reduce plastic / fake skin look
+    const realismBoost = [
+      "photorealistic",
+      "natural skin texture",
+      "visible pores",
+      "realistic facial detail",
+      "subtle imperfections",
+      "natural lighting",
+      "realistic shadows",
+      "camera shot",
+      "DSLR photography",
+      "documentary realism",
+      "true-to-life skin tone variation",
+      "realistic fabric texture",
+      "grounded photography",
+      "no smoothing",
+      "no plastic skin",
+      "no waxy skin",
+      "no beauty filter",
+      "no cgi look",
+      "no 3d render look",
+    ].join(", ");
 
-    if (refs.length > 0) {
-      // When references exist, use image edit / image-conditioned generation
-      result = await client.images.edit({
-        model: "gpt-image-1",
-        image: refs,
-        prompt: finalPrompt,
-        size,
-        quality,
-        output_format: "png",
-      });
-    } else {
-      result = await client.images.generate({
-        model: "gpt-image-1",
-        prompt: finalPrompt,
-        size,
-        quality,
-        output_format: "png",
-        n: safeN,
-      });
-    }
+    const finalPrompt = `${identityPrompt}, ${realismBoost}`;
+    const aspect_ratio = mapSizeToAspectRatio(size);
 
-    const images =
-      result?.data
-        ?.map((item) =>
-          item?.b64_json ? `data:image/png;base64,${item.b64_json}` : null
-        )
-        .filter(Boolean) || [];
+    const requests = Array.from({ length: safeN }, async () => {
+      const input = {
+        prompt: finalPrompt,
+        aspect_ratio,
+        output_format: "png",
+      };
+
+      const output = await replicate.run("black-forest-labs/flux-2-pro", {
+        input,
+      });
+
+      if (Array.isArray(output)) return output[0] || null;
+      return output || null;
+    });
+
+    const images = (await Promise.all(requests)).filter(Boolean);
 
     if (!images.length) {
       return Response.json(
-        { error: "No image returned from OpenAI" },
+        { error: "No image returned from Replicate" },
         { status: 500 }
       );
     }
@@ -87,6 +113,11 @@ export async function POST(req) {
     return Response.json({
       image: images[0],
       images,
+      meta: {
+        model: "black-forest-labs/flux-2-pro",
+        quality,
+        referenceCount: refs.length,
+      },
     });
   } catch (error) {
     console.error("Image generation error:", error);

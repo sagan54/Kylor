@@ -71,6 +71,20 @@ function fileToBase64(file) {
   });
 }
 
+async function entriesToReferenceImages(entries) {
+  if (!Array.isArray(entries) || entries.length === 0) return [];
+
+  const refs = await Promise.all(
+    entries.map(async (entry) => {
+      if (entry?.file) return await fileToBase64(entry.file);
+      if (entry?.previewUrl) return entry.previewUrl;
+      return null;
+    })
+  );
+
+  return refs.filter(Boolean);
+}
+
 function getIdNumber(id) {
   const s = String(id ?? "");
   let hash = 0;
@@ -1047,6 +1061,8 @@ export default function ConsistencyPage() {
     ].filter(Boolean).join(", ");
 
     let accumulatedImages = [...(activeChar.generatedImages || []).filter(Boolean)];
+    const effectiveRefs = activeChar.refEntries.length > 0 ? activeChar.refEntries : refEntries;
+    const uploadedRefs = await entriesToReferenceImages(effectiveRefs);
 
     try {
       for (const view of views) {
@@ -1068,17 +1084,17 @@ export default function ConsistencyPage() {
           activeChar.desc ? `Fixed character details: ${activeChar.desc}.` : null,
           extraPrompt.trim() ? `Locked style notes: ${extraPrompt.trim()}.` : null,
           `Shot type: ${view.shot}.`,
+          "Photorealistic human skin, visible pores, natural facial texture, realistic lighting, no waxy skin, no CGI look, no plastic skin.",
           "Plain neutral studio background. Exactly one person only. No collage. No multiple people. No split screen. No character sheet. No text. No watermark.",
         ].filter(Boolean).join(" ");
 
-        const res = await fetch("/api/generate-image", {
+        const res = await fetch("/api/generate-consistency", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             prompt: finalPrompt,
             size: view.size,
-            n: 1,
-            characterSeed: String(activeChar.id),
+            referenceImages: uploadedRefs,
           }),
         });
 
@@ -1147,13 +1163,7 @@ export default function ConsistencyPage() {
     canvasRef.current?.scrollTo({ top: 0, behavior: "smooth" });
 
     try {
-      const uploadedRefs = hasRefs
-        ? (await Promise.all(effectiveRefs.map(async e => {
-            if (e.file) return fileToBase64(e.file);
-            if (e.previewUrl) return e.previewUrl;
-            return null;
-          }))).filter(Boolean)
-        : [];
+      const uploadedRefs = hasRefs ? await entriesToReferenceImages(effectiveRefs) : [];
 
       const finalPrompt = [
         hasRefs
@@ -1164,6 +1174,7 @@ export default function ConsistencyPage() {
         activeChar.desc ? `Additional fixed character details: ${activeChar.desc}.` : null,
         extraPrompt.trim() ? `Locked style notes: ${extraPrompt.trim()}.` : null,
         `Shot type: ${frontView.shot}.`,
+        "Photorealistic human skin, visible pores, natural facial texture, realistic lighting, no waxy skin, no CGI look, no plastic skin.",
         "Plain light studio background. Neutral reference photo style.",
         "Exactly one person only. No duplicate person. No collage. No split screen. No multiple angles in one image. No character sheet. No contact sheet. No grid layout. No text. No watermark.",
       ].filter(Boolean).join(" ");
@@ -1173,16 +1184,14 @@ export default function ConsistencyPage() {
 
       let data = null;
       try {
-        const res = await fetch("/api/generate-image", {
+        const res = await fetch("/api/generate-consistency", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           signal: controller.signal,
           body: JSON.stringify({
             prompt: finalPrompt,
             size: frontView.size,
-            n: 1,
             referenceImages: uploadedRefs,
-            characterSeed: String(activeChar.id),
           }),
         });
         data = await res.json();
