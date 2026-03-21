@@ -526,13 +526,26 @@ export default function Home() {
         return;
       }
 
-      const { error: upsertError } = await supabase.from("user_credits").upsert(
-        {
-          user_id: userId,
-          credits: 0,
-        },
-        { onConflict: "user_id" }
-      );
+      async function loadCredits(userId) {
+  if (!userId) {
+    setCredits(0);
+    return;
+  }
+
+  const { data, error } = await supabase
+    .from("user_credits")
+    .select("credits")
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (error) {
+    console.error("Credits load error:", error);
+    setCredits(0);
+    return;
+  }
+
+  setCredits(data?.credits || 0);
+}
 
       if (upsertError) {
         console.error("Failed to create default credits row:", upsertError);
