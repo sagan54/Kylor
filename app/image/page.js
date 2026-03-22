@@ -45,24 +45,35 @@ console.log("sbLoadAll result:", data);
 
 async function sbSaveGroup(group, userId) {
   console.log("sbSaveGroup called:", { userId, group });
-  if (!userId) return;
-  const { error } = await supabase.from("image_generations").upsert({
-    id: group.id,
-    user_id: userId,
-    prompt: group.prompt,
-    negative_prompt: group.negativePrompt,
-    ratio: group.ratio,
-    mode: group.mode,
-    style: group.style,
-    images: group.images,
-    created_at: group.createdAt,
-  });
+
+  if (!userId) {
+    console.error("sbSaveGroup aborted: missing userId");
+    return;
+  }
+
+  const { data, error } = await supabase
+    .from("image_generations")
+    .upsert(
+      {
+        id: group.id,
+        user_id: userId,
+        prompt: group.prompt,
+        negative_prompt: group.negativePrompt,
+        ratio: group.ratio,
+        mode: group.mode,
+        style: group.style,
+        images: group.images,
+        created_at: group.createdAt,
+      },
+      { onConflict: "id" }
+    )
+    .select();
 
   if (error) {
-  console.error("sbSaveGroup failed:", error);
-} else {
-  console.log("sbSaveGroup success:", group.id);
-}
+    console.error("sbSaveGroup failed:", error);
+  } else {
+    console.log("sbSaveGroup success:", data);
+  }
 }
 
 async function sbDeleteGroup(id, userId) {
@@ -1684,10 +1695,15 @@ export default function ImagePage() {
     syncCache([]);
     await sbClearAll(userId);
   }
-
+if (!userId) {
+  console.error("No userId found. Not saving.");
+  alert("No user session found. Please log in again.");
+  return;
+}
   async function handleGenerate() {
   const trimmedScenePrompt = scenePrompt.trim();
   if (!trimmedScenePrompt || generating) return;
+
 
   setGenerating(true);
   canvasRef.current?.scrollTo({ top: 0, behavior: "smooth" });
