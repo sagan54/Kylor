@@ -141,14 +141,15 @@ const avoidInstruction = [
 const finalPrompt = [
   cleanedScenePrompt,
 
-  "Full body visible from head to toe. Subject occupies around 35 to 45 percent of the frame. Face clearly visible and large enough to recognize identity. Environment must remain clearly visible.",
+"Full body visible from head to toe. Subject occupies around 35 to 45 percent of the frame. Face clearly visible and large enough to recognize identity. Environment must remain clearly visible.",
 
-  "Camera distance medium-wide, not extreme long shot.",
+"Camera distance medium-wide, not extreme long shot.",
 
-  "Same exact person as reference. Face must remain identical even in wide shot. Do not change identity even if subject is small in frame.",
+"Do not center subject. Use rule of thirds composition. Subject slightly off-center.",
 
-  "Subject must face camera or 3/4 angle. Face clearly visible even in wide shot. Do not turn back to camera.",
+"Same exact person as reference. Face must remain identical even in wide shot. Do not change identity.",
 
+"Subject must face camera or 3/4 angle. Face clearly visible even in wide shot. Do not turn back to camera.",
   prompt?.trim() || "",
   hasCharacterRefs ? `Reference lock: ${referenceInstruction}` : null,
 
