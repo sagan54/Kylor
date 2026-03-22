@@ -140,6 +140,7 @@ const avoidInstruction = [
 
 const finalPrompt = [
   cleanedScenePrompt,   // 👈 MOVE THIS FIRST
+  "Full body visible from head to toe. Camera far from subject. Subject occupies only 20 to 30 percent of the frame. Environment must remain clearly visible.",
   prompt?.trim() || "",
 
   "Full body visible, subject fits completely in frame, environment clearly visible, no close-up framing.",
