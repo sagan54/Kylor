@@ -143,6 +143,8 @@ const finalPrompt = [
   "Full body visible from head to toe. Camera far from subject. Subject occupies only 20 to 30 percent of the frame. Environment must remain clearly visible.",
 
   "Same exact person as reference. Face must remain identical even in wide shot. Do not change identity even if subject is small in frame.",
+
+  "Subject must face camera or 3/4 angle. Face clearly visible even in wide shot. Do not turn back to camera.",
   prompt?.trim() || "",
 
   "Full body visible, subject fits completely in frame, environment clearly visible, no close-up framing.",
