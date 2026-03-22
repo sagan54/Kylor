@@ -1268,7 +1268,7 @@ function GenerationCard({
                   key={v}
                   whileTap={{ scale: 0.95 }}
                   onClick={() => onVariation?.(group, i)}
-                  disabled={generating}
+                  disabled={generating || !authReady}
                   style={{
                     height: 34,
                     borderRadius: radius.sm,
@@ -1345,6 +1345,7 @@ export default function ImagePage() {
   const [notifState, setNotifState] = useState("idle");
 
   const [userId, setUserId] = useState(null);
+  const [authReady, setAuthReady] = useState(false);
 
   const [groups, setGroups] = useState([]);
   const [dbLoaded, setDbLoaded] = useState(false);
@@ -1545,12 +1546,13 @@ export default function ImagePage() {
       if (!mounted) return;
 
       setUserId(uid);
-      console.log("Resolved userId:", uid);
+setAuthReady(true);
+console.log("Resolved userId:", uid);
 
-      if (!uid) {
-        setDbLoaded(true);
-        return;
-      }
+if (!uid) {
+  setDbLoaded(true);
+  return;
+}
 
       const fresh = await sbLoadAll(uid);
 
@@ -1579,8 +1581,9 @@ export default function ImagePage() {
       if (!mounted) return;
 
       setUserId(uid);
+setAuthReady(true);
 
-      if (!uid) return;
+if (!uid) return;
 
       const fresh = await sbLoadAll(uid);
 
@@ -1701,7 +1704,29 @@ export default function ImagePage() {
   const trimmedScenePrompt = scenePrompt.trim();
   if (!trimmedScenePrompt || generating) return;
 
-  if (!userId) {
+  let effectiveUserId = userId;
+
+  if (!effectiveUserId) {
+    console.warn("userId state missing, checking Supabase auth directly...");
+
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser();
+
+    if (userError) {
+      console.error("Failed to get user from Supabase:", userError);
+    }
+
+    effectiveUserId = user?.id ?? null;
+
+    if (effectiveUserId) {
+      setUserId(effectiveUserId);
+      console.log("Recovered userId from Supabase:", effectiveUserId);
+    }
+  }
+
+  if (!effectiveUserId) {
     console.error("No userId found. Not saving.");
     alert("No user session found. Please log in again.");
     return;
@@ -1784,13 +1809,13 @@ export default function ImagePage() {
     });
 
     setGenerating(false);
-console.log("Saving group with userId:", userId);
+console.log("Saving group with userId:", effectiveUserId);
 console.log("newGroup created:", newGroup);
     await sbSaveGroup(newGroup, userId);
 
-    if (userId && tempUrls.length > 0) {
+    if (effectiveUserId && tempUrls.length > 0) {
       const permanentUrls = await Promise.all(
-        tempUrls.map((url, i) => uploadImageToStorage(url, userId, `${groupId}-${i}`))
+        tempUrls.map((url, i) => uploadImageToStorage(url, effectiveUserId, `${groupId}-${i}`))
       );
 
       const updatedImages = permanentUrls.map((url) => ({ url, starred: false }));
@@ -1802,7 +1827,7 @@ console.log("newGroup created:", newGroup);
         return next;
       });
 
-      await sbSaveGroup(updatedGroup, userId);
+      await sbSaveGroup(updatedGroup, effectiveUserId);
     }
 
     if (notifState === "granted" && "Notification" in window) {
@@ -1823,7 +1848,7 @@ console.log("newGroup created:", newGroup);
     };
 
     setGroups((p) => [placeholder, ...p]);
-    await sbSaveGroup(placeholder, userId);
+    await sbSaveGroup(placeholder, effectiveUserId);
     setGenerating(false);
   }
 }
@@ -1883,7 +1908,7 @@ console.log("newGroup created:", newGroup);
 
       setGenerating(false);
 
-      await sbSaveGroup(newGroup, userId);
+      await sbSaveGroup(newGroup, effectiveUserId);
 
       if (userId) {
         const permanentUrl = await uploadImageToStorage(
@@ -2782,28 +2807,28 @@ console.log("newGroup created:", newGroup);
                         : {}
                     }
                     onClick={handleGenerate}
-                    disabled={generating}
+                    disabled={generating || !authReady}
                     style={{
                       height: 46,
                       width: "100%",
                       borderRadius: radius.md,
                       border: "none",
                       background:
-                        scenePrompt.trim() && !generating
-                          ? "linear-gradient(135deg,#4f46e5,#7c3aed)"
-                          : "rgba(255,255,255,0.06)",
-                      color:
-                        scenePrompt.trim() && !generating
-                          ? "white"
-                          : C.textMuted,
-                      cursor:
-                        scenePrompt.trim() && !generating
-                          ? "pointer"
-                          : "default",
-                      boxShadow:
-                        scenePrompt.trim() && !generating
-                          ? "0 10px 28px rgba(124,58,237,0.28)"
-                          : "none",
+  scenePrompt.trim() && !generating && authReady
+    ? "linear-gradient(135deg,#4f46e5,#7c3aed)"
+    : "rgba(255,255,255,0.06)",
+color:
+  scenePrompt.trim() && !generating && authReady
+    ? "white"
+    : C.textMuted,
+cursor:
+  scenePrompt.trim() && !generating && authReady
+    ? "pointer"
+    : "default",
+boxShadow:
+  scenePrompt.trim() && !generating && authReady
+    ? "0 10px 28px rgba(124,58,237,0.28)"
+    : "none",
                       display: "inline-flex",
                       alignItems: "center",
                       justifyContent: "center",
