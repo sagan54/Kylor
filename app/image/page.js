@@ -1544,6 +1544,7 @@ export default function ImagePage() {
       if (!mounted) return;
 
       setUserId(uid);
+      console.log("Resolved userId:", uid);
 
       if (!uid) {
         setDbLoaded(true);
@@ -1695,15 +1696,15 @@ export default function ImagePage() {
     syncCache([]);
     await sbClearAll(userId);
   }
-if (!userId) {
-  console.error("No userId found. Not saving.");
-  alert("No user session found. Please log in again.");
-  return;
-}
   async function handleGenerate() {
   const trimmedScenePrompt = scenePrompt.trim();
   if (!trimmedScenePrompt || generating) return;
 
+  if (!userId) {
+    console.error("No userId found. Not saving.");
+    alert("No user session found. Please log in again.");
+    return;
+  }
 
   setGenerating(true);
   canvasRef.current?.scrollTo({ top: 0, behavior: "smooth" });
