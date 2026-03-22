@@ -1268,7 +1268,7 @@ function GenerationCard({
                   key={v}
                   whileTap={{ scale: 0.95 }}
                   onClick={() => onVariation?.(group, i)}
-                  disabled={generating || !authReady}
+                  disabled={generating}
                   style={{
                     height: 34,
                     borderRadius: radius.sm,
@@ -1344,10 +1344,10 @@ export default function ImagePage() {
 
   const [notifState, setNotifState] = useState("idle");
 
-  const [userId, setUserId] = useState(null);
-  const [authReady, setAuthReady] = useState(false);
+const [userId, setUserId] = useState(null);
+const [authReady, setAuthReady] = useState(false);
 
-  const [groups, setGroups] = useState([]);
+const [groups, setGroups] = useState([]);
   const [dbLoaded, setDbLoaded] = useState(false);
   const [generating, setGenerating] = useState(false);
 
@@ -1545,7 +1545,7 @@ export default function ImagePage() {
 
       if (!mounted) return;
 
-      setUserId(uid);
+setUserId(uid);
 setAuthReady(true);
 console.log("Resolved userId:", uid);
 
@@ -1580,7 +1580,7 @@ if (!uid) {
 
       if (!mounted) return;
 
-      setUserId(uid);
+setUserId(uid);
 setAuthReady(true);
 
 if (!uid) return;
@@ -2807,7 +2807,7 @@ console.log("newGroup created:", newGroup);
                         : {}
                     }
                     onClick={handleGenerate}
-                    disabled={generating || !authReady}
+                    disabled={generating}
                     style={{
                       height: 46,
                       width: "100%",
