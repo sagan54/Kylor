@@ -26,11 +26,11 @@ async function sbLoadAll(userId) {
     .order("created_at", { ascending: false })
     .limit(24);
 
-  if (error) {
-    console.error("sbLoadAll:", error.message);
-    return [];
-  }
-
+ if (error) {
+  console.error("sbLoadAll failed:", error);
+  return [];
+}
+console.log("sbLoadAll result:", data);
   return (data || []).map((row) => ({
     id: row.id,
     prompt: row.prompt,
@@ -44,6 +44,7 @@ async function sbLoadAll(userId) {
 }
 
 async function sbSaveGroup(group, userId) {
+  console.log("sbSaveGroup called:", { userId, group });
   if (!userId) return;
   const { error } = await supabase.from("image_generations").upsert({
     id: group.id,
@@ -57,7 +58,11 @@ async function sbSaveGroup(group, userId) {
     created_at: group.createdAt,
   });
 
-  if (error) console.error("sbSaveGroup:", error.message);
+  if (error) {
+  console.error("sbSaveGroup failed:", error);
+} else {
+  console.log("sbSaveGroup success:", group.id);
+}
 }
 
 async function sbDeleteGroup(id, userId) {
@@ -1761,7 +1766,8 @@ export default function ImagePage() {
     });
 
     setGenerating(false);
-
+console.log("Saving group with userId:", userId);
+console.log("newGroup created:", newGroup);
     await sbSaveGroup(newGroup, userId);
 
     if (userId && tempUrls.length > 0) {
