@@ -163,15 +163,13 @@ const model = useConsistencyModel
     const requests = Array.from({ length: safeN }, async () => {
   let input;
 
-  if (useConsistencyModel) {
-    input = {
-      prompt: finalPrompt,
-      aspect_ratio,
-      output_format: "png",
-      image_prompt: refs[0],
-      image_prompt_strength: 0.35,
-    };
-  } else {
+if (useConsistencyModel) {
+  input = {
+    prompt: finalPrompt,
+    aspect_ratio,
+    output_format: "png",
+  };
+} else {
     input = {
       prompt: finalPrompt,
       aspect_ratio,
