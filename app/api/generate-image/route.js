@@ -104,7 +104,7 @@ const cleanedCharacterPrompt = String(characterPrompt || "").trim();
 const cleanedStylePrompt = String(stylePrompt || "").trim();
 const cleanedNegativePrompt = String(negativePrompt || "").trim();
 
-const hasCharacterRefs = Boolean(useCharacter) && hasRefs;
+const hasCharacterRefs = hasRefs;
 const shouldUseCharacterPrompt = Boolean(useCharacter) && Boolean(cleanedCharacterPrompt);
 
 const referenceInstruction = hasCharacterRefs
@@ -153,21 +153,39 @@ const finalPrompt = [
     
 
     const aspect_ratio = mapSizeToAspectRatio(size, ratio);
+    const useConsistencyModel =
+  Boolean(useCharacter) || refs.length > 0;
+
+const model = useConsistencyModel
+  ? "black-forest-labs/flux-1.1-pro-ultra"
+  : "black-forest-labs/flux-1.1-pro";
 
     const requests = Array.from({ length: safeN }, async () => {
-      const input = {
-  prompt: finalPrompt,
-  aspect_ratio,
-  output_format: "png",
-  prompt_upsampling: false,
-};
+  let input;
 
-      const output = await replicate.run("black-forest-labs/flux-1.1-pro", {
-        input,
-      });
+  if (useConsistencyModel) {
+    input = {
+      prompt: finalPrompt,
+      aspect_ratio,
+      output_format: "png",
+      image_prompt: refs[0],
+      image_prompt_strength: 0.35,
+    };
+  } else {
+    input = {
+      prompt: finalPrompt,
+      aspect_ratio,
+      output_format: "png",
+      prompt_upsampling: false,
+    };
+  }
 
-      return await fileOutputToUrl(output);
-    });
+  const output = await replicate.run(model, {
+    input,
+  });
+
+  return await fileOutputToUrl(output);
+});
 
     const images = (await Promise.all(requests)).filter(Boolean);
 
@@ -182,12 +200,13 @@ const finalPrompt = [
       image: images[0],
       images,
       meta: {
-  model: "black-forest-labs/flux-1.1-pro",
+  model,
+  mode: useConsistencyModel ? "consistency" : "standard",
   quality,
   style,
   styleLabel,
   referenceCount: refs.length,
-  usedReferences: hasCharacterRefs,
+  usedReferences: useConsistencyModel,
   usedNegativePrompt: Boolean(cleanedNegativePrompt),
 },
     });
