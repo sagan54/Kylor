@@ -51,22 +51,23 @@ async function sbSaveGroup(group, userId) {
     return;
   }
 
+  const payload = {
+    id: Number(group.id),
+    user_id: userId,
+    prompt: group.prompt,
+    negative_prompt: group.negativePrompt,
+    ratio: group.ratio,
+    mode: group.mode,
+    style: group.style,
+    images: group.images,
+    created_at: group.createdAt,
+  };
+
+  console.log("sbSaveGroup payload:", payload);
+
   const { data, error } = await supabase
     .from("image_generations")
-    .upsert(
-      {
-        id: group.id,
-        user_id: userId,
-        prompt: group.prompt,
-        negative_prompt: group.negativePrompt,
-        ratio: group.ratio,
-        mode: group.mode,
-        style: group.style,
-        images: group.images,
-        created_at: group.createdAt,
-      },
-      { onConflict: "id" }
-    )
+    .upsert(payload, { onConflict: "id" })
     .select();
 
   if (error) {
