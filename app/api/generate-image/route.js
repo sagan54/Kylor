@@ -13,7 +13,9 @@ function normalizeReferenceImage(image) {
   return null;
 }
 
-function mapSizeToAspectRatio(size) {
+function mapSizeToAspectRatio(size, ratio = "1:1") {
+  if (ratio && ratio !== "Auto") return ratio;
+
   switch (size) {
     case "1024x1536":
       return "2:3";
@@ -71,12 +73,20 @@ async function fileOutputToUrl(output) {
 export async function POST(req) {
   try {
     const {
-      prompt,
-      size = "1024x1024",
-      quality = "medium",
-      n = 1,
-      referenceImages = [],
-    } = await req.json();
+  prompt,
+  scenePrompt = "",
+  characterPrompt = "",
+  style = null,
+  styleLabel = "",
+  stylePrompt = "",
+  negativePrompt = "",
+  useCharacter = false,
+  size = "1024x1024",
+  quality = "medium",
+  n = 1,
+  referenceImages = [],
+  ratio = "1:1",
+} = await req.json();
 
     if (!prompt || !prompt.trim()) {
       return Response.json({ error: "Prompt is required" }, { status: 400 });
@@ -89,64 +99,68 @@ export async function POST(req) {
       : [];
 
     const hasRefs = refs.length > 0;
+const cleanedScenePrompt = String(scenePrompt || "").trim();
+const cleanedCharacterPrompt = String(characterPrompt || "").trim();
+const cleanedStylePrompt = String(stylePrompt || "").trim();
+const cleanedNegativePrompt = String(negativePrompt || "").trim();
 
-    let identityPrompt;
+const hasCharacterRefs = Boolean(useCharacter) && hasRefs;
+const shouldUseCharacterPrompt = Boolean(useCharacter) && Boolean(cleanedCharacterPrompt);
 
-    if (hasRefs) {
-      identityPrompt = [
-        "Use the provided reference image(s) as the same real person.",
-        "Preserve the exact identity, face shape, jawline, nose, eyes, lips, eyebrows, skin tone, and hairstyle.",
-        "Do not beautify, idealize, age-shift, masculinize, feminize, or change facial structure.",
-        "Keep the same person, only change pose, framing, outfit, and scene as requested.",
-        prompt,
-      ].join(" ");
-    } else {
-      identityPrompt = [
-        "Generate a realistic human image.",
-        "Maintain coherent and believable facial structure, skin tone, hairstyle, and body proportions.",
-        "Do not beautify excessively or create artificial CGI-like skin.",
-        prompt,
-      ].join(" ");
-    }
+const referenceInstruction = hasCharacterRefs
+  ? [
+      "Use the provided reference image(s) as the same exact person.",
+      "Preserve identity, facial structure, skin tone, hairstyle, and recognizable features.",
+      "Do not change the person into someone else.",
+      "Change only pose, camera framing, outfit, environment, action, and scene as requested.",
+      "Do not default to a close-up portrait unless explicitly requested.",
+    ].join(" ")
+  : "";
 
-    const realismBoost = [
-      "photorealistic",
-      "natural skin texture",
-      "visible pores",
-      "realistic facial detail",
-      "subtle imperfections",
-      "natural lighting",
-      "realistic shadows",
-      "camera shot",
-      "DSLR photography",
-      "documentary realism",
-      "true-to-life skin tone variation",
-      "realistic fabric texture",
-      "grounded photography",
-      "no smoothing",
-      "no plastic skin",
-      "no waxy skin",
-      "no beauty filter",
-      "no cgi look",
-      "no 3d render look",
-    ].join(", ");
+const fallbackQualityInstruction = [
+  "High-quality image generation.",
+  "Strong scene fidelity.",
+  "Accurate composition.",
+  "Natural detail.",
+  "Do not ignore framing instructions.",
+].join(" ");
 
-    const finalPrompt = `${identityPrompt}, ${realismBoost}`;
-    const aspect_ratio = mapSizeToAspectRatio(size);
+const avoidInstruction = [
+  cleanedNegativePrompt,
+  cleanedScenePrompt.toLowerCase().includes("wide shot") ||
+  cleanedScenePrompt.toLowerCase().includes("full body") ||
+  cleanedScenePrompt.toLowerCase().includes("full-body") ||
+  ratio === "16:9" ||
+  ratio === "21:9"
+    ? "Avoid close-up portrait, extreme facial crop, headshot, face-only framing."
+    : "",
+]
+  .filter(Boolean)
+  .join(" ");
+
+const finalPrompt = [
+  prompt?.trim() || "",
+  hasCharacterRefs ? `Reference lock: ${referenceInstruction}` : null,
+  !hasCharacterRefs && shouldUseCharacterPrompt
+    ? `Character guidance: ${cleanedCharacterPrompt}`
+    : null,
+  cleanedStylePrompt ? `Style guidance: ${cleanedStylePrompt}` : null,
+  fallbackQualityInstruction,
+  avoidInstruction ? `Avoid: ${avoidInstruction}` : null,
+]
+  .filter(Boolean)
+  .join("\n\n");
+    
+
+    const aspect_ratio = mapSizeToAspectRatio(size, ratio);
 
     const requests = Array.from({ length: safeN }, async () => {
-      const input = hasRefs
-        ? {
-            prompt: finalPrompt,
-            aspect_ratio,
-            output_format: "png",
-            reference_images: refs,
-          }
-        : {
-            prompt: finalPrompt,
-            aspect_ratio,
-            output_format: "png",
-          };
+      const input = {
+  prompt: finalPrompt,
+  aspect_ratio,
+  output_format: "png",
+  prompt_upsampling: false,
+};
 
       const output = await replicate.run("black-forest-labs/flux-1.1-pro", {
         input,
@@ -168,11 +182,14 @@ export async function POST(req) {
       image: images[0],
       images,
       meta: {
-        model: "black-forest-labs/flux-1.1-pro",
-        quality,
-        referenceCount: refs.length,
-        usedReferences: hasRefs,
-      },
+  model: "black-forest-labs/flux-1.1-pro",
+  quality,
+  style,
+  styleLabel,
+  referenceCount: refs.length,
+  usedReferences: hasCharacterRefs,
+  usedNegativePrompt: Boolean(cleanedNegativePrompt),
+},
     });
   } catch (error) {
     console.error("Image generation error:", error);

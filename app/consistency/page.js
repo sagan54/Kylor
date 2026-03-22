@@ -1095,102 +1095,172 @@ function goNextLightbox() {
   }
 
   async function generateOtherProfiles() {
-    if (!activeChar || generatingMore) return;
+  if (!activeChar || generatingMore) return;
 
-    const existingFront = charOutputs.find(o => o.scene === "Front Full-Body" && o.url && o.url !== "__FAILED__");
-    if (!existingFront) {
-      alert("Generate the first image first.");
-      return;
-    }
+  const existingFront = charOutputs.find(
+    (o) => o.scene === "Front Full-Body" && o.url && o.url !== "__FAILED__"
+  );
 
-    setGeneratingMore(true);
+  if (!existingFront) {
+    alert("Generate the first image first.");
+    return;
+  }
 
-    const views = [
-      { key: "left",  label: "Left Profile Full-Body",  shot: "single person, left side profile, full-body, facing left, standing straight, arms relaxed, centered composition",  size: "1024x1536" },
-      { key: "right", label: "Right Profile Full-Body", shot: "single person, right side profile, full-body, facing right, standing straight, arms relaxed, centered composition", size: "1024x1536" },
-      { key: "back",  label: "Back Full-Body",          shot: "single person, back view, full-body, standing straight, arms relaxed, centered composition",                     size: "1024x1536" },
-      { key: "close", label: "Upper-Body Close-Up",     shot: "single person, upper body portrait, facing camera, shoulders visible, neutral expression",                       size: "1024x1024" },
-    ];
+  setGeneratingMore(true);
 
-    const traitDesc = [
-      activeChar.gender,
-      activeChar.ageRange,
-      activeChar.ethnicity,
-      activeChar.hairColor && activeChar.hairStyle ? `${activeChar.hairColor} ${activeChar.hairStyle} hair` : null,
-      activeChar.eyeColor ? `${activeChar.eyeColor} eyes` : null,
-      activeChar.build ? `${activeChar.build} build` : null,
-    ].filter(Boolean).join(", ");
+  const views = [
+    {
+      key: "left",
+      label: "Left Profile Full-Body",
+      shot: "strict left side profile, full-body, facing left, standing straight, arms relaxed, centered composition",
+      size: "1024x1536",
+    },
+    {
+      key: "right",
+      label: "Right Profile Full-Body",
+      shot: "strict right side profile, full-body, facing right, standing straight, arms relaxed, centered composition",
+      size: "1024x1536",
+    },
+    {
+      key: "back",
+      label: "Back Full-Body",
+      shot: "back view, full-body, standing straight, arms relaxed, centered composition",
+      size: "1024x1536",
+    },
+    {
+      key: "close",
+      label: "Upper-Body Close-Up",
+      shot: "upper body portrait, facing camera, shoulders visible, neutral expression, centered composition",
+      size: "1024x1024",
+    },
+  ];
 
-    let accumulatedImages = [...(activeChar.generatedImages || []).filter(Boolean)];
-    const effectiveRefs = activeChar.refEntries.length > 0 ? activeChar.refEntries : refEntries;
-    const uploadedRefs = await entriesToReferenceImages(effectiveRefs);
+  const traitDesc = [
+    activeChar.gender,
+    activeChar.ageRange,
+    activeChar.ethnicity,
+    activeChar.hairColor && activeChar.hairStyle
+      ? `${activeChar.hairColor} ${activeChar.hairStyle} hair`
+      : null,
+    activeChar.eyeColor ? `${activeChar.eyeColor} eyes` : null,
+    activeChar.build ? `${activeChar.build} build` : null,
+  ]
+    .filter(Boolean)
+    .join(", ");
 
-    try {
-      for (const view of views) {
-        const placeholder = {
-          id: `${activeCharId}-${view.key}-${Date.now()}`,
-          charId: activeCharId,
-          prompt: view.shot,
-          scene: view.label,
-          url: null,
-          createdAt: new Date().toISOString(),
-        };
+  let accumulatedImages = [...(activeChar.generatedImages || []).filter(Boolean)];
 
-        setOutputs(prev => [...prev.filter(o => !(o.charId === activeCharId && o.scene === view.label)), placeholder]);
+  const effectiveRefs =
+    activeChar.refEntries.length > 0 ? activeChar.refEntries : refEntries;
 
-        const finalPrompt = [
-          `CRITICAL: Generate the EXACT SAME person named ${activeChar.name} as in all previous images. Same face — identical facial bone structure, jawline, nose, lips, eye shape and color, eyebrow shape, skin tone, hairline, and hairstyle. Do NOT change any facial feature. Do NOT generate a similar-looking person — generate THIS exact person in a different pose.`,
-          activeChar.triggerToken ? `Character token: ${activeChar.triggerToken}.` : null,
-          traitDesc ? `Exact physical traits (must match precisely): ${traitDesc}.` : null,
-          activeChar.desc ? `Fixed character details: ${activeChar.desc}.` : null,
-          extraPrompt.trim() ? `Locked style notes: ${extraPrompt.trim()}.` : null,
-          `Shot type: ${view.shot}.`,
-          "Photorealistic human skin, visible pores, natural facial texture, realistic lighting, no waxy skin, no CGI look, no plastic skin.",
-          "Plain neutral studio background. Exactly one person only. No collage. No multiple people. No split screen. No character sheet. No text. No watermark.",
-        ].filter(Boolean).join(" ");
+  const uploadedRefs = await entriesToReferenceImages(effectiveRefs);
 
-        const res = await fetch("/api/generate-consistency", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            prompt: finalPrompt,
-            size: view.size,
-            referenceImages: uploadedRefs,
-          }),
+  const sharedReferenceImages = [
+    ...uploadedRefs.filter(Boolean),
+    existingFront.url,
+  ].filter(Boolean);
+
+  try {
+    for (const view of views) {
+      const placeholder = {
+        id: `${activeCharId}-${view.key}-${Date.now()}`,
+        charId: activeCharId,
+        prompt: view.shot,
+        scene: view.label,
+        url: null,
+        createdAt: new Date().toISOString(),
+      };
+
+      setOutputs((prev) => [
+        ...prev.filter(
+          (o) => !(o.charId === activeCharId && o.scene === view.label)
+        ),
+        placeholder,
+      ]);
+
+      const finalPrompt = [
+        `Generate the EXACT SAME person named ${activeChar.name} as the provided reference images and the existing front-view image.`,
+        "Preserve identical facial identity, face shape, jawline, nose, lips, eyes, eyebrows, skin tone, ears, hairline, hairstyle, neck, shoulders, body proportions, and overall build.",
+        "Do NOT change identity. Do NOT beautify. Do NOT stylize. Do NOT generate a similar-looking person. Generate the SAME exact human in a different angle only.",
+        traitDesc
+          ? `Exact physical traits: ${traitDesc}.`
+          : null,
+        activeChar.desc
+          ? `Fixed character details: ${activeChar.desc}.`
+          : null,
+        extraPrompt.trim()
+          ? `Locked notes: ${extraPrompt.trim()}.`
+          : null,
+        "Same outfit, same black t-shirt, same jeans, same neutral studio background, same lighting, same body proportions.",
+        `Shot type: ${view.shot}.`,
+        "Photorealistic skin, visible pores, subtle imperfections, realistic facial texture, natural lighting, no plastic skin, no waxy skin, no CGI look.",
+        "Exactly one person only. No collage. No multiple people. No split screen. No character sheet. No text. No watermark.",
+      ]
+        .filter(Boolean)
+        .join(" ");
+
+      const res = await fetch("/api/generate-consistency", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt: finalPrompt,
+          size: view.size,
+          referenceImages: sharedReferenceImages,
+        }),
+      });
+
+      const data = await res.json();
+      const url = Array.isArray(data?.images)
+        ? data.images[0]
+        : data?.image ?? null;
+
+      setOutputs((prev) =>
+        prev.map((o) =>
+          o.id === placeholder.id ? { ...o, url: url || "__FAILED__" } : o
+        )
+      );
+
+      if (url) {
+        accumulatedImages = [...accumulatedImages, url];
+
+        await insertGeneratedCharacterImage(
+          activeCharId,
+          url,
+          view.label,
+          accumulatedImages.length - 1,
+          false
+        );
+
+        await supabase
+          .from("characters")
+          .update({ generated_images: accumulatedImages })
+          .eq("id", activeCharId)
+          .eq("user_id", userId);
+
+        setCharacters((prev) => {
+          const updated = prev.map((c) =>
+            c.id === activeCharId
+              ? {
+                  ...c,
+                  generatedImages: accumulatedImages,
+                  generations: accumulatedImages.length,
+                }
+              : c
+          );
+          updateCharactersCache(updated);
+          return updated;
         });
 
-        const data = await res.json();
-        const url = Array.isArray(data?.images) ? data.images[0] : data?.image ?? null;
-
-        setOutputs(prev => prev.map(o => o.id === placeholder.id ? { ...o, url: url || "__FAILED__" } : o));
-
-        if (url) {
-          accumulatedImages = [...accumulatedImages, url];
-
-          await insertGeneratedCharacterImage(activeCharId, url, view.label, accumulatedImages.length - 1, false);
-
-          await supabase
-            .from("characters")
-            .update({ generated_images: accumulatedImages })
-            .eq("id", activeCharId)
-            .eq("user_id", userId);
-
-          setCharacters(prev => {
-            const updated = prev.map(c => c.id === activeCharId ? { ...c, generatedImages: accumulatedImages, generations: accumulatedImages.length } : c);
-            updateCharactersCache(updated);
-            return updated;
-          });
-
-          const rows = await loadCharacterImages(activeCharId);
-          setCharacterImages(rows.filter(r => r.character_id === activeCharId));
-        }
+        const rows = await loadCharacterImages(activeCharId);
+        setCharacterImages(rows.filter((r) => r.character_id === activeCharId));
       }
-    } catch (err) {
-      console.error("Generate other profiles failed:", err);
-    } finally {
-      setGeneratingMore(false);
     }
+  } catch (err) {
+    console.error("Generate other profiles failed:", err);
+  } finally {
+    setGeneratingMore(false);
   }
+}
 
   async function handleGenerate() {
     if (!activeChar || generating) return;

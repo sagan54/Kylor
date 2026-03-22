@@ -205,6 +205,119 @@ function getApiQuality(m) {
   if (m === "4K") return "high";
   return "medium";
 }
+function getCompositionHint(ratio, sceneText = "") {
+  const text = String(sceneText || "").toLowerCase();
+
+  if (text.includes("close up") || text.includes("close-up") || text.includes("headshot")) {
+    return "close-up framing, face-focused composition, intentional portrait crop";
+  }
+
+  if (text.includes("wide shot") || text.includes("wide angle") || text.includes("environment shot")) {
+    return "wide shot, subject fully integrated in the environment, cinematic environmental framing, not a close-up portrait";
+  }
+
+  if (text.includes("full body") || text.includes("full-body")) {
+    return "full-body composition, subject visible from head to toe, balanced framing, not cropped";
+  }
+
+  if (text.includes("medium shot") || text.includes("mid shot") || text.includes("mid-shot")) {
+    return "medium shot composition, subject framed from the waist or torso upward, balanced cinematic framing";
+  }
+
+  if (ratio === "16:9" || ratio === "21:9") {
+    return "widescreen cinematic composition, environment clearly visible, do not default to a face-only close-up";
+  }
+
+  if (ratio === "9:16") {
+    return "vertical composition, full subject framing when relevant, not an accidental face-only crop";
+  }
+
+  return "composition should follow the scene request exactly and should not default to a close-up unless explicitly requested";
+}
+
+const STYLE_PROMPT_MAP = {
+  cinematic:
+    "cinematic film still, anamorphic lens feel, production-grade composition, dramatic lighting, rich color depth, high-end movie frame",
+  neon_noir:
+    "neon noir aesthetic, dark moody atmosphere, glowing neon reflections, rain-slick surfaces, deep shadows, stylish urban contrast",
+  anime:
+    "anime style, clean bold linework, expressive shapes, vibrant color separation, polished cinematic anime frame",
+  photorealistic:
+    "photorealistic, ultra-detailed, DSLR realism, natural lighting, realistic skin texture, grounded physical detail",
+  oil_painting:
+    "classical oil painting, rich painterly brushwork, textured canvas feel, museum-quality color treatment",
+  concept_art:
+    "high-end concept art, film-production design quality, dramatic atmosphere, detailed environment painting",
+  low_poly:
+    "low poly 3D style, faceted geometric forms, simplified surfaces, stylized minimal rendering",
+  watercolor:
+    "watercolor painting style, soft pigment washes, delicate paper texture, airy painterly finish",
+  retro_scifi:
+    "retro sci-fi illustration, 70s retrofuturism, vintage pulp aesthetic, gritty print-inspired visual treatment",
+  dark_fantasy:
+    "dark fantasy atmosphere, moody smoke and shadow, mythic tone, dramatic mystical environment",
+  studio_photo:
+    "professional studio photography, clean controlled lighting, neutral backdrop, polished editorial portrait setup",
+  impressionist:
+    "impressionist painting, loose brushstrokes, dappled light, atmospheric motion, painterly softness",
+};
+
+function buildPositivePrompt({
+  scenePrompt = "",
+  characterPrompt = "",
+  styleId = null,
+  ratio = "1:1",
+}) {
+  const styleText = styleId ? STYLE_PROMPT_MAP[styleId] : "";
+  const composition = getCompositionHint(ratio, scenePrompt);
+
+  return [
+    `Scene: ${scenePrompt.trim()}`,
+    `Composition: ${composition}`,
+    characterPrompt?.trim() ? `Character: ${characterPrompt.trim()}` : null,
+    styleText ? `Style direction: ${styleText}` : null,
+    "Preserve the requested scene, framing, action, environment, and outfit details.",
+    "Do not default to a close-up portrait unless the prompt explicitly asks for one.",
+    "No text, no captions, no subtitles, no watermark.",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+async function fileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : null);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+async function filesToDataUrls(files = []) {
+  const urls = await Promise.all(
+    files.map(async (file) => {
+      try {
+        return await fileToDataUrl(file);
+      } catch {
+        return null;
+      }
+    })
+  );
+
+  return urls.filter(Boolean);
+}
+
+function getCharacterReferenceImages(character) {
+  if (!character) return [];
+
+  const refs = [
+    character.referenceImage,
+    character.coverImage,
+    ...(Array.isArray(character.generatedImages) ? character.generatedImages : []),
+  ].filter(Boolean);
+
+  return [...new Set(refs)];
+}
 
 async function downloadImage(url, filename = "kylor-output.png") {
   if (!url || typeof url !== "string") return;
@@ -1568,59 +1681,174 @@ export default function ImagePage() {
   }
 
   async function handleGenerate() {
-    const basePrompt = scenePrompt.trim();
-    if (!basePrompt || generating) return;
+  const trimmedScenePrompt = scenePrompt.trim();
+  if (!trimmedScenePrompt || generating) return;
 
-    setGenerating(true);
-    canvasRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+  setGenerating(true);
+  canvasRef.current?.scrollTo({ top: 0, behavior: "smooth" });
 
-    const styleLabel = activeStyle?.label ?? null;
-    const fullPrompt = [
-      selectedCharacter ? prompt : null,
-      basePrompt,
-      styleLabel ? `Style: ${styleLabel}` : null,
-      negativePrompt.trim() ? `Negative: ${negativePrompt.trim()}` : null,
-      "No text, no captions, no subtitles, no watermark.",
-    ]
-      .filter(Boolean)
-      .join(". ");
+  const styleLabel = activeStyle?.label ?? null;
+  const characterPrompt = selectedCharacter ? prompt.trim() : "";
 
-    const n = Math.min(outputCount, 4);
-    const groupId = Date.now();
+  const positivePrompt = buildPositivePrompt({
+    scenePrompt: trimmedScenePrompt,
+    characterPrompt,
+    styleId: selectedStyle,
+    ratio,
+  });
 
-    try {
-      const requests = Array.from({ length: n }, () =>
-        fetch("/api/generate-image", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            prompt: fullPrompt,
-            size: getApiSize(ratio),
-            quality: getApiQuality(mode),
-            n: 1,
-          }),
-        })
-          .then((r) => r.json())
-          .catch(() => ({}))
+  const uploadedReferenceImages = await filesToDataUrls(refImages);
+  const characterReferenceImages = getCharacterReferenceImages(selectedCharacter);
+
+  const uniqueReferenceImages = [
+    ...new Set([...characterReferenceImages, ...uploadedReferenceImages].filter(Boolean)),
+  ];
+
+  const hasCharacterControl =
+    Boolean(characterPrompt) || uniqueReferenceImages.length > 0;
+
+  const n = Math.min(outputCount, 4);
+  const groupId = Date.now();
+
+  try {
+    const requests = Array.from({ length: n }, () =>
+      fetch("/api/generate-image", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt: positivePrompt,
+          scenePrompt: trimmedScenePrompt,
+          characterPrompt: hasCharacterControl ? characterPrompt : "",
+          style: selectedStyle,
+          styleLabel,
+          stylePrompt: selectedStyle ? STYLE_PROMPT_MAP[selectedStyle] : "",
+          negativePrompt: negativePrompt.trim(),
+          referenceImages: hasCharacterControl ? uniqueReferenceImages : [],
+          useCharacter: hasCharacterControl,
+          ratio,
+          size: getApiSize(ratio),
+          quality: getApiQuality(mode),
+          n: 1,
+        }),
+      })
+        .then((r) => r.json())
+        .catch(() => ({}))
+    );
+
+    const results = await Promise.all(requests);
+    const tempUrls = results.flatMap((d) =>
+      Array.isArray(d?.images) ? d.images : d?.image ? [d.image] : []
+    );
+
+    const newGroup = {
+      id: groupId,
+      prompt: positivePrompt,
+      negativePrompt: negativePrompt.trim(),
+      ratio,
+      mode,
+      style: styleLabel,
+      createdAt: new Date().toISOString(),
+      images:
+        tempUrls.length > 0
+          ? tempUrls.map((url) => ({ url, starred: false }))
+          : [{ url: null, starred: false }],
+    };
+
+    setGroups((p) => {
+      const next = [newGroup, ...p];
+      syncCache(next);
+      return next;
+    });
+
+    setGenerating(false);
+
+    await sbSaveGroup(newGroup, userId);
+
+    if (userId && tempUrls.length > 0) {
+      const permanentUrls = await Promise.all(
+        tempUrls.map((url, i) => uploadImageToStorage(url, userId, `${groupId}-${i}`))
       );
 
-      const results = await Promise.all(requests);
-      const tempUrls = results.flatMap((d) =>
-        Array.isArray(d?.images) ? d.images : d?.image ? [d.image] : []
-      );
+      const updatedImages = permanentUrls.map((url) => ({ url, starred: false }));
+      const updatedGroup = { ...newGroup, images: updatedImages };
 
+      setGroups((p) => {
+        const next = p.map((g) => (g.id === groupId ? updatedGroup : g));
+        syncCache(next);
+        return next;
+      });
+
+      await sbSaveGroup(updatedGroup, userId);
+    }
+
+    if (notifState === "granted" && "Notification" in window) {
+      new Notification("Kylor", { body: "Your image generation is complete." });
+    }
+  } catch (err) {
+    console.error("Generation failed:", err);
+
+    const placeholder = {
+      id: groupId,
+      prompt: positivePrompt,
+      negativePrompt: negativePrompt.trim(),
+      ratio,
+      mode,
+      style: styleLabel,
+      createdAt: new Date().toISOString(),
+      images: [{ url: null, starred: false }],
+    };
+
+    setGroups((p) => [placeholder, ...p]);
+    await sbSaveGroup(placeholder, userId);
+    setGenerating(false);
+  }
+}
+
+  async function handleVariation(group, variationIndex) {
+  if (!group?.prompt || generating) return;
+
+  setGenerating(true);
+  canvasRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+
+  const variationPrompt = [
+    group.prompt,
+    `Variation ${variationIndex + 1}. Keep the same subject and overall style, but change composition and details slightly.`,
+    "Preserve the requested scene instead of collapsing into a face-only close-up.",
+    "No text, no captions, no subtitles, no watermark.",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+
+  const varGroupId = Date.now();
+
+  try {
+    const res = await fetch("/api/generate-image", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        prompt: variationPrompt,
+        negativePrompt: group.negativePrompt || "",
+        styleLabel: group.style || "",
+        ratio: group.ratio,
+        size: getApiSize(group.ratio),
+        quality: getApiQuality(group.mode),
+        n: 1,
+      }),
+    });
+
+    const data = await res.json();
+    const tempUrl = Array.isArray(data?.images) ? data.images[0] : data?.image;
+
+    if (tempUrl) {
       const newGroup = {
-        id: groupId,
-        prompt: selectedCharacter ? `${prompt}. ${basePrompt}` : basePrompt,
-        negativePrompt: negativePrompt.trim(),
-        ratio,
-        mode,
-        style: styleLabel,
+        id: varGroupId,
+        prompt: group.prompt,
+        negativePrompt: group.negativePrompt,
+        ratio: group.ratio,
+        mode: group.mode,
+        style: group.style,
         createdAt: new Date().toISOString(),
-        images:
-          tempUrls.length > 0
-            ? tempUrls.map((url) => ({ url, starred: false }))
-            : [{ url: null, starred: false }],
+        images: [{ url: tempUrl, starred: false }],
       };
 
       setGroups((p) => {
@@ -1633,16 +1861,19 @@ export default function ImagePage() {
 
       await sbSaveGroup(newGroup, userId);
 
-      if (userId && tempUrls.length > 0) {
-        const permanentUrls = await Promise.all(
-          tempUrls.map((url, i) => uploadImageToStorage(url, userId, `${groupId}-${i}`))
+      if (userId) {
+        const permanentUrl = await uploadImageToStorage(
+          tempUrl,
+          userId,
+          `${varGroupId}-0`
         );
-
-        const updatedImages = permanentUrls.map((url) => ({ url, starred: false }));
-        const updatedGroup = { ...newGroup, images: updatedImages };
+        const updatedGroup = {
+          ...newGroup,
+          images: [{ url: permanentUrl, starred: false }],
+        };
 
         setGroups((p) => {
-          const next = p.map((g) => (g.id === groupId ? updatedGroup : g));
+          const next = p.map((g) => (g.id === varGroupId ? updatedGroup : g));
           syncCache(next);
           return next;
         });
@@ -1651,116 +1882,18 @@ export default function ImagePage() {
       }
 
       if (notifState === "granted" && "Notification" in window) {
-        new Notification("Kylor", { body: "Your image generation is complete." });
-      }
-    } catch (err) {
-      console.error("Generation failed:", err);
-
-      const placeholder = {
-        id: groupId,
-        prompt: selectedCharacter ? `${prompt}. ${basePrompt}` : basePrompt,
-        negativePrompt: negativePrompt.trim(),
-        ratio,
-        mode,
-        style: styleLabel,
-        createdAt: new Date().toISOString(),
-        images: [{ url: null, starred: false }],
-      };
-
-      setGroups((p) => [placeholder, ...p]);
-      await sbSaveGroup(placeholder, userId);
-      setGenerating(false);
-    }
-  }
-
-  async function handleVariation(group, variationIndex) {
-    if (!group?.prompt || generating) return;
-
-    setGenerating(true);
-    canvasRef.current?.scrollTo({ top: 0, behavior: "smooth" });
-
-    const variationPrompt = [
-      group.prompt,
-      group.style ? `Style: ${group.style}` : null,
-      group.negativePrompt ? `Negative: ${group.negativePrompt}` : null,
-      `Variation ${variationIndex + 1}, slightly different composition, same subject and style.`,
-      "No text, no captions, no subtitles, no watermark.",
-    ]
-      .filter(Boolean)
-      .join(". ");
-
-    const varGroupId = Date.now();
-
-    try {
-      const res = await fetch("/api/generate-image", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          prompt: variationPrompt,
-          size: getApiSize(group.ratio),
-          quality: getApiQuality(group.mode),
-          n: 1,
-        }),
-      });
-
-      const data = await res.json();
-      const tempUrl = Array.isArray(data?.images) ? data.images[0] : data?.image;
-
-      if (tempUrl) {
-        const newGroup = {
-          id: varGroupId,
-          prompt: group.prompt,
-          negativePrompt: group.negativePrompt,
-          ratio: group.ratio,
-          mode: group.mode,
-          style: group.style,
-          createdAt: new Date().toISOString(),
-          images: [{ url: tempUrl, starred: false }],
-        };
-
-        setGroups((p) => {
-          const next = [newGroup, ...p];
-          syncCache(next);
-          return next;
+        new Notification("Kylor", {
+          body: `Variation V${variationIndex + 1} is ready.`,
         });
-
-        setGenerating(false);
-
-        await sbSaveGroup(newGroup, userId);
-
-        if (userId) {
-          const permanentUrl = await uploadImageToStorage(
-            tempUrl,
-            userId,
-            `${varGroupId}-0`
-          );
-          const updatedGroup = {
-            ...newGroup,
-            images: [{ url: permanentUrl, starred: false }],
-          };
-
-          setGroups((p) => {
-            const next = p.map((g) => (g.id === varGroupId ? updatedGroup : g));
-            syncCache(next);
-            return next;
-          });
-
-          await sbSaveGroup(updatedGroup, userId);
-        }
-
-        if (notifState === "granted" && "Notification" in window) {
-          new Notification("Kylor", {
-            body: `Variation V${variationIndex + 1} is ready.`,
-          });
-        }
-      } else {
-        setGenerating(false);
       }
-    } catch (err) {
-      console.error("Variation failed:", err);
+    } else {
       setGenerating(false);
     }
+  } catch (err) {
+    console.error("Variation failed:", err);
+    setGenerating(false);
   }
+}
 
   const filteredGroups = useMemo(() => {
     if (contentFilter === "Videos" || contentFilter === "Audio") return [];
