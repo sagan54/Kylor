@@ -139,13 +139,21 @@ const avoidInstruction = [
   .join(" ");
 
 const finalPrompt = [
+  cleanedScenePrompt,   // 👈 MOVE THIS FIRST
   prompt?.trim() || "",
+
+  "Full body visible, subject fits completely in frame, environment clearly visible, no close-up framing.",
+
   hasCharacterRefs ? `Reference lock: ${referenceInstruction}` : null,
+
   !hasCharacterRefs && shouldUseCharacterPrompt
     ? `Character guidance: ${cleanedCharacterPrompt}`
     : null,
+
   cleanedStylePrompt ? `Style guidance: ${cleanedStylePrompt}` : null,
+
   fallbackQualityInstruction,
+
   avoidInstruction ? `Avoid: ${avoidInstruction}` : null,
 ]
   .filter(Boolean)
