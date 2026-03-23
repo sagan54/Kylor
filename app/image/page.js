@@ -39,7 +39,18 @@ console.log("sbLoadAll result:", data);
     mode: row.mode,
     style: row.style,
     createdAt: row.created_at,
-    images: row.images || [],
+    images: Array.isArray(row.images)
+  ? row.images.map((img) => {
+      if (typeof img === "string") return { url: img, starred: false };
+      if (img && typeof img === "object") {
+        return {
+          url: img.url || null,
+          starred: Boolean(img.starred),
+        };
+      }
+      return { url: null, starred: false };
+    })
+  : [],
   }));
 }
 
@@ -1648,14 +1659,15 @@ if (!uid) return;
 
     await sbDeleteGroup(groupId, userId);
 
-    if (group && userId) {
-      const count = group.images.length;
-      await Promise.all(
-        Array.from({ length: count }, (_, i) =>
-          deleteImageFromStorage(userId, `${groupId}-${i}`)
-        )
-      );
-    }
+if (group && userId) {
+  const storageImages = group.images.filter(
+    (img) => typeof img?.url === "string" && img.url.includes("/storage/v1/object/public/")
+  );
+
+  await Promise.all(
+    storageImages.map((_, i) => deleteImageFromStorage(userId, `${groupId}-${i}`))
+  );
+}
   }
 
   async function toggleFavorite(groupId, imgIdx) {
@@ -1764,6 +1776,7 @@ if (!uid) return;
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          userId: effectiveUserId,
           prompt: positivePrompt,
           scenePrompt: trimmedScenePrompt,
           characterPrompt: hasCharacterControl ? characterPrompt : "",
@@ -1784,9 +1797,18 @@ if (!uid) return;
     );
 
     const results = await Promise.all(requests);
-    const tempUrls = results.flatMap((d) =>
-      Array.isArray(d?.images) ? d.images : d?.image ? [d.image] : []
-    );
+
+    const finalUrls = results.flatMap((d) => {
+      const imgs = Array.isArray(d?.images) ? d.images : d?.image ? [d.image] : [];
+
+      return imgs
+        .map((img) => {
+          if (typeof img === "string") return img;
+          if (img && typeof img === "object" && img.url) return img.url;
+          return null;
+        })
+        .filter(Boolean);
+    });
 
     const newGroup = {
       id: groupId,
@@ -1797,8 +1819,8 @@ if (!uid) return;
       style: styleLabel,
       createdAt: new Date().toISOString(),
       images:
-        tempUrls.length > 0
-          ? tempUrls.map((url) => ({ url, starred: false }))
+        finalUrls.length > 0
+          ? finalUrls.map((url) => ({ url, starred: false }))
           : [{ url: null, starred: false }],
     };
 
@@ -1808,27 +1830,10 @@ if (!uid) return;
       return next;
     });
 
-    setGenerating(false);
-console.log("Saving group with userId:", effectiveUserId);
-console.log("newGroup created:", newGroup);
-    await sbSaveGroup(newGroup, userId);
+    console.log("Saving group with userId:", effectiveUserId);
+    console.log("newGroup created:", newGroup);
 
-    if (effectiveUserId && tempUrls.length > 0) {
-      const permanentUrls = await Promise.all(
-        tempUrls.map((url, i) => uploadImageToStorage(url, effectiveUserId, `${groupId}-${i}`))
-      );
-
-      const updatedImages = permanentUrls.map((url) => ({ url, starred: false }));
-      const updatedGroup = { ...newGroup, images: updatedImages };
-
-      setGroups((p) => {
-        const next = p.map((g) => (g.id === groupId ? updatedGroup : g));
-        syncCache(next);
-        return next;
-      });
-
-      await sbSaveGroup(updatedGroup, effectiveUserId);
-    }
+    await sbSaveGroup(newGroup, effectiveUserId);
 
     if (notifState === "granted" && "Notification" in window) {
       new Notification("Kylor", { body: "Your image generation is complete." });
@@ -1847,8 +1852,14 @@ console.log("newGroup created:", newGroup);
       images: [{ url: null, starred: false }],
     };
 
-    setGroups((p) => [placeholder, ...p]);
+    setGroups((p) => {
+      const next = [placeholder, ...p];
+      syncCache(next);
+      return next;
+    });
+
     await sbSaveGroup(placeholder, effectiveUserId);
+  } finally {
     setGenerating(false);
   }
 }
@@ -1858,6 +1869,31 @@ console.log("newGroup created:", newGroup);
 
   setGenerating(true);
   canvasRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+
+  let effectiveUserId = userId;
+
+  if (!effectiveUserId) {
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser();
+
+    if (userError) {
+      console.error("Failed to get user from Supabase:", userError);
+    }
+
+    effectiveUserId = user?.id ?? null;
+
+    if (effectiveUserId) {
+      setUserId(effectiveUserId);
+    }
+  }
+
+  if (!effectiveUserId) {
+    alert("No user session found. Please log in again.");
+    setGenerating(false);
+    return;
+  }
 
   const variationPrompt = [
     group.prompt,
@@ -1875,6 +1911,7 @@ console.log("newGroup created:", newGroup);
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        userId: effectiveUserId,
         prompt: variationPrompt,
         negativePrompt: group.negativePrompt || "",
         styleLabel: group.style || "",
@@ -1886,9 +1923,16 @@ console.log("newGroup created:", newGroup);
     });
 
     const data = await res.json();
-    const tempUrl = Array.isArray(data?.images) ? data.images[0] : data?.image;
 
-    if (tempUrl) {
+    const tempImage = Array.isArray(data?.images) ? data.images[0] : data?.image;
+    const finalUrl =
+      typeof tempImage === "string"
+        ? tempImage
+        : tempImage && typeof tempImage === "object" && tempImage.url
+        ? tempImage.url
+        : null;
+
+    if (finalUrl) {
       const newGroup = {
         id: varGroupId,
         prompt: group.prompt,
@@ -1897,7 +1941,7 @@ console.log("newGroup created:", newGroup);
         mode: group.mode,
         style: group.style,
         createdAt: new Date().toISOString(),
-        images: [{ url: tempUrl, starred: false }],
+        images: [{ url: finalUrl, starred: false }],
       };
 
       setGroups((p) => {
@@ -1906,40 +1950,17 @@ console.log("newGroup created:", newGroup);
         return next;
       });
 
-      setGenerating(false);
-
       await sbSaveGroup(newGroup, effectiveUserId);
-
-      if (userId) {
-        const permanentUrl = await uploadImageToStorage(
-          tempUrl,
-          userId,
-          `${varGroupId}-0`
-        );
-        const updatedGroup = {
-          ...newGroup,
-          images: [{ url: permanentUrl, starred: false }],
-        };
-
-        setGroups((p) => {
-          const next = p.map((g) => (g.id === varGroupId ? updatedGroup : g));
-          syncCache(next);
-          return next;
-        });
-
-        await sbSaveGroup(updatedGroup, userId);
-      }
 
       if (notifState === "granted" && "Notification" in window) {
         new Notification("Kylor", {
           body: `Variation V${variationIndex + 1} is ready.`,
         });
       }
-    } else {
-      setGenerating(false);
     }
   } catch (err) {
     console.error("Variation failed:", err);
+  } finally {
     setGenerating(false);
   }
 }
