@@ -1,8 +1,14 @@
 import Replicate from "replicate";
+import { createClient } from "@supabase/supabase-js";
 
 const replicate = new Replicate({
   auth: process.env.REPLICATE_API_TOKEN,
 });
+
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY
+);
 
 function normalizeReferenceImage(image) {
   if (!image || typeof image !== "string") return null;
@@ -70,23 +76,61 @@ async function fileOutputToUrl(output) {
   return null;
 }
 
+async function persistImageToSupabase({ imageUrl, userId, bucket = "generated-images" }) {
+  const response = await fetch(imageUrl);
+
+  if (!response.ok) {
+    throw new Error(`Failed to download generated image: ${response.status} ${response.statusText}`);
+  }
+
+  const contentType = response.headers.get("content-type") || "image/png";
+  const arrayBuffer = await response.arrayBuffer();
+  const buffer = Buffer.from(arrayBuffer);
+
+  let ext = "png";
+  if (contentType.includes("jpeg") || contentType.includes("jpg")) ext = "jpg";
+  if (contentType.includes("webp")) ext = "webp";
+
+  const filePath = `${userId}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+
+  const { error: uploadError } = await supabaseAdmin.storage
+    .from(bucket)
+    .upload(filePath, buffer, {
+      contentType,
+      upsert: false,
+    });
+
+  if (uploadError) {
+    throw new Error(uploadError.message || "Failed to upload image to Supabase");
+  }
+
+  const { data } = supabaseAdmin.storage.from(bucket).getPublicUrl(filePath);
+
+  return data.publicUrl;
+}
+
 export async function POST(req) {
   try {
     const {
-  prompt,
-  scenePrompt = "",
-  characterPrompt = "",
-  style = null,
-  styleLabel = "",
-  stylePrompt = "",
-  negativePrompt = "",
-  useCharacter = false,
-  size = "1024x1024",
-  quality = "medium",
-  n = 1,
-  referenceImages = [],
-  ratio = "1:1",
-} = await req.json();
+      userId,
+      prompt,
+      scenePrompt = "",
+      characterPrompt = "",
+      style = null,
+      styleLabel = "",
+      stylePrompt = "",
+      negativePrompt = "",
+      useCharacter = false,
+      size = "1024x1024",
+      quality = "medium",
+      n = 1,
+      referenceImages = [],
+      ratio = "1:1",
+    } = await req.json();
+
+    if (!userId || !String(userId).trim()) {
+      return Response.json({ error: "userId is required" }, { status: 400 });
+    }
 
     if (!prompt || !prompt.trim()) {
       return Response.json({ error: "Prompt is required" }, { status: 400 });
@@ -99,106 +143,104 @@ export async function POST(req) {
       : [];
 
     const hasRefs = refs.length > 0;
-const cleanedScenePrompt = String(scenePrompt || "").trim();
-const cleanedCharacterPrompt = String(characterPrompt || "").trim();
-const cleanedStylePrompt = String(stylePrompt || "").trim();
-const cleanedNegativePrompt = String(negativePrompt || "").trim();
+    const cleanedScenePrompt = String(scenePrompt || "").trim();
+    const cleanedCharacterPrompt = String(characterPrompt || "").trim();
+    const cleanedStylePrompt = String(stylePrompt || "").trim();
+    const cleanedNegativePrompt = String(negativePrompt || "").trim();
 
-const hasCharacterRefs = hasRefs;
-const shouldUseCharacterPrompt = Boolean(useCharacter) && Boolean(cleanedCharacterPrompt);
+    const hasCharacterRefs = hasRefs;
+    const shouldUseCharacterPrompt =
+      Boolean(useCharacter) && Boolean(cleanedCharacterPrompt);
 
-const referenceInstruction = hasCharacterRefs
-  ? [
-      "Use the provided reference image(s) as the same exact person.",
-      "Preserve identity, facial structure, skin tone, hairstyle, and recognizable features.",
-      "Do not change the person into someone else.",
-      "Change only pose, camera framing, outfit, environment, action, and scene as requested.",
-      "Do not default to a close-up portrait unless explicitly requested.",
-    ].join(" ")
-  : "";
+    const referenceInstruction = hasCharacterRefs
+      ? [
+          "Use the provided reference image(s) as the same exact person.",
+          "Preserve identity, facial structure, skin tone, hairstyle, and recognizable features.",
+          "Do not change the person into someone else.",
+          "Change only pose, camera framing, outfit, environment, action, and scene as requested.",
+          "Do not default to a close-up portrait unless explicitly requested.",
+        ].join(" ")
+      : "";
 
-const fallbackQualityInstruction = [
-  "High-quality image generation.",
-  "Strong scene fidelity.",
-  "Accurate composition.",
-  "Natural detail.",
-  "Do not ignore framing instructions.",
-].join(" ");
+    const fallbackQualityInstruction = [
+      "High-quality image generation.",
+      "Strong scene fidelity.",
+      "Accurate composition.",
+      "Natural detail.",
+      "Do not ignore framing instructions.",
+    ].join(" ");
 
-const avoidInstruction = [
-  cleanedNegativePrompt,
-  cleanedScenePrompt.toLowerCase().includes("wide shot") ||
-  cleanedScenePrompt.toLowerCase().includes("full body") ||
-  cleanedScenePrompt.toLowerCase().includes("full-body") ||
-  ratio === "16:9" ||
-  ratio === "21:9"
-    ? "Avoid close-up portrait, extreme facial crop, headshot, face-only framing."
-    : "",
-]
-  .filter(Boolean)
-  .join(" ");
+    const avoidInstruction = [
+      cleanedNegativePrompt,
+      cleanedScenePrompt.toLowerCase().includes("wide shot") ||
+      cleanedScenePrompt.toLowerCase().includes("full body") ||
+      cleanedScenePrompt.toLowerCase().includes("full-body") ||
+      ratio === "16:9" ||
+      ratio === "21:9"
+        ? "Avoid close-up portrait, extreme facial crop, headshot, face-only framing."
+        : "",
+    ]
+      .filter(Boolean)
+      .join(" ");
 
-const finalPrompt = [
-  cleanedScenePrompt,
-
-"Full body visible from head to toe. Subject occupies around 35 to 45 percent of the frame. Face clearly visible and large enough to recognize identity. Environment must remain clearly visible.",
-
-"Camera distance medium-wide, not extreme long shot.",
-
-"Do not center subject. Use rule of thirds composition. Subject slightly off-center.",
-
-"Same exact person as reference. Face must remain identical even in wide shot. Do not change identity.",
-
-"Subject must face camera or 3/4 angle. Face clearly visible even in wide shot. Do not turn back to camera.",
-  prompt?.trim() || "",
-  hasCharacterRefs ? `Reference lock: ${referenceInstruction}` : null,
-
-  !hasCharacterRefs && shouldUseCharacterPrompt
-    ? `Character guidance: ${cleanedCharacterPrompt}`
-    : null,
-
-  cleanedStylePrompt ? `Style guidance: ${cleanedStylePrompt}` : null,
-
-  fallbackQualityInstruction,
-
-  avoidInstruction ? `Avoid: ${avoidInstruction}` : null,
-]
-  .filter(Boolean)
-  .join("\n\n");
-    
+    const finalPrompt = [
+      cleanedScenePrompt,
+      "Full body visible from head to toe. Subject occupies around 35 to 45 percent of the frame. Face clearly visible and large enough to recognize identity. Environment must remain clearly visible.",
+      "Camera distance medium-wide, not extreme long shot.",
+      "Do not center subject. Use rule of thirds composition. Subject slightly off-center.",
+      "Same exact person as reference. Face must remain identical even in wide shot. Do not change identity.",
+      "Subject must face camera or 3/4 angle. Face clearly visible even in wide shot. Do not turn back to camera.",
+      prompt?.trim() || "",
+      hasCharacterRefs ? `Reference lock: ${referenceInstruction}` : null,
+      !hasCharacterRefs && shouldUseCharacterPrompt
+        ? `Character guidance: ${cleanedCharacterPrompt}`
+        : null,
+      cleanedStylePrompt ? `Style guidance: ${cleanedStylePrompt}` : null,
+      fallbackQualityInstruction,
+      avoidInstruction ? `Avoid: ${avoidInstruction}` : null,
+    ]
+      .filter(Boolean)
+      .join("\n\n");
 
     const aspect_ratio = mapSizeToAspectRatio(size, ratio);
-    const useConsistencyModel =
-  Boolean(useCharacter) || refs.length > 0;
 
-const model = useConsistencyModel
-  ? "black-forest-labs/flux-1.1-pro-ultra"
-  : "black-forest-labs/flux-1.1-pro";
+    const useConsistencyModel = Boolean(useCharacter) || refs.length > 0;
+
+    const model = useConsistencyModel
+      ? "black-forest-labs/flux-1.1-pro-ultra"
+      : "black-forest-labs/flux-1.1-pro";
 
     const requests = Array.from({ length: safeN }, async () => {
-  let input;
+      let input;
 
-if (useConsistencyModel) {
-  input = {
-    prompt: finalPrompt,
-    aspect_ratio,
-    output_format: "png",
-  };
-} else {
-    input = {
-      prompt: finalPrompt,
-      aspect_ratio,
-      output_format: "png",
-      prompt_upsampling: false,
-    };
-  }
+      if (useConsistencyModel) {
+        input = {
+          prompt: finalPrompt,
+          aspect_ratio,
+          output_format: "png",
+        };
+      } else {
+        input = {
+          prompt: finalPrompt,
+          aspect_ratio,
+          output_format: "png",
+          prompt_upsampling: false,
+        };
+      }
 
-  const output = await replicate.run(model, {
-    input,
-  });
+      const output = await replicate.run(model, { input });
+      const tempUrl = await fileOutputToUrl(output);
 
-  return await fileOutputToUrl(output);
-});
+      if (!tempUrl) return null;
+
+      const permanentUrl = await persistImageToSupabase({
+        imageUrl: tempUrl,
+        userId: String(userId),
+        bucket: "generated-images",
+      });
+
+      return permanentUrl;
+    });
 
     const images = (await Promise.all(requests)).filter(Boolean);
 
@@ -213,15 +255,16 @@ if (useConsistencyModel) {
       image: images[0],
       images,
       meta: {
-  model,
-  mode: useConsistencyModel ? "consistency" : "standard",
-  quality,
-  style,
-  styleLabel,
-  referenceCount: refs.length,
-  usedReferences: useConsistencyModel,
-  usedNegativePrompt: Boolean(cleanedNegativePrompt),
-},
+        model,
+        mode: useConsistencyModel ? "consistency" : "standard",
+        quality,
+        style,
+        styleLabel,
+        referenceCount: refs.length,
+        usedReferences: useConsistencyModel,
+        usedNegativePrompt: Boolean(cleanedNegativePrompt),
+        storage: "supabase",
+      },
     });
   } catch (error) {
     console.error("Image generation error:", error);
