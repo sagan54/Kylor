@@ -76,11 +76,17 @@ async function fileOutputToUrl(output) {
   return null;
 }
 
-async function persistImageToSupabase({ imageUrl, userId, bucket = "generated-images" }) {
+async function persistImageToSupabase({
+  imageUrl,
+  userId,
+  bucket = "generated-images",
+}) {
   const response = await fetch(imageUrl);
 
   if (!response.ok) {
-    throw new Error(`Failed to download generated image: ${response.status} ${response.statusText}`);
+    throw new Error(
+      `Failed to download generated image: ${response.status} ${response.statusText}`
+    );
   }
 
   const contentType = response.headers.get("content-type") || "image/png";
@@ -91,7 +97,9 @@ async function persistImageToSupabase({ imageUrl, userId, bucket = "generated-im
   if (contentType.includes("jpeg") || contentType.includes("jpg")) ext = "jpg";
   if (contentType.includes("webp")) ext = "webp";
 
-  const filePath = `${userId}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+  const filePath = `${userId}/${Date.now()}-${Math.random()
+    .toString(36)
+    .slice(2)}.${ext}`;
 
   const { error: uploadError } = await supabaseAdmin.storage
     .from(bucket)
@@ -106,7 +114,11 @@ async function persistImageToSupabase({ imageUrl, userId, bucket = "generated-im
 
   const { data } = supabaseAdmin.storage.from(bucket).getPublicUrl(filePath);
 
-  return data.publicUrl;
+  return {
+    url: data.publicUrl,
+    path: filePath,
+    starred: false,
+  };
 }
 
 export async function POST(req) {
@@ -203,7 +215,6 @@ export async function POST(req) {
       .join("\n\n");
 
     const aspect_ratio = mapSizeToAspectRatio(size, ratio);
-
     const useConsistencyModel = Boolean(useCharacter) || refs.length > 0;
 
     const model = useConsistencyModel
@@ -233,13 +244,13 @@ export async function POST(req) {
 
       if (!tempUrl) return null;
 
-      const permanentUrl = await persistImageToSupabase({
+      const storedImage = await persistImageToSupabase({
         imageUrl: tempUrl,
         userId: String(userId),
         bucket: "generated-images",
       });
 
-      return permanentUrl;
+      return storedImage;
     });
 
     const images = (await Promise.all(requests)).filter(Boolean);
@@ -251,9 +262,30 @@ export async function POST(req) {
       );
     }
 
-    return Response.json({
-      image: images[0],
+    const generationPayload = {
+      user_id: String(userId),
+      prompt: finalPrompt,
+      negative_prompt: cleanedNegativePrompt,
+      ratio,
+      mode: useConsistencyModel ? "consistency" : "standard",
+      style: styleLabel || style || null,
       images,
+    };
+
+    const { data: savedRow, error: saveError } = await supabaseAdmin
+      .from("image_generations")
+      .insert(generationPayload)
+      .select("id, prompt, negative_prompt, images, created_at, mode, ratio, style")
+      .single();
+
+    if (saveError) {
+      throw new Error(saveError.message || "Failed to save generation");
+    }
+
+    return Response.json({
+      image: images[0]?.url || null,
+      images,
+      generation: savedRow,
       meta: {
         model,
         mode: useConsistencyModel ? "consistency" : "standard",

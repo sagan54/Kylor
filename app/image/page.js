@@ -112,35 +112,6 @@ async function sbClearAll(userId) {
 // ─── Storage helpers ──────────────────────────────────────────────────────────
 const STORAGE_BUCKET = "generated-images";
 
-async function uploadImageToStorage(tempUrl, userId, imageId) {
-  try {
-    const res = await fetch(tempUrl);
-    if (!res.ok) throw new Error(`Fetch failed: ${res.status}`);
-
-    const blob = await res.blob();
-    const ext =
-      blob.type === "image/webp"
-        ? "webp"
-        : blob.type === "image/jpeg"
-        ? "jpg"
-        : "png";
-
-    const path = `${userId}/${imageId}.${ext}`;
-
-    const { error: uploadError } = await supabase.storage
-      .from(STORAGE_BUCKET)
-      .upload(path, blob, { contentType: blob.type, upsert: true });
-
-    if (uploadError) throw uploadError;
-
-    const { data } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(path);
-    return data?.publicUrl ?? null;
-  } catch (err) {
-    console.warn("uploadImageToStorage failed, keeping temp URL:", err.message);
-    return tempUrl;
-  }
-}
-
 async function deleteImageFromStorage(userId, imageId) {
   try {
     await supabase.storage.from(STORAGE_BUCKET).remove([
@@ -872,6 +843,8 @@ function GenerationCard({
   onOpenLightbox,
   onVariation,
   generating,
+  isMobile,
+  isTablet,
 }) {
   const [copiedPrompt, setCopiedPrompt] = useState(false);
   const [featuredIdx, setFeaturedIdx] = useState(0);
@@ -992,13 +965,19 @@ function GenerationCard({
         </div>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 320px" }}>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: isMobile || isTablet ? "1fr" : "1fr 320px",
+        }}
+      >
         <div
           style={{
             position: "relative",
-            minHeight: 360,
+            minHeight: isMobile ? 240 : isTablet ? 300 : 360,
             background: "#05070c",
-            borderRight: `1px solid ${C.border}`,
+            borderRight: isMobile || isTablet ? "none" : `1px solid ${C.border}`,
+            borderBottom: isMobile || isTablet ? `1px solid ${C.border}` : "none",
             overflow: "hidden",
           }}
         >
@@ -1364,6 +1343,9 @@ const [groups, setGroups] = useState([]);
 
   const [lightboxItem, setLightboxItem] = useState(null);
 
+  const [isMobile, setIsMobile] = useState(false);
+  const [isTablet, setIsTablet] = useState(false);
+
   const panelRef = useRef(null);
   const stylesRef = useRef(null);
   const textareaRef = useRef(null);
@@ -1498,6 +1480,17 @@ const [groups, setGroups] = useState([]);
       sessionStorage.removeItem("kylor_selected_character_payload");
     } catch {}
   }
+
+    useEffect(() => {
+    function handleResize() {
+      setIsMobile(window.innerWidth < 768);
+      setIsTablet(window.innerWidth >= 768 && window.innerWidth < 1100);
+    }
+
+    handleResize();
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
 
   useEffect(() => {
     loadSavedCharacters();
@@ -1739,7 +1732,7 @@ if (group && userId) {
   }
 
   if (!effectiveUserId) {
-    console.error("No userId found. Not saving.");
+    console.error("No userId found.");
     alert("No user session found. Please log in again.");
     return;
   }
@@ -1768,7 +1761,6 @@ if (group && userId) {
     Boolean(characterPrompt) || uniqueReferenceImages.length > 0;
 
   const n = Math.min(outputCount, 4);
-  const groupId = Date.now();
 
   try {
     const requests = Array.from({ length: n }, () =>
@@ -1791,74 +1783,61 @@ if (group && userId) {
           quality: getApiQuality(mode),
           n: 1,
         }),
+      }).then(async (r) => {
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(data?.error || "Generation failed");
+        return data;
       })
-        .then((r) => r.json())
-        .catch(() => ({}))
     );
 
     const results = await Promise.all(requests);
 
-    const finalUrls = results.flatMap((d) => {
-      const imgs = Array.isArray(d?.images) ? d.images : d?.image ? [d.image] : [];
+    const newGroups = results
+      .map((d) => {
+        const row = d?.generation;
+        if (!row) return null;
 
-      return imgs
-        .map((img) => {
-          if (typeof img === "string") return img;
-          if (img && typeof img === "object" && img.url) return img.url;
-          return null;
-        })
-        .filter(Boolean);
-    });
+        return {
+          id: row.id,
+          prompt: row.prompt,
+          negativePrompt: row.negative_prompt,
+          ratio: row.ratio,
+          mode: row.mode,
+          style: row.style,
+          createdAt: row.created_at,
+          images: Array.isArray(row.images)
+            ? row.images.map((img) => {
+                if (typeof img === "string") return { url: img, starred: false };
+                if (img && typeof img === "object") {
+                  return {
+                    url: img.url || null,
+                    path: img.path || null,
+                    starred: Boolean(img.starred),
+                  };
+                }
+                return { url: null, starred: false };
+              })
+            : [],
+        };
+      })
+      .filter(Boolean);
 
-    const newGroup = {
-      id: groupId,
-      prompt: positivePrompt,
-      negativePrompt: negativePrompt.trim(),
-      ratio,
-      mode,
-      style: styleLabel,
-      createdAt: new Date().toISOString(),
-      images:
-        finalUrls.length > 0
-          ? finalUrls.map((url) => ({ url, starred: false }))
-          : [{ url: null, starred: false }],
-    };
+    if (!newGroups.length) {
+      throw new Error("No saved generation returned from API");
+    }
 
     setGroups((p) => {
-      const next = [newGroup, ...p];
+      const next = [...newGroups, ...p];
       syncCache(next);
       return next;
     });
-
-    console.log("Saving group with userId:", effectiveUserId);
-    console.log("newGroup created:", newGroup);
-
-    await sbSaveGroup(newGroup, effectiveUserId);
 
     if (notifState === "granted" && "Notification" in window) {
       new Notification("Kylor", { body: "Your image generation is complete." });
     }
   } catch (err) {
     console.error("Generation failed:", err);
-
-    const placeholder = {
-      id: groupId,
-      prompt: positivePrompt,
-      negativePrompt: negativePrompt.trim(),
-      ratio,
-      mode,
-      style: styleLabel,
-      createdAt: new Date().toISOString(),
-      images: [{ url: null, starred: false }],
-    };
-
-    setGroups((p) => {
-      const next = [placeholder, ...p];
-      syncCache(next);
-      return next;
-    });
-
-    await sbSaveGroup(placeholder, effectiveUserId);
+    alert(err?.message || "Generation failed");
   } finally {
     setGenerating(false);
   }
@@ -1904,8 +1883,6 @@ if (group && userId) {
     .filter(Boolean)
     .join("\n\n");
 
-  const varGroupId = Date.now();
-
   try {
     const res = await fetch("/api/generate-image", {
       method: "POST",
@@ -1922,44 +1899,54 @@ if (group && userId) {
       }),
     });
 
-    const data = await res.json();
+    const data = await res.json().catch(() => ({}));
 
-    const tempImage = Array.isArray(data?.images) ? data.images[0] : data?.image;
-    const finalUrl =
-      typeof tempImage === "string"
-        ? tempImage
-        : tempImage && typeof tempImage === "object" && tempImage.url
-        ? tempImage.url
-        : null;
+    if (!res.ok) {
+      throw new Error(data?.error || "Variation failed");
+    }
 
-    if (finalUrl) {
-      const newGroup = {
-        id: varGroupId,
-        prompt: group.prompt,
-        negativePrompt: group.negativePrompt,
-        ratio: group.ratio,
-        mode: group.mode,
-        style: group.style,
-        createdAt: new Date().toISOString(),
-        images: [{ url: finalUrl, starred: false }],
-      };
+    const row = data?.generation;
+    if (!row) {
+      throw new Error("No saved variation returned from API");
+    }
 
-      setGroups((p) => {
-        const next = [newGroup, ...p];
-        syncCache(next);
-        return next;
+    const newGroup = {
+      id: row.id,
+      prompt: row.prompt,
+      negativePrompt: row.negative_prompt,
+      ratio: row.ratio,
+      mode: row.mode,
+      style: row.style,
+      createdAt: row.created_at,
+      images: Array.isArray(row.images)
+        ? row.images.map((img) => {
+            if (typeof img === "string") return { url: img, starred: false };
+            if (img && typeof img === "object") {
+              return {
+                url: img.url || null,
+                path: img.path || null,
+                starred: Boolean(img.starred),
+              };
+            }
+            return { url: null, starred: false };
+          })
+        : [],
+    };
+
+    setGroups((p) => {
+      const next = [newGroup, ...p];
+      syncCache(next);
+      return next;
+    });
+
+    if (notifState === "granted" && "Notification" in window) {
+      new Notification("Kylor", {
+        body: `Variation V${variationIndex + 1} is ready.`,
       });
-
-      await sbSaveGroup(newGroup, effectiveUserId);
-
-      if (notifState === "granted" && "Notification" in window) {
-        new Notification("Kylor", {
-          body: `Variation V${variationIndex + 1} is ready.`,
-        });
-      }
     }
   } catch (err) {
     console.error("Variation failed:", err);
+    alert(err?.message || "Variation failed");
   } finally {
     setGenerating(false);
   }
@@ -1974,24 +1961,27 @@ if (group && userId) {
   return (
     <main
       style={{
-        height: "100vh",
-        overflow: "hidden",
+        minHeight: "100vh",
         background: `radial-gradient(ellipse at 8% 12%,rgba(79,70,229,0.13),transparent 28%),radial-gradient(ellipse at 92% 8%,rgba(124,58,237,0.11),transparent 30%),${C.bg}`,
         color: C.text,
         fontFamily: "'Inter','SF Pro Display',sans-serif",
         display: "grid",
-        gridTemplateColumns: "88px 1fr",
+        gridTemplateColumns: isMobile ? "1fr" : "88px 1fr",
+        overflow: "hidden",
       }}
-    >
-      <aside
+    >      <aside
         style={{
-          borderRight: `1px solid ${C.border}`,
+          borderRight: isMobile ? "none" : `1px solid ${C.border}`,
+          borderBottom: isMobile ? `1px solid ${C.border}` : "none",
           background: C.sidebar,
-          padding: "18px 10px",
-          height: "100vh",
+          padding: isMobile ? "12px 10px" : "18px 10px",
+          height: isMobile ? "auto" : "100vh",
           display: "flex",
-          flexDirection: "column",
-          overflow: "hidden",
+          flexDirection: isMobile ? "row" : "column",
+          alignItems: "center",
+          overflowX: isMobile ? "auto" : "hidden",
+          overflowY: "hidden",
+          gap: isMobile ? 10 : 0,
         }}
       >
         <div
@@ -1999,9 +1989,10 @@ if (group && userId) {
             width: 46,
             height: 46,
             borderRadius: 16,
-            margin: "0 auto 22px",
+            margin: isMobile ? "0 6px 0 0" : "0 auto 22px",
             display: "grid",
             placeItems: "center",
+            flexShrink: 0,
             background: "linear-gradient(135deg,rgba(79,70,229,0.28),rgba(124,58,237,0.18))",
             border: `1px solid ${C.border}`,
             boxShadow: `0 0 20px ${C.accentGlow}`,
@@ -2010,9 +2001,18 @@ if (group && userId) {
           <Sparkles size={20} color="#a78bfa" />
         </div>
 
-        <div style={{ display: "grid", gap: 8 }}>
+        <div
+          style={{
+            display: isMobile ? "flex" : "grid",
+            gap: 8,
+            overflowX: isMobile ? "auto" : "visible",
+            width: "100%",
+          }}
+        >
           {SIDEBAR_ITEMS.map((item) => (
-            <SidebarItem key={item.label} item={item} />
+            <div key={item.label} style={{ flex: isMobile ? "0 0 auto" : "unset" }}>
+              <SidebarItem item={item} />
+            </div>
           ))}
         </div>
       </aside>
@@ -2020,9 +2020,10 @@ if (group && userId) {
       <div
         style={{
           display: "grid",
-          gridTemplateRows: "48px 1fr",
-          height: "100vh",
+          gridTemplateRows: isMobile ? "auto auto 1fr" : "48px 1fr",
+          minHeight: isMobile ? "calc(100vh - 74px)" : "100vh",
           overflow: "hidden",
+          minWidth: 0,
         }}
       >
         <div
@@ -2031,11 +2032,13 @@ if (group && userId) {
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
-            padding: "0 18px",
+            padding: isMobile ? "10px 12px" : "0 18px",
             background: "rgba(255,255,255,0.01)",
+            flexWrap: isMobile ? "wrap" : "nowrap",
+            gap: isMobile ? 10 : 0,
           }}
         >
-          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
             {["All", "Output", "Projects"].map((tab) => (
               <motion.button
                 key={tab}
@@ -2060,7 +2063,7 @@ if (group && userId) {
             ))}
           </div>
 
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
             {[{ icon: Grid3X3, val: "grid" }, { icon: List, val: "list" }].map(
               ({ icon: Icon, val }) => (
                 <motion.button
@@ -2111,22 +2114,25 @@ if (group && userId) {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "380px 1fr",
+            gridTemplateColumns: isMobile ? "1fr" : isTablet ? "320px 1fr" : "380px 1fr",
             height: "100%",
             overflow: "hidden",
+            minWidth: 0,
           }}
         >
           <div
             style={{
-              borderRight: `1px solid ${C.border}`,
+              borderRight: isMobile ? "none" : `1px solid ${C.border}`,
+              borderBottom: isMobile ? `1px solid ${C.border}` : "none",
               background: "linear-gradient(180deg,rgba(7,9,15,0.98),rgba(9,11,17,0.98))",
               height: "100%",
-              overflow: "hidden",
+              overflow: isMobile ? "visible" : "hidden",
               display: "flex",
               flexDirection: "column",
-              padding: 16,
+              padding: isMobile ? 12 : 16,
               gap: 12,
               boxSizing: "border-box",
+              minWidth: 0,
             }}
           >
             <div
@@ -2520,18 +2526,20 @@ if (group && userId) {
                 )}
               </AnimatePresence>
 
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  marginTop: 10,
-                  paddingTop: 10,
-                  borderTop: `1px solid ${C.border}`,
-                  flexShrink: 0,
-                }}
-              >
-                <div style={{ display: "flex", gap: 6 }}>
+<div
+  style={{
+    display: "flex",
+    alignItems: isMobile ? "stretch" : "center",
+    justifyContent: "space-between",
+    flexDirection: isMobile ? "column" : "row",
+    gap: isMobile ? 10 : 0,
+    marginTop: 10,
+    paddingTop: 10,
+    borderTop: `1px solid ${C.border}`,
+    flexShrink: 0,
+  }}
+>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                   <motion.button
                     whileTap={{ scale: 0.95 }}
                     onClick={() => setStylesOpen((p) => !p)}
@@ -2590,7 +2598,7 @@ if (group && userId) {
                   </motion.button>
                 </div>
 
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "space-between", width: isMobile ? "100%" : "auto" }}>
                   <span
                     style={{
                       fontSize: 11,
@@ -2694,7 +2702,7 @@ if (group && userId) {
                         <div
                           style={{
                             display: "grid",
-                            gridTemplateColumns: "repeat(5,1fr)",
+                            gridTemplateColumns: isMobile ? "repeat(3,1fr)" : "repeat(5,1fr)",
                             gap: 6,
                           }}
                         >
@@ -2782,7 +2790,13 @@ if (group && userId) {
                   )}
                 </AnimatePresence>
 
-                <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: 10 }}>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: isMobile ? "1fr" : "auto 1fr",
+                    gap: 10,
+                  }}
+                >
                   <motion.button
                     whileHover={{ borderColor: C.borderHover }}
                     whileTap={{ scale: 0.97 }}
@@ -2904,6 +2918,7 @@ boxShadow:
               flexDirection: "column",
               height: "100%",
               overflow: "hidden",
+              minWidth: 0,
             }}
           >
             <AnimatePresence>
@@ -2914,17 +2929,18 @@ boxShadow:
                   exit={{ height: 0, opacity: 0 }}
                   transition={{ duration: 0.2 }}
                   style={{
-                    borderBottom: `1px solid ${C.border}`,
-                    background: "#12141e",
-                    padding: "0 16px",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    gap: 10,
-                    overflow: "hidden",
-                    flexShrink: 0,
-                    height: 44,
-                  }}
+  borderBottom: `1px solid ${C.border}`,
+  background: "#12141e",
+  padding: isMobile ? "10px 12px" : "0 16px",
+  display: "flex",
+  alignItems: isMobile ? "flex-start" : "center",
+  justifyContent: "space-between",
+  gap: 10,
+  overflow: "hidden",
+  flexShrink: 0,
+  minHeight: isMobile ? "auto" : 44,
+  flexWrap: isMobile ? "wrap" : "nowrap",
+}}
                 >
                   <div
                     style={{
@@ -3045,15 +3061,17 @@ boxShadow:
             <div
               style={{
                 display: "flex",
-                alignItems: "center",
+                alignItems: isMobile ? "flex-start" : "center",
                 justifyContent: "space-between",
-                padding: "0 16px",
+                padding: isMobile ? "10px 12px" : "0 16px",
                 borderBottom: `1px solid ${C.border}`,
-                height: 48,
+                minHeight: isMobile ? "auto" : 48,
                 flexShrink: 0,
+                flexWrap: isMobile ? "wrap" : "nowrap",
+                gap: isMobile ? 10 : 0,
               }}
             >
-              <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+              <div style={{ display: "flex", gap: 4, alignItems: "center", flexWrap: "wrap" }}>
                 {CONTENT_TABS.map((tab) => (
                   <motion.button
                     key={tab}
@@ -3106,7 +3124,7 @@ boxShadow:
                 </label>
               </div>
 
-              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+              <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
                 {groups.length > 0 && (
                   <motion.button
                     whileTap={{ scale: 0.95 }}
@@ -3189,20 +3207,22 @@ boxShadow:
                   ) : (
                     <div style={{ display: "grid", gap: 12 }}>
                       {groups.map((group, idx) => (
-                        <GenerationCard
-                          key={group.id}
-                          group={group}
-                          isLatest={idx === 0}
-                          generating={false}
-                          onDelete={deleteGroup}
-                          onToggleFavorite={toggleFavorite}
-                          onDownload={handleDownload}
-                          onShare={handleShare}
-                          onVariation={handleVariation}
-                          onOpenLightbox={(img, promptText) =>
-                            setLightboxItem({ ...img, promptText })
-                          }
-                        />
+<GenerationCard
+  key={group.id}
+  group={group}
+  isLatest={idx === 0 && !generating}
+  generating={generating}
+  onDelete={deleteGroup}
+  onToggleFavorite={toggleFavorite}
+  onDownload={handleDownload}
+  onShare={handleShare}
+  onVariation={handleVariation}
+  onOpenLightbox={(img, promptText) =>
+    setLightboxItem({ ...img, promptText })
+  }
+  isMobile={isMobile}
+  isTablet={isTablet}
+/>
                       ))}
                     </div>
                   )}
@@ -3393,20 +3413,22 @@ boxShadow:
                         }}
                       >
                         {filteredGroups.map((group, idx) => (
-                          <GenerationCard
-                            key={group.id}
-                            group={group}
-                            isLatest={idx === 0 && !generating}
-                            generating={generating}
-                            onDelete={deleteGroup}
-                            onToggleFavorite={toggleFavorite}
-                            onDownload={handleDownload}
-                            onShare={handleShare}
-                            onVariation={handleVariation}
-                            onOpenLightbox={(img, promptText) =>
-                              setLightboxItem({ ...img, promptText })
-                            }
-                          />
+  <GenerationCard
+  key={group.id}
+  group={group}
+  isLatest={idx === 0}
+  generating={false}
+  onDelete={deleteGroup}
+  onToggleFavorite={toggleFavorite}
+  onDownload={handleDownload}
+  onShare={handleShare}
+  onVariation={handleVariation}
+  onOpenLightbox={(img, promptText) =>
+    setLightboxItem({ ...img, promptText })
+  }
+  isMobile={isMobile}
+  isTablet={isTablet}
+/>
                         ))}
                       </div>
                     )}
@@ -3433,7 +3455,7 @@ boxShadow:
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              padding: 24,
+              padding: isMobile ? 12 : 24,
             }}
           >
             <motion.div
@@ -3444,7 +3466,7 @@ boxShadow:
               onClick={(e) => e.stopPropagation()}
               style={{
                 width: "100%",
-                maxWidth: 680,
+                maxWidth: isMobile ? "100%" : 680,
                 borderRadius: 22,
                 border: `1px solid ${C.border}`,
                 background: "linear-gradient(180deg, rgba(10,12,20,0.98), rgba(8,10,18,0.98))",
@@ -3558,7 +3580,7 @@ boxShadow:
                   <div
                     style={{
                       display: "grid",
-                      gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                      gridTemplateColumns: isMobile ? "1fr" : "repeat(2, minmax(0, 1fr))",
                       gap: 12,
                       maxHeight: 420,
                       overflowY: "auto",

@@ -88,7 +88,7 @@ const TOOLS = [
 ];
 
 // ─── Sidebar Item ─────────────────────────────────────────────────────────────
-function SidebarItem({ item }) {
+function SidebarItem({ item, isMobile = false }) {
   const Icon = item.icon;
 
   const inner = (
@@ -96,19 +96,21 @@ function SidebarItem({ item }) {
       whileHover={{ scale: 1.03 }}
       whileTap={{ scale: 0.97 }}
       style={{
-        display: "grid",
-        justifyItems: "center",
-        gap: "6px",
-        padding: "10px 6px",
-        borderRadius: radius.lg,
-        background: item.active
-          ? "linear-gradient(160deg, rgba(79,70,229,0.22), rgba(124,58,237,0.14))"
-          : "transparent",
-        border: `1px solid ${item.active ? C.border : "transparent"}`,
-        color: item.active ? C.text : C.textMuted,
-        cursor: "pointer",
-        transition: "all 0.18s ease",
-      }}
+  display: isMobile ? "flex" : "grid",
+  justifyItems: isMobile ? "unset" : "center",
+  alignItems: "center",
+  gap: isMobile ? "8px" : "6px",
+  padding: isMobile ? "10px 12px" : "10px 6px",
+  borderRadius: radius.lg,
+  background: item.active
+    ? "linear-gradient(160deg, rgba(79,70,229,0.22), rgba(124,58,237,0.14))"
+    : "transparent",
+  border: `1px solid ${item.active ? C.border : "transparent"}`,
+  color: item.active ? C.text : C.textMuted,
+  cursor: "pointer",
+  transition: "all 0.18s ease",
+  minWidth: isMobile ? "auto" : undefined,
+}}
     >
       <div
         style={{
@@ -123,9 +125,16 @@ function SidebarItem({ item }) {
         <Icon size={17} />
       </div>
 
-      <span style={{ fontSize: "10.5px", textAlign: "center", lineHeight: 1.2 }}>
-        {item.label}
-      </span>
+      <span
+  style={{
+    fontSize: isMobile ? "12px" : "10.5px",
+    textAlign: "center",
+    lineHeight: 1.2,
+    whiteSpace: "nowrap",
+  }}
+>
+  {item.label}
+</span>
     </motion.div>
   );
 
@@ -213,7 +222,7 @@ function SidebarProfile({ credits = 0, onClick, isOpen }) {
 }
 
 // ─── Profile Popup ────────────────────────────────────────────────────────────
-function ProfilePopup({ session, credits, onClose, onLogout }) {
+function ProfilePopup({ session, credits, onClose, onLogout, isTablet = false }) {
   const email = session?.user?.email || "Guest User";
   const userId = session?.user?.id ? session.user.id.slice(0, 8) : "No ID";
 
@@ -225,9 +234,10 @@ function ProfilePopup({ session, credits, onClose, onLogout }) {
       transition={{ duration: 0.2, ease: "easeOut" }}
       style={{
         position: "absolute",
-        left: "92px",
-        bottom: "18px",
-        width: "360px",
+        left: isTablet ? "76px" : "92px",
+bottom: "18px",
+width: isTablet ? "300px" : "360px",
+maxWidth: "calc(100vw - 24px)",
         borderRadius: "24px",
         border: `1px solid ${C.border}`,
         background:
@@ -533,7 +543,20 @@ export default function Home() {
   const [session, setSession] = useState(null);
   const [credits, setCredits] = useState(0);
   const [profileOpen, setProfileOpen] = useState(false);
+    const [isMobile, setIsMobile] = useState(false);
+  const [isTablet, setIsTablet] = useState(false);
   const profileWrapRef = useRef(null);
+
+  useEffect(() => {
+    function handleResize() {
+      setIsMobile(window.innerWidth < 768);
+      setIsTablet(window.innerWidth >= 768 && window.innerWidth < 1100);
+    }
+
+    handleResize();
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
 
   useEffect(() => {
   let mounted = true;
@@ -643,30 +666,41 @@ export default function Home() {
         fontFamily: "'Inter', 'SF Pro Display', sans-serif",
       }}
     >
-      <div style={{ display: "grid", gridTemplateColumns: "88px 1fr", minHeight: "100vh" }}>
+      <div
+  style={{
+    display: "grid",
+    gridTemplateColumns: isMobile ? "1fr" : "88px 1fr",
+    minHeight: "100vh",
+  }}
+>
         {/* ── Sidebar — FIXED so it never scrolls ── */}
         <aside
-          style={{
-            position: "fixed",
-            top: 0,
-            left: 0,
-            width: "88px",
-            height: "100vh",
-            borderRight: `1px solid ${C.border}`,
-            background: C.sidebar,
-            padding: "18px 10px",
-            display: "flex",
-            flexDirection: "column",
-            overflow: "visible",
-            zIndex: 100,
-          }}
+style={{
+  position: isMobile ? "relative" : "fixed",
+  top: 0,
+  left: 0,
+  width: isMobile ? "100%" : "88px",
+  height: isMobile ? "auto" : "100vh",
+  borderRight: isMobile ? "none" : `1px solid ${C.border}`,
+  borderBottom: isMobile ? `1px solid ${C.border}` : "none",
+  background: C.sidebar,
+  padding: isMobile ? "12px 10px" : "18px 10px",
+  display: "flex",
+  flexDirection: isMobile ? "row" : "column",
+  alignItems: "center",
+  overflowX: isMobile ? "auto" : "visible",
+  overflowY: "visible",
+  zIndex: 100,
+  gap: isMobile ? "10px" : 0,
+}}
         >
           <div
             style={{
               width: "46px",
               height: "46px",
               borderRadius: "16px",
-              margin: "0 auto 22px",
+              margin: isMobile ? "0" : "0 auto 22px",
+flexShrink: 0,
               display: "grid",
               placeItems: "center",
               background: "linear-gradient(135deg, rgba(79,70,229,0.28), rgba(124,58,237,0.18))",
@@ -677,53 +711,74 @@ export default function Home() {
             <Sparkles size={20} color="#a78bfa" />
           </div>
 
-          <div style={{ display: "grid", gap: "8px" }}>
-            {SIDEBAR_ITEMS.map((item) => (
-              <SidebarItem key={item.label} item={item} />
-            ))}
-          </div>
+<div
+  style={{
+    display: isMobile ? "flex" : "grid",
+    gap: "8px",
+    flex: 1,
+    minWidth: 0,
+    overflowX: isMobile ? "auto" : "visible",
+  }}
+>
+  {SIDEBAR_ITEMS.map((item) => (
+    <div key={item.label} style={{ flex: isMobile ? "0 0 auto" : "unset" }}>
+      <SidebarItem item={item} isMobile={isMobile} />
+    </div>
+  ))}
+</div>
 
-          <div
-            ref={profileWrapRef}
-            style={{ marginTop: "auto", paddingTop: "14px", position: "relative" }}
-          >
-            <SidebarProfile
-              credits={credits}
-              isOpen={profileOpen}
-              onClick={() => setProfileOpen((v) => !v)}
-            />
+          {!isMobile && (
+  <div
+    ref={profileWrapRef}
+    style={{ marginTop: "auto", paddingTop: "14px", position: "relative" }}
+  >
+    <SidebarProfile
+      credits={credits}
+      isOpen={profileOpen}
+      onClick={() => setProfileOpen((v) => !v)}
+    />
 
-            <AnimatePresence>
-              {profileOpen && (
-                <ProfilePopup
-                  session={session}
-                  credits={credits}
-                  onClose={() => setProfileOpen(false)}
-                  onLogout={handleLogout}
-                />
-              )}
-            </AnimatePresence>
-          </div>
+    <AnimatePresence>
+      {profileOpen && (
+        <ProfilePopup
+  session={session}
+  credits={credits}
+  onClose={() => setProfileOpen(false)}
+  onLogout={handleLogout}
+  isTablet={isTablet}
+/>
+      )}
+    </AnimatePresence>
+  </div>
+)}
         </aside>
 
         {/* ── Scrollable main content — offset by sidebar width ── */}
-        <div style={{ gridColumn: "2", minHeight: "100vh", overflowY: "auto" }}>
+        <div
+  style={{
+    gridColumn: isMobile ? "1" : "2",
+    minHeight: "100vh",
+    overflowY: "auto",
+    minWidth: 0,
+  }}
+>
           {/* Top bar */}
           <div
             style={{
-              position: "sticky",
-              top: 0,
-              zIndex: 50,
-              borderBottom: `1px solid ${C.border}`,
-              background: `rgba(5,7,12,0.85)`,
-              backdropFilter: "blur(16px)",
-              padding: "0 28px",
-              height: "52px",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "flex-end",
-              gap: "8px",
-            }}
+  position: "sticky",
+  top: 0,
+  zIndex: 50,
+  borderBottom: `1px solid ${C.border}`,
+  background: `rgba(5,7,12,0.85)`,
+  backdropFilter: "blur(16px)",
+  padding: isMobile ? "8px 14px" : "0 28px",
+  minHeight: isMobile ? "auto" : "52px",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: isMobile ? "flex-start" : "flex-end",
+  gap: "8px",
+  flexWrap: "wrap",
+}}
           >
             {session ? (
               <>
@@ -823,7 +878,14 @@ export default function Home() {
           </div>
 
           {/* Page body */}
-          <div style={{ maxWidth: "1320px", margin: "0 auto", padding: "40px 28px 64px" }}>
+          <div
+  style={{
+    maxWidth: "1320px",
+    margin: "0 auto",
+    padding: isMobile ? "20px 14px 40px" : isTablet ? "28px 20px 56px" : "40px 28px 64px",
+    minWidth: 0,
+  }}
+>
             {/* ── Hero ── */}
             <motion.div
               initial={{ opacity: 0, y: 24 }}
@@ -870,7 +932,7 @@ export default function Home() {
                 <div>
                   <h1
                     style={{
-                      fontSize: "64px",
+                      fontSize: isMobile ? "42px" : isTablet ? "52px" : "64px",
                       lineHeight: 1,
                       margin: "0 0 14px",
                       letterSpacing: "-0.04em",
@@ -887,7 +949,7 @@ export default function Home() {
                       margin: "0 0 8px",
                       maxWidth: "600px",
                       color: "rgba(255,255,255,0.68)",
-                      fontSize: "17px",
+                      fontSize: isMobile ? "15px" : "17px",
                       lineHeight: 1.8,
                     }}
                   >
@@ -900,14 +962,23 @@ export default function Home() {
                 </div>
 
                 {/* Quick action cards */}
-                <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+                <div
+  style={{
+    display: "flex",
+    flexDirection: isMobile ? "column" : "row",
+    gap: "10px",
+    flexWrap: isMobile ? "nowrap" : "wrap",
+    width: isMobile ? "100%" : "auto",
+  }}
+>
                   {quickActions.map((action) => {
                     const inner = (
                       <motion.div
                         whileHover={{ y: -3, borderColor: C.accentBorder }}
                         whileTap={{ scale: 0.97 }}
                         style={{
-                          minWidth: "180px",
+                          minWidth: isMobile ? "100%" : "180px",
+width: isMobile ? "100%" : "auto",
                           padding: "14px 16px",
                           borderRadius: radius.lg,
                           border: `1px solid ${C.border}`,
@@ -938,13 +1009,19 @@ export default function Home() {
                     );
 
                     return action.href === "#" ? (
-                      <div key={action.title}>{inner}</div>
+                      <div key={action.title} style={{ width: isMobile ? "100%" : "auto" }}>
+  {inner}
+</div>
                     ) : (
                       <Link
-                        key={action.title}
-                        href={action.href}
-                        style={{ textDecoration: "none", color: "inherit" }}
-                      >
+  key={action.title}
+  href={action.href}
+  style={{
+    textDecoration: "none",
+    color: "inherit",
+    width: isMobile ? "100%" : "auto",
+  }}
+>
                         {inner}
                       </Link>
                     );
@@ -954,7 +1031,15 @@ export default function Home() {
             </motion.div>
 
             {/* ── Feature cards ── */}
-            <div style={{ display: "grid", gridTemplateColumns: "1.5fr 1fr", gap: "16px", marginBottom: "16px" }}>
+            <div
+  style={{
+    display: "grid",
+    gridTemplateColumns: isMobile ? "1fr" : isTablet ? "1fr" : "1.5fr 1fr",
+    gap: "16px",
+    marginBottom: "16px",
+    minWidth: 0,
+  }}
+>
               {/* Story Engine hero card */}
               <motion.div
                 initial={{ opacity: 0, y: 24 }}
@@ -986,7 +1071,7 @@ export default function Home() {
                   style={{
                     position: "relative",
                     zIndex: 1,
-                    padding: "32px",
+                    padding: isMobile ? "20px" : "32px",
                     display: "flex",
                     flexDirection: "column",
                     height: "100%",
@@ -1022,7 +1107,7 @@ export default function Home() {
 
                     <h2
                       style={{
-                        fontSize: "36px",
+                        fontSize: isMobile ? "28px" : "36px",
                         lineHeight: 1.1,
                         margin: "0 0 14px",
                         letterSpacing: "-0.025em",
@@ -1036,7 +1121,7 @@ export default function Home() {
                       style={{
                         margin: 0,
                         color: "rgba(255,255,255,0.7)",
-                        fontSize: "16px",
+                        fontSize: isMobile ? "14px" : "16px",
                         lineHeight: 1.8,
                         maxWidth: "520px",
                       }}
@@ -1103,7 +1188,7 @@ export default function Home() {
                   borderRadius: "24px",
                   border: `1px solid ${C.border}`,
                   background: "linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.02))",
-                  padding: "28px",
+                  padding: isMobile ? "20px" : "28px",
                   boxShadow: "0 18px 40px rgba(0,0,0,0.22)",
                 }}
               >
@@ -1123,7 +1208,7 @@ export default function Home() {
                 <h3
                   style={{
                     margin: "0 0 14px",
-                    fontSize: "26px",
+                    fontSize: isMobile ? "22px" : "26px",
                     lineHeight: 1.15,
                     fontWeight: 800,
                     letterSpacing: "-0.02em",
@@ -1219,7 +1304,16 @@ export default function Home() {
               initial={{ opacity: 0, y: 24 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6, delay: 0.2, ease: "easeOut" }}
-              style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "14px" }}
+              style={{
+  display: "grid",
+  gridTemplateColumns: isMobile
+    ? "1fr"
+    : isTablet
+    ? "repeat(2, minmax(0, 1fr))"
+    : "repeat(4, minmax(0, 1fr))",
+  gap: "14px",
+  minWidth: 0,
+}}
             >
               {TOOLS.map((tool) => {
                 const Icon = tool.icon;
@@ -1319,11 +1413,21 @@ export default function Home() {
                 );
 
                 return tool.href !== "#" ? (
-                  <Link key={tool.title} href={tool.href} style={{ textDecoration: "none", color: "inherit" }}>
+                  <Link
+  key={tool.title}
+  href={tool.href}
+  style={{
+    textDecoration: "none",
+    color: "inherit",
+    width: isMobile ? "100%" : "auto",
+  }}
+>
                     {inner}
                   </Link>
                 ) : (
-                  <div key={tool.title}>{inner}</div>
+                  <div key={tool.title} style={{ width: isMobile ? "100%" : "auto" }}>
+  {inner}
+</div>
                 );
               })}
             </motion.div>
@@ -1334,17 +1438,17 @@ export default function Home() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6, delay: 0.28, ease: "easeOut" }}
               style={{
-                marginTop: "20px",
-                borderRadius: "24px",
-                border: `1px solid ${C.border}`,
-                background: "linear-gradient(135deg, rgba(79,70,229,0.1), rgba(124,58,237,0.06))",
-                padding: "32px 36px",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                gap: "24px",
-                flexWrap: "wrap",
-              }}
+  marginTop: "20px",
+  borderRadius: "24px",
+  border: `1px solid ${C.border}`,
+  background: "linear-gradient(135deg, rgba(79,70,229,0.1), rgba(124,58,237,0.06))",
+  padding: isMobile ? "22px 18px" : "32px 36px",
+  display: "flex",
+  alignItems: isMobile ? "flex-start" : "center",
+  justifyContent: "space-between",
+  gap: "24px",
+  flexWrap: "wrap",
+}}
             >
               <div>
                 <div
@@ -1363,51 +1467,69 @@ export default function Home() {
                 </p>
               </div>
 
-              <div style={{ display: "flex", gap: "10px", flexShrink: 0 }}>
-                <Link href={session ? "/story" : "/signup"} style={{ textDecoration: "none" }}>
+              <div
+  style={{
+    display: "flex",
+    gap: "10px",
+    flexShrink: 0,
+    flexWrap: "wrap",
+    width: isMobile ? "100%" : "auto",
+  }}
+>
+                <Link
+  href={session ? "/story" : "/signup"}
+  style={{ textDecoration: "none", width: isMobile ? "100%" : "auto" }}
+>
                   <motion.div
-                    whileHover={{ boxShadow: `0 18px 40px rgba(124,58,237,0.38)` }}
-                    whileTap={{ scale: 0.97 }}
-                    style={{
-                      height: "44px",
-                      padding: "0 22px",
-                      borderRadius: radius.md,
-                      background: "linear-gradient(135deg, #4f46e5, #7c3aed)",
-                      color: "white",
-                      fontWeight: 700,
-                      fontSize: "14px",
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: "8px",
-                      cursor: "pointer",
-                      boxShadow: `0 10px 28px ${C.accentGlow}`,
-                      transition: "box-shadow 0.2s ease",
-                    }}
-                  >
+  whileHover={{ boxShadow: `0 18px 40px rgba(124,58,237,0.38)` }}
+  whileTap={{ scale: 0.97 }}
+  style={{
+    height: "44px",
+    width: isMobile ? "100%" : "auto",
+    padding: "0 22px",
+    borderRadius: radius.md,
+    background: "linear-gradient(135deg, #4f46e5, #7c3aed)",
+    color: "white",
+    fontWeight: 700,
+    fontSize: "14px",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: "8px",
+    cursor: "pointer",
+    boxShadow: `0 10px 28px ${C.accentGlow}`,
+    transition: "box-shadow 0.2s ease",
+  }}
+>
                     <Zap size={14} />
                     {session ? "Open Story Engine" : "Get Started Free"}
                   </motion.div>
                 </Link>
 
                 {!session && (
-                  <Link href="/login" style={{ textDecoration: "none" }}>
-                    <motion.div
+                  <Link
+  href="/login"
+  style={{ textDecoration: "none", width: isMobile ? "100%" : "auto" }}
+>
+                    <motion.div                 
                       whileHover={{ borderColor: C.borderHover }}
                       whileTap={{ scale: 0.97 }}
-                      style={{
-                        height: "44px",
-                        padding: "0 20px",
-                        borderRadius: radius.md,
-                        border: `1px solid ${C.border}`,
-                        background: C.surface,
-                        color: "rgba(255,255,255,0.8)",
-                        fontWeight: 500,
-                        fontSize: "14px",
-                        display: "inline-flex",
-                        alignItems: "center",
-                        cursor: "pointer",
-                        transition: "border-color 0.15s ease",
-                      }}
+style={{
+  height: "44px",
+  width: isMobile ? "100%" : "auto",
+  padding: "0 20px",
+  borderRadius: radius.md,
+  border: `1px solid ${C.border}`,
+  background: C.surface,
+  color: "rgba(255,255,255,0.8)",
+  fontWeight: 500,
+  fontSize: "14px",
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  cursor: "pointer",
+  transition: "border-color 0.15s ease",
+}}
                     >
                       Sign In
                     </motion.div>
