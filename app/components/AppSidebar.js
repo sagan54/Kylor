@@ -17,7 +17,7 @@ import {
   FolderKanban,
   Settings,
 } from "lucide-react";
-import { supabase } from "../lib/supabase";
+import { supabase } from "../../lib/supabase";
 
 const C = {
   accent: "#7c3aed",
