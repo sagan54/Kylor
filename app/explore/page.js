@@ -3,15 +3,6 @@
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Sparkles,
-  Compass,
-  Clapperboard,
-  Image as ImageIcon,
-  Video,
-  UserCircle2,
-  Orbit,
-  FolderKanban,
-  Settings,
   Search,
   Heart,
   Download,
@@ -20,15 +11,15 @@ import {
   Eye,
   TrendingUp,
   Clock,
-  Star,
-  Filter,
-  X,
-  ChevronDown,
-  Flame,
   Zap,
   BookOpen,
+  Image as ImageIcon,
+  ChevronDown,
+  X,
+  Flame,
 } from "lucide-react";
 import { useState, useRef } from "react";
+import AppSidebar from "../components/AppSidebar";
 
 // ─── Tokens (matches all other pages) ────────────────────────────────────────
 const C = {
@@ -49,18 +40,6 @@ const C = {
 };
 const radius = { sm: "10px", md: "14px", lg: "18px", xl: "22px", full: "999px" };
 
-// ─── Sidebar ──────────────────────────────────────────────────────────────────
-const SIDEBAR_ITEMS = [
-  { label: "Home", icon: Compass, href: "/" },
-  { label: "Explore", icon: Compass, href: "/explore", active: true },
-  { label: "Story", icon: Clapperboard, href: "/story" },
-  { label: "Image", icon: ImageIcon, href: "/image" },
-  { label: "Video", icon: Video, href: "/video" },
-{ label: "Consistency", icon: UserCircle2, href: "/consistency" },
-  { label: "Motion", icon: Orbit, href: "#" },
-  { label: "Projects", icon: FolderKanban, href: "/story" },
-  { label: "Settings", icon: Settings, href: "#" },
-];
 
 // ─── Mock data ────────────────────────────────────────────────────────────────
 const ITEMS = [
@@ -81,22 +60,6 @@ const ITEMS = [
 const FILTER_TABS = ["All", "Images", "Videos", "Stories"];
 const SORT_OPTIONS = ["Trending", "Most Recent", "Most Liked", "Most Viewed"];
 
-function SidebarItem({ item }) {
-  const Icon = item.icon;
-  const inner = (
-    <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
-      style={{ display: "grid", justifyItems: "center", gap: "6px", padding: "10px 6px", borderRadius: radius.lg, background: item.active ? "linear-gradient(160deg, rgba(79,70,229,0.22), rgba(124,58,237,0.14))" : "transparent", border: `1px solid ${item.active ? C.border : "transparent"}`, color: item.active ? C.text : C.textMuted, cursor: "pointer", transition: "all 0.18s ease" }}
-    >
-      <div style={{ width: "36px", height: "36px", borderRadius: "12px", display: "grid", placeItems: "center", background: item.active ? "rgba(255,255,255,0.07)" : "rgba(255,255,255,0.02)" }}>
-        <Icon size={17} />
-      </div>
-      <span style={{ fontSize: "10.5px", textAlign: "center", lineHeight: 1.2 }}>{item.label}</span>
-    </motion.div>
-  );
-  return item.href === "#" ? <div>{inner}</div> : (
-    <Link href={item.href} style={{ textDecoration: "none", color: "inherit" }}>{inner}</Link>
-  );
-}
 
 function fmtNum(n) {
   if (n >= 1000) return (n / 1000).toFixed(1) + "k";
@@ -278,79 +241,226 @@ export default function ExplorePage() {
 
   const SortIcon = sort === "Trending" ? Flame : sort === "Most Recent" ? Clock : sort === "Most Liked" ? Heart : TrendingUp;
 
-  return (
-    <main style={{
-      height: "100vh", overflow: "hidden",
+return (
+  <main
+    style={{
+      minHeight: "100vh",
       background: `radial-gradient(ellipse at 8% 12%, rgba(79,70,229,0.13), transparent 28%), radial-gradient(ellipse at 92% 8%, rgba(124,58,237,0.11), transparent 30%), ${C.bg}`,
-      color: C.text, fontFamily: "'Inter', 'SF Pro Display', sans-serif",
-      display: "grid", gridTemplateColumns: "88px 1fr",
-    }}>
+      color: C.text,
+      fontFamily: "'Inter', 'SF Pro Display', sans-serif",
+    }}
+  >
+    <div style={{ display: "grid", gridTemplateColumns: "88px 1fr", minHeight: "100vh" }}>
+      <AppSidebar active="Explore" />
 
-      {/* ── Sidebar ── */}
-      <aside style={{ borderRight: `1px solid ${C.border}`, background: C.sidebar, padding: "18px 10px", height: "100vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
-        <div style={{ width: "46px", height: "46px", borderRadius: "16px", margin: "0 auto 22px", display: "grid", placeItems: "center", background: "linear-gradient(135deg, rgba(79,70,229,0.28), rgba(124,58,237,0.18))", border: `1px solid ${C.border}`, boxShadow: `0 0 20px ${C.accentGlow}` }}>
-          <Sparkles size={20} color="#a78bfa" />
-        </div>
-        <div style={{ display: "grid", gap: "8px" }}>
-          {SIDEBAR_ITEMS.map((item) => <SidebarItem key={item.label} item={item} />)}
-        </div>
-      </aside>
-
-      {/* ── Main ── */}
-      <div style={{ display: "grid", gridTemplateRows: "48px 1fr", height: "100vh", overflow: "hidden" }}>
-
+      <div
+        style={{
+          display: "grid",
+          gridTemplateRows: "48px 1fr",
+          height: "100vh",
+          overflow: "hidden",
+          gridColumn: "2",
+        }}
+      >
         {/* ── Top Nav ── */}
-        <div style={{ borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 20px", background: "rgba(255,255,255,0.01)" }}>
+        <div
+          style={{
+            borderBottom: `1px solid ${C.border}`,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            padding: "0 20px",
+            background: "rgba(255,255,255,0.01)",
+          }}
+        >
           <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
-            {/* Explore badge */}
-            <div style={{ height: "30px", padding: "0 12px", borderRadius: radius.full, border: `1px solid ${C.accentBorder}`, background: C.accentSoft, color: "#c4b5fd", fontSize: "13px", display: "inline-flex", alignItems: "center", gap: "7px", fontWeight: 600 }}>
-              <span style={{ width: "7px", height: "7px", borderRadius: "999px", background: C.accent, boxShadow: `0 0 8px ${C.accent}` }} />
+            <div
+              style={{
+                height: "30px",
+                padding: "0 12px",
+                borderRadius: radius.full,
+                border: `1px solid ${C.accentBorder}`,
+                background: C.accentSoft,
+                color: "#c4b5fd",
+                fontSize: "13px",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "7px",
+                fontWeight: 600,
+              }}
+            >
+              <span
+                style={{
+                  width: "7px",
+                  height: "7px",
+                  borderRadius: "999px",
+                  background: C.accent,
+                  boxShadow: `0 0 8px ${C.accent}`,
+                }}
+              />
               Explore
             </div>
+
             <div style={{ width: "1px", height: "20px", background: C.border, margin: "0 4px" }} />
+
             {FILTER_TABS.map((tab) => (
-              <motion.button key={tab} whileTap={{ scale: 0.95 }} onClick={() => setFilter(tab)}
-                style={{ height: "30px", padding: "0 12px", borderRadius: "9px", border: `1px solid ${filter === tab ? C.accentBorder : "transparent"}`, background: filter === tab ? C.accentSoft : "transparent", color: filter === tab ? "#c4b5fd" : C.textMuted, cursor: "pointer", fontSize: "12.5px", fontFamily: "inherit", fontWeight: filter === tab ? 600 : 400, transition: "all 0.15s ease" }}
-              >{tab}</motion.button>
+              <motion.button
+                key={tab}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => setFilter(tab)}
+                style={{
+                  height: "30px",
+                  padding: "0 12px",
+                  borderRadius: "9px",
+                  border: `1px solid ${filter === tab ? C.accentBorder : "transparent"}`,
+                  background: filter === tab ? C.accentSoft : "transparent",
+                  color: filter === tab ? "#c4b5fd" : C.textMuted,
+                  cursor: "pointer",
+                  fontSize: "12.5px",
+                  fontFamily: "inherit",
+                  fontWeight: filter === tab ? 600 : 400,
+                  transition: "all 0.15s ease",
+                }}
+              >
+                {tab}
+              </motion.button>
             ))}
           </div>
 
           <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-            {/* Search */}
-            <motion.div animate={{ width: searchFocused ? "220px" : "160px" }} transition={{ duration: 0.2 }}
-              style={{ height: "34px", borderRadius: radius.sm, border: `1px solid ${searchFocused ? C.accentBorder : C.border}`, background: searchFocused ? C.accentSoft : C.surface, display: "flex", alignItems: "center", gap: "8px", padding: "0 12px", overflow: "hidden", transition: "border-color 0.2s ease" }}
+            <motion.div
+              animate={{ width: searchFocused ? "220px" : "160px" }}
+              transition={{ duration: 0.2 }}
+              style={{
+                height: "34px",
+                borderRadius: radius.sm,
+                border: `1px solid ${searchFocused ? C.accentBorder : C.border}`,
+                background: searchFocused ? C.accentSoft : C.surface,
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                padding: "0 12px",
+                overflow: "hidden",
+                transition: "border-color 0.2s ease",
+              }}
             >
               <Search size={13} color={searchFocused ? "#a78bfa" : C.textMuted} style={{ flexShrink: 0 }} />
-              <input value={search} onChange={(e) => setSearch(e.target.value)}
-                onFocus={() => setSearchFocused(true)} onBlur={() => setSearchFocused(false)}
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                onFocus={() => setSearchFocused(true)}
+                onBlur={() => setSearchFocused(false)}
                 placeholder="Search creators, titles…"
-                style={{ flex: 1, border: "none", background: "transparent", color: C.text, fontSize: "12.5px", outline: "none", fontFamily: "inherit", minWidth: 0 }}
+                style={{
+                  flex: 1,
+                  border: "none",
+                  background: "transparent",
+                  color: C.text,
+                  fontSize: "12.5px",
+                  outline: "none",
+                  fontFamily: "inherit",
+                  minWidth: 0,
+                }}
               />
               {search && (
-                <button onClick={() => setSearch("")} style={{ border: "none", background: "transparent", color: C.textMuted, cursor: "pointer", display: "grid", placeItems: "center", flexShrink: 0 }}><X size={11} /></button>
+                <button
+                  onClick={() => setSearch("")}
+                  style={{
+                    border: "none",
+                    background: "transparent",
+                    color: C.textMuted,
+                    cursor: "pointer",
+                    display: "grid",
+                    placeItems: "center",
+                    flexShrink: 0,
+                  }}
+                >
+                  <X size={11} />
+                </button>
               )}
             </motion.div>
 
-            {/* Sort */}
             <div ref={sortRef} style={{ position: "relative" }}>
-              <motion.button whileHover={{ borderColor: C.borderHover }} whileTap={{ scale: 0.96 }} onClick={() => setSortOpen((p) => !p)}
-                style={{ height: "34px", padding: "0 12px", borderRadius: radius.sm, border: `1px solid ${sortOpen ? C.accentBorder : C.border}`, background: sortOpen ? C.accentSoft : C.surface, color: sortOpen ? "#c4b5fd" : "rgba(255,255,255,0.8)", display: "inline-flex", alignItems: "center", gap: "7px", cursor: "pointer", fontSize: "12.5px", fontFamily: "inherit", transition: "all 0.15s ease" }}
+              <motion.button
+                whileHover={{ borderColor: C.borderHover }}
+                whileTap={{ scale: 0.96 }}
+                onClick={() => setSortOpen((p) => !p)}
+                style={{
+                  height: "34px",
+                  padding: "0 12px",
+                  borderRadius: radius.sm,
+                  border: `1px solid ${sortOpen ? C.accentBorder : C.border}`,
+                  background: sortOpen ? C.accentSoft : C.surface,
+                  color: sortOpen ? "#c4b5fd" : "rgba(255,255,255,0.8)",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "7px",
+                  cursor: "pointer",
+                  fontSize: "12.5px",
+                  fontFamily: "inherit",
+                  transition: "all 0.15s ease",
+                }}
               >
                 <SortIcon size={12} />
                 {sort}
-                <motion.div animate={{ rotate: sortOpen ? 180 : 0 }} transition={{ duration: 0.2 }}><ChevronDown size={12} /></motion.div>
+                <motion.div animate={{ rotate: sortOpen ? 180 : 0 }} transition={{ duration: 0.2 }}>
+                  <ChevronDown size={12} />
+                </motion.div>
               </motion.button>
+
               <AnimatePresence>
                 {sortOpen && (
-                  <motion.div initial={{ opacity: 0, y: 8, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 4, scale: 0.97 }} transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
-                    style={{ position: "absolute", top: "calc(100% + 6px)", right: 0, width: "170px", background: "rgba(12,14,22,0.99)", border: `1px solid ${C.border}`, borderRadius: radius.md, boxShadow: "0 20px 50px rgba(0,0,0,0.4)", overflow: "hidden", zIndex: 100, backdropFilter: "blur(14px)" }}
+                  <motion.div
+                    initial={{ opacity: 0, y: 8, scale: 0.97 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 4, scale: 0.97 }}
+                    transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+                    style={{
+                      position: "absolute",
+                      top: "calc(100% + 6px)",
+                      right: 0,
+                      width: "170px",
+                      background: "rgba(12,14,22,0.99)",
+                      border: `1px solid ${C.border}`,
+                      borderRadius: radius.md,
+                      boxShadow: "0 20px 50px rgba(0,0,0,0.4)",
+                      overflow: "hidden",
+                      zIndex: 100,
+                      backdropFilter: "blur(14px)",
+                    }}
                   >
                     {SORT_OPTIONS.map((opt, i) => (
-                      <button key={opt} onClick={() => { setSort(opt); setSortOpen(false); }}
-                        style={{ width: "100%", padding: "10px 14px", background: sort === opt ? "linear-gradient(135deg, rgba(79,70,229,0.2), rgba(124,58,237,0.15))" : "transparent", color: sort === opt ? "#c4b5fd" : C.textMuted, border: "none", borderBottom: i !== SORT_OPTIONS.length - 1 ? `1px solid ${C.border}` : "none", textAlign: "left", cursor: "pointer", fontSize: "13px", fontFamily: "inherit", transition: "background 0.14s ease" }}
-                        onMouseEnter={(e) => { if (sort !== opt) e.currentTarget.style.background = C.surfaceHover; }}
-                        onMouseLeave={(e) => { if (sort !== opt) e.currentTarget.style.background = "transparent"; }}
-                      >{opt}</button>
+                      <button
+                        key={opt}
+                        onClick={() => {
+                          setSort(opt);
+                          setSortOpen(false);
+                        }}
+                        style={{
+                          width: "100%",
+                          padding: "10px 14px",
+                          background:
+                            sort === opt
+                              ? "linear-gradient(135deg, rgba(79,70,229,0.2), rgba(124,58,237,0.15))"
+                              : "transparent",
+                          color: sort === opt ? "#c4b5fd" : C.textMuted,
+                          border: "none",
+                          borderBottom: i !== SORT_OPTIONS.length - 1 ? `1px solid ${C.border}` : "none",
+                          textAlign: "left",
+                          cursor: "pointer",
+                          fontSize: "13px",
+                          fontFamily: "inherit",
+                          transition: "background 0.14s ease",
+                        }}
+                        onMouseEnter={(e) => {
+                          if (sort !== opt) e.currentTarget.style.background = C.surfaceHover;
+                        }}
+                        onMouseLeave={(e) => {
+                          if (sort !== opt) e.currentTarget.style.background = "transparent";
+                        }}
+                      >
+                        {opt}
+                      </button>
                     ))}
                   </motion.div>
                 )}
@@ -362,15 +472,44 @@ export default function ExplorePage() {
         {/* ── Scrollable Content ── */}
         <div style={{ overflow: "auto", minHeight: 0 }}>
           <div style={{ maxWidth: "1400px", margin: "0 auto", padding: "24px 24px 48px" }}>
-
-            {/* Header */}
-            <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }} style={{ marginBottom: "28px" }}>
-              <div style={{ display: "inline-flex", alignItems: "center", gap: "8px", padding: "5px 12px", border: `1px solid ${C.border}`, borderRadius: radius.full, background: C.surface, color: C.textMuted, fontSize: "12px", marginBottom: "14px" }}>
+            <motion.div
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5 }}
+              style={{ marginBottom: "28px" }}
+            >
+              <div
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  padding: "5px 12px",
+                  border: `1px solid ${C.border}`,
+                  borderRadius: radius.full,
+                  background: C.surface,
+                  color: C.textMuted,
+                  fontSize: "12px",
+                  marginBottom: "14px",
+                }}
+              >
                 <Zap size={11} color="#a78bfa" /> {filtered.length} creations
               </div>
-              <h1 style={{ fontSize: "38px", fontWeight: 900, letterSpacing: "-0.03em", margin: "0 0 8px", lineHeight: 1, background: "linear-gradient(135deg, #fff 40%, rgba(167,139,250,0.85))", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
+
+              <h1
+                style={{
+                  fontSize: "38px",
+                  fontWeight: 900,
+                  letterSpacing: "-0.03em",
+                  margin: "0 0 8px",
+                  lineHeight: 1,
+                  background: "linear-gradient(135deg, #fff 40%, rgba(167,139,250,0.85))",
+                  WebkitBackgroundClip: "text",
+                  WebkitTextFillColor: "transparent",
+                }}
+              >
                 Explore
               </h1>
+
               <p style={{ margin: 0, color: C.textMuted, fontSize: "15px", lineHeight: 1.6 }}>
                 Discover cinematic images, videos, and stories built with Kylor AI.
               </p>
@@ -379,31 +518,66 @@ export default function ExplorePage() {
             {filtered.length === 0 ? (
               <div style={{ display: "grid", placeItems: "center", paddingTop: "80px" }}>
                 <div style={{ textAlign: "center" }}>
-                  <div style={{ width: "64px", height: "64px", borderRadius: "999px", margin: "0 auto 14px", display: "grid", placeItems: "center", border: `1px solid ${C.border}`, background: C.surface }}>
+                  <div
+                    style={{
+                      width: "64px",
+                      height: "64px",
+                      borderRadius: "999px",
+                      margin: "0 auto 14px",
+                      display: "grid",
+                      placeItems: "center",
+                      border: `1px solid ${C.border}`,
+                      background: C.surface,
+                    }}
+                  >
                     <Search size={24} color={C.textDim} />
                   </div>
-                  <p style={{ margin: "0 0 6px", fontSize: "16px", fontWeight: 700 }}>No results found</p>
-                  <p style={{ margin: 0, color: C.textMuted, fontSize: "13px" }}>Try a different search or filter.</p>
+                  <p style={{ margin: "0 0 6px", fontSize: "16px", fontWeight: 700 }}>
+                    No results found
+                  </p>
+                  <p style={{ margin: 0, color: C.textMuted, fontSize: "13px" }}>
+                    Try a different search or filter.
+                  </p>
                 </div>
               </div>
             ) : (
               <>
-                {/* ── Featured row (first 2) ── */}
                 {featured.length > 0 && (
-                  <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: 0.06 }} style={{ display: "grid", gridTemplateColumns: featured.length === 1 ? "1fr" : "1.3fr 1fr", gap: "14px", marginBottom: "14px" }}>
+                  <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.5, delay: 0.06 }}
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: featured.length === 1 ? "1fr" : "1.3fr 1fr",
+                      gap: "14px",
+                      marginBottom: "14px",
+                    }}
+                  >
                     {featured.map((item) => (
                       <ExploreCard key={item.id} item={item} featured onClick={() => setLightboxItem(item)} />
                     ))}
                   </motion.div>
                 )}
 
-                {/* ── Grid (rest) ── */}
                 {rest.length > 0 && (
-                  <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: 0.12 }}
-                    style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: "14px" }}
+                  <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.5, delay: 0.12 }}
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))",
+                      gap: "14px",
+                    }}
                   >
                     {rest.map((item, i) => (
-                      <motion.div key={item.id} initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 + i * 0.05 }}>
+                      <motion.div
+                        key={item.id}
+                        initial={{ opacity: 0, y: 16 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.15 + i * 0.05 }}
+                      >
                         <ExploreCard item={item} onClick={() => setLightboxItem(item)} />
                       </motion.div>
                     ))}
@@ -412,13 +586,14 @@ export default function ExplorePage() {
               </>
             )}
           </div>
-        </div>
+               </div>
       </div>
 
       {/* ── Lightbox ── */}
       <AnimatePresence>
         {lightboxItem && <Lightbox item={lightboxItem} onClose={() => setLightboxItem(null)} />}
       </AnimatePresence>
-    </main>
-  );
+    </div>
+  </main>
+);
 }
