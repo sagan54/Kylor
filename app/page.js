@@ -59,28 +59,32 @@ const SIDEBAR_ITEMS = [
 const TOOLS = [
   {
     title: "Image Generation",
-    description: "Create cinematic stills, concept frames, style explorations, and key visuals.",
+    description:
+      "Create cinematic stills, concept frames, style explorations, and key visuals.",
     tag: "Coming next",
     icon: ImageIcon,
     href: "/image",
   },
   {
     title: "Video Generation",
-    description: "Build AI-driven cinematic clips, motion shots, and visual sequences.",
+    description:
+      "Build AI-driven cinematic clips, motion shots, and visual sequences.",
     badge: "Live now",
     icon: Video,
     href: "/video",
   },
   {
     title: "Character Consistency",
-    description: "Keep identity, wardrobe, and visual continuity consistent across outputs.",
+    description:
+      "Keep identity, wardrobe, and visual continuity consistent across outputs.",
     tag: "Coming next",
     icon: UserCircle2,
     href: "#",
   },
   {
     title: "Motion Tools",
-    description: "Develop motion lock, camera control, subject tracking, and movement workflows.",
+    description:
+      "Develop motion lock, camera control, subject tracking, and movement workflows.",
     tag: "Coming next",
     icon: Orbit,
     href: "#",
@@ -88,7 +92,7 @@ const TOOLS = [
 ];
 
 // ─── Sidebar Item ─────────────────────────────────────────────────────────────
-function SidebarItem({ item, isMobile = false }) {
+function SidebarItem({ item }) {
   const Icon = item.icon;
 
   const inner = (
@@ -96,21 +100,19 @@ function SidebarItem({ item, isMobile = false }) {
       whileHover={{ scale: 1.03 }}
       whileTap={{ scale: 0.97 }}
       style={{
-  display: isMobile ? "flex" : "grid",
-  justifyItems: isMobile ? "unset" : "center",
-  alignItems: "center",
-  gap: isMobile ? "8px" : "6px",
-  padding: isMobile ? "10px 12px" : "10px 6px",
-  borderRadius: radius.lg,
-  background: item.active
-    ? "linear-gradient(160deg, rgba(79,70,229,0.22), rgba(124,58,237,0.14))"
-    : "transparent",
-  border: `1px solid ${item.active ? C.border : "transparent"}`,
-  color: item.active ? C.text : C.textMuted,
-  cursor: "pointer",
-  transition: "all 0.18s ease",
-  minWidth: isMobile ? "auto" : undefined,
-}}
+        display: "grid",
+        justifyItems: "center",
+        gap: "6px",
+        padding: "10px 6px",
+        borderRadius: radius.lg,
+        background: item.active
+          ? "linear-gradient(160deg, rgba(79,70,229,0.22), rgba(124,58,237,0.14))"
+          : "transparent",
+        border: `1px solid ${item.active ? C.border : "transparent"}`,
+        color: item.active ? C.text : C.textMuted,
+        cursor: "pointer",
+        transition: "all 0.18s ease",
+      }}
     >
       <div
         style={{
@@ -119,22 +121,17 @@ function SidebarItem({ item, isMobile = false }) {
           borderRadius: "12px",
           display: "grid",
           placeItems: "center",
-          background: item.active ? "rgba(255,255,255,0.07)" : "rgba(255,255,255,0.02)",
+          background: item.active
+            ? "rgba(255,255,255,0.07)"
+            : "rgba(255,255,255,0.02)",
         }}
       >
         <Icon size={17} />
       </div>
 
-      <span
-  style={{
-    fontSize: isMobile ? "12px" : "10.5px",
-    textAlign: "center",
-    lineHeight: 1.2,
-    whiteSpace: "nowrap",
-  }}
->
-  {item.label}
-</span>
+      <span style={{ fontSize: "10.5px", textAlign: "center", lineHeight: 1.2 }}>
+        {item.label}
+      </span>
     </motion.div>
   );
 
@@ -222,7 +219,7 @@ function SidebarProfile({ credits = 0, onClick, isOpen }) {
 }
 
 // ─── Profile Popup ────────────────────────────────────────────────────────────
-function ProfilePopup({ session, credits, onClose, onLogout, isTablet = false }) {
+function ProfilePopup({ session, credits, onClose, onLogout }) {
   const email = session?.user?.email || "Guest User";
   const userId = session?.user?.id ? session.user.id.slice(0, 8) : "No ID";
 
@@ -234,10 +231,9 @@ function ProfilePopup({ session, credits, onClose, onLogout, isTablet = false })
       transition={{ duration: 0.2, ease: "easeOut" }}
       style={{
         position: "absolute",
-        left: isTablet ? "76px" : "92px",
-bottom: "18px",
-width: isTablet ? "300px" : "360px",
-maxWidth: "calc(100vw - 24px)",
+        left: "92px",
+        bottom: "18px",
+        width: "360px",
         borderRadius: "24px",
         border: `1px solid ${C.border}`,
         background:
@@ -322,7 +318,8 @@ maxWidth: "calc(100vw - 24px)",
                 height: "40px",
                 padding: "0 16px",
                 borderRadius: "12px",
-                background: "linear-gradient(135deg, rgba(34,197,94,0.22), rgba(34,197,94,0.12))",
+                background:
+                  "linear-gradient(135deg, rgba(34,197,94,0.22), rgba(34,197,94,0.12))",
                 border: "1px solid rgba(34,197,94,0.28)",
                 color: "#b7f7c8",
                 fontSize: "13px",
@@ -333,8 +330,7 @@ maxWidth: "calc(100vw - 24px)",
                 cursor: "pointer",
               }}
             >
-              Profile
-              <ChevronRight size={14} />
+              Profile <ChevronRight size={14} />
             </motion.div>
           </Link>
         ) : (
@@ -345,7 +341,8 @@ maxWidth: "calc(100vw - 24px)",
                 height: "40px",
                 padding: "0 16px",
                 borderRadius: "12px",
-                background: "linear-gradient(135deg, rgba(34,197,94,0.22), rgba(34,197,94,0.12))",
+                background:
+                  "linear-gradient(135deg, rgba(34,197,94,0.22), rgba(34,197,94,0.12))",
                 border: "1px solid rgba(34,197,94,0.28)",
                 color: "#b7f7c8",
                 fontSize: "13px",
@@ -356,8 +353,7 @@ maxWidth: "calc(100vw - 24px)",
                 cursor: "pointer",
               }}
             >
-              Login
-              <ChevronRight size={14} />
+              Login <ChevronRight size={14} />
             </motion.div>
           </Link>
         )}
@@ -376,7 +372,6 @@ maxWidth: "calc(100vw - 24px)",
         <div style={{ color: "rgba(255,255,255,0.9)", fontWeight: 700, fontSize: "15px" }}>
           My Workspace
         </div>
-
         <div
           style={{
             display: "inline-flex",
@@ -386,8 +381,7 @@ maxWidth: "calc(100vw - 24px)",
             fontSize: "13px",
           }}
         >
-          All
-          <ChevronRight size={14} />
+          All <ChevronRight size={14} />
         </div>
       </div>
 
@@ -421,7 +415,14 @@ maxWidth: "calc(100vw - 24px)",
           </div>
 
           <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: "15px", fontWeight: 700, color: "white", marginBottom: "4px" }}>
+            <div
+              style={{
+                fontSize: "15px",
+                fontWeight: 700,
+                color: "white",
+                marginBottom: "4px",
+              }}
+            >
               Personal Workspace
             </div>
             <div style={{ fontSize: "13px", color: C.textMuted }}>
@@ -445,7 +446,7 @@ maxWidth: "calc(100vw - 24px)",
       <div
         style={{
           borderRadius: "12px",
-          border: `1px solid rgba(255,255,255,0.12)`,
+          border: "1px solid rgba(255,255,255,0.12)",
           background: "rgba(255,255,255,0.05)",
           height: "46px",
           display: "flex",
@@ -458,8 +459,7 @@ maxWidth: "calc(100vw - 24px)",
           marginBottom: "14px",
         }}
       >
-        <Plus size={16} />
-        Create Workspace
+        <Plus size={16} /> Create Workspace
       </div>
 
       <div
@@ -543,86 +543,73 @@ export default function Home() {
   const [session, setSession] = useState(null);
   const [credits, setCredits] = useState(0);
   const [profileOpen, setProfileOpen] = useState(false);
-    const [isMobile, setIsMobile] = useState(false);
-  const [isTablet, setIsTablet] = useState(false);
   const profileWrapRef = useRef(null);
 
   useEffect(() => {
-    function handleResize() {
-      setIsMobile(window.innerWidth < 768);
-      setIsTablet(window.innerWidth >= 768 && window.innerWidth < 1100);
+    let mounted = true;
+
+    async function loadCredits(userId) {
+      if (!userId) {
+        if (mounted) setCredits(0);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("user_credits")
+        .select("credits")
+        .eq("user_id", userId)
+        .maybeSingle();
+
+      if (!mounted) return;
+
+      if (error) {
+        console.error("Credits load error:", error);
+        setCredits(0);
+        return;
+      }
+
+      setCredits(data?.credits || 0);
     }
 
-    handleResize();
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
-  }, []);
+    async function bootstrap() {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
 
-  useEffect(() => {
-  let mounted = true;
+      if (!mounted) return;
 
-  async function loadCredits(userId) {
-    if (!userId) {
-      if (mounted) setCredits(0);
-      return;
+      setSession(session);
+
+      if (session?.user?.id) {
+        loadCredits(session.user.id);
+      } else {
+        setCredits(0);
+      }
     }
 
-    const { data, error } = await supabase
-      .from("user_credits")
-      .select("credits")
-      .eq("user_id", userId)
-      .maybeSingle();
+    bootstrap();
 
-    if (!mounted) return;
-
-    if (error) {
-      console.error("Credits load error:", error);
-      setCredits(0);
-      return;
-    }
-
-    setCredits(data?.credits || 0);
-  }
-
-  async function bootstrap() {
     const {
-      data: { session },
-    } = await supabase.auth.getSession();
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if (!mounted) return;
 
-    if (!mounted) return;
+      setSession(session);
 
-    setSession(session);
+      if (session?.user?.id) {
+        setTimeout(() => {
+          if (mounted) loadCredits(session.user.id);
+        }, 0);
+      } else {
+        setCredits(0);
+      }
+    });
 
-    if (session?.user?.id) {
-      loadCredits(session.user.id);
-    } else {
-      setCredits(0);
-    }
-  }
-
-  bootstrap();
-
-  const {
-    data: { subscription },
-  } = supabase.auth.onAuthStateChange((event, session) => {
-    if (!mounted) return;
-
-    setSession(session);
-
-    if (session?.user?.id) {
-      setTimeout(() => {
-        if (mounted) loadCredits(session.user.id);
-      }, 0);
-    } else {
-      setCredits(0);
-    }
-  });
-
-  return () => {
-    mounted = false;
-    subscription.unsubscribe();
-  };
-}, []);
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
+  }, []);
 
   useEffect(() => {
     function handleClickOutside(e) {
@@ -653,7 +640,11 @@ export default function Home() {
 
   const quickActions = [
     { title: "Story Engine", subtitle: "Live now", href: session ? "/story" : "/signup" },
-    { title: "Project Workspace", subtitle: "Continue building", href: session ? "/story" : "/signup" },
+    {
+      title: "Project Workspace",
+      subtitle: "Continue building",
+      href: session ? "/story" : "/signup",
+    },
     { title: "Creative Modules", subtitle: "More engines coming", href: "#" },
   ];
 
@@ -661,49 +652,42 @@ export default function Home() {
     <main
       style={{
         minHeight: "100vh",
-        background: `radial-gradient(ellipse at 8% 12%, rgba(79,70,229,0.13), transparent 28%), radial-gradient(ellipse at 92% 8%, rgba(124,58,237,0.11), transparent 30%), radial-gradient(ellipse at 50% 80%, rgba(79,70,229,0.06), transparent 40%), ${C.bg}`,
+        background: `radial-gradient(ellipse at 8% 12%, rgba(79,70,229,0.13), transparent 28%),
+          radial-gradient(ellipse at 92% 8%, rgba(124,58,237,0.11), transparent 30%),
+          radial-gradient(ellipse at 50% 80%, rgba(79,70,229,0.06), transparent 40%),
+          ${C.bg}`,
         color: C.text,
         fontFamily: "'Inter', 'SF Pro Display', sans-serif",
       }}
     >
-      <div
-  style={{
-    display: "grid",
-    gridTemplateColumns: isMobile ? "1fr" : "88px 1fr",
-    minHeight: "100vh",
-  }}
->
+      <div style={{ display: "grid", gridTemplateColumns: "88px 1fr", minHeight: "100vh" }}>
         {/* ── Sidebar — FIXED so it never scrolls ── */}
         <aside
-style={{
-  position: isMobile ? "relative" : "fixed",
-  top: 0,
-  left: 0,
-  width: isMobile ? "100%" : "88px",
-  height: isMobile ? "auto" : "100vh",
-  borderRight: isMobile ? "none" : `1px solid ${C.border}`,
-  borderBottom: isMobile ? `1px solid ${C.border}` : "none",
-  background: C.sidebar,
-  padding: isMobile ? "12px 10px" : "18px 10px",
-  display: "flex",
-  flexDirection: isMobile ? "row" : "column",
-  alignItems: "center",
-  overflowX: isMobile ? "auto" : "visible",
-  overflowY: "visible",
-  zIndex: 100,
-  gap: isMobile ? "10px" : 0,
-}}
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            width: "88px",
+            height: "100vh",
+            borderRight: `1px solid ${C.border}`,
+            background: C.sidebar,
+            padding: "18px 10px",
+            display: "flex",
+            flexDirection: "column",
+            overflow: "visible",
+            zIndex: 100,
+          }}
         >
           <div
             style={{
               width: "46px",
               height: "46px",
               borderRadius: "16px",
-              margin: isMobile ? "0" : "0 auto 22px",
-flexShrink: 0,
+              margin: "0 auto 22px",
               display: "grid",
               placeItems: "center",
-              background: "linear-gradient(135deg, rgba(79,70,229,0.28), rgba(124,58,237,0.18))",
+              background:
+                "linear-gradient(135deg, rgba(79,70,229,0.28), rgba(124,58,237,0.18))",
               border: `1px solid ${C.border}`,
               boxShadow: `0 0 20px ${C.accentGlow}`,
             }}
@@ -711,74 +695,53 @@ flexShrink: 0,
             <Sparkles size={20} color="#a78bfa" />
           </div>
 
-<div
-  style={{
-    display: isMobile ? "flex" : "grid",
-    gap: "8px",
-    flex: 1,
-    minWidth: 0,
-    overflowX: isMobile ? "auto" : "visible",
-  }}
->
-  {SIDEBAR_ITEMS.map((item) => (
-    <div key={item.label} style={{ flex: isMobile ? "0 0 auto" : "unset" }}>
-      <SidebarItem item={item} isMobile={isMobile} />
-    </div>
-  ))}
-</div>
+          <div style={{ display: "grid", gap: "8px" }}>
+            {SIDEBAR_ITEMS.map((item) => (
+              <SidebarItem key={item.label} item={item} />
+            ))}
+          </div>
 
-          {!isMobile && (
-  <div
-    ref={profileWrapRef}
-    style={{ marginTop: "auto", paddingTop: "14px", position: "relative" }}
-  >
-    <SidebarProfile
-      credits={credits}
-      isOpen={profileOpen}
-      onClick={() => setProfileOpen((v) => !v)}
-    />
+          <div
+            ref={profileWrapRef}
+            style={{ marginTop: "auto", paddingTop: "14px", position: "relative" }}
+          >
+            <SidebarProfile
+              credits={credits}
+              isOpen={profileOpen}
+              onClick={() => setProfileOpen((v) => !v)}
+            />
 
-    <AnimatePresence>
-      {profileOpen && (
-        <ProfilePopup
-  session={session}
-  credits={credits}
-  onClose={() => setProfileOpen(false)}
-  onLogout={handleLogout}
-  isTablet={isTablet}
-/>
-      )}
-    </AnimatePresence>
-  </div>
-)}
+            <AnimatePresence>
+              {profileOpen && (
+                <ProfilePopup
+                  session={session}
+                  credits={credits}
+                  onClose={() => setProfileOpen(false)}
+                  onLogout={handleLogout}
+                />
+              )}
+            </AnimatePresence>
+          </div>
         </aside>
 
         {/* ── Scrollable main content — offset by sidebar width ── */}
-        <div
-  style={{
-    gridColumn: isMobile ? "1" : "2",
-    minHeight: "100vh",
-    overflowY: "auto",
-    minWidth: 0,
-  }}
->
+        <div style={{ gridColumn: "2", minHeight: "100vh", overflowY: "auto" }}>
           {/* Top bar */}
           <div
             style={{
-  position: "sticky",
-  top: 0,
-  zIndex: 50,
-  borderBottom: `1px solid ${C.border}`,
-  background: `rgba(5,7,12,0.85)`,
-  backdropFilter: "blur(16px)",
-  padding: isMobile ? "8px 14px" : "0 28px",
-  minHeight: isMobile ? "auto" : "52px",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: isMobile ? "flex-start" : "flex-end",
-  gap: "8px",
-  flexWrap: "wrap",
-}}
+              position: "sticky",
+              top: 0,
+              zIndex: 50,
+              borderBottom: `1px solid ${C.border}`,
+              background: "rgba(5,7,12,0.85)",
+              backdropFilter: "blur(16px)",
+              padding: "0 28px",
+              height: "52px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "flex-end",
+              gap: "8px",
+            }}
           >
             {session ? (
               <>
@@ -853,7 +816,7 @@ flexShrink: 0,
 
                 <Link href="/signup" style={{ textDecoration: "none" }}>
                   <motion.div
-                    whileHover={{ boxShadow: `0 14px 32px rgba(124,58,237,0.38)` }}
+                    whileHover={{ boxShadow: "0 14px 32px rgba(124,58,237,0.38)" }}
                     whileTap={{ scale: 0.97 }}
                     style={{
                       height: "34px",
@@ -878,14 +841,7 @@ flexShrink: 0,
           </div>
 
           {/* Page body */}
-          <div
-  style={{
-    maxWidth: "1320px",
-    margin: "0 auto",
-    padding: isMobile ? "20px 14px 40px" : isTablet ? "28px 20px 56px" : "40px 28px 64px",
-    minWidth: 0,
-  }}
->
+          <div style={{ maxWidth: "1320px", margin: "0 auto", padding: "40px 28px 64px" }}>
             {/* ── Hero ── */}
             <motion.div
               initial={{ opacity: 0, y: 24 }}
@@ -932,11 +888,12 @@ flexShrink: 0,
                 <div>
                   <h1
                     style={{
-                      fontSize: isMobile ? "42px" : isTablet ? "52px" : "64px",
+                      fontSize: "64px",
                       lineHeight: 1,
                       margin: "0 0 14px",
                       letterSpacing: "-0.04em",
-                      background: "linear-gradient(135deg, #fff 40%, rgba(167,139,250,0.9))",
+                      background:
+                        "linear-gradient(135deg, #fff 40%, rgba(167,139,250,0.9))",
                       WebkitBackgroundClip: "text",
                       WebkitTextFillColor: "transparent",
                     }}
@@ -949,11 +906,12 @@ flexShrink: 0,
                       margin: "0 0 8px",
                       maxWidth: "600px",
                       color: "rgba(255,255,255,0.68)",
-                      fontSize: isMobile ? "15px" : "17px",
+                      fontSize: "17px",
                       lineHeight: 1.8,
                     }}
                   >
-                    A cinematic AI production workspace for story, image, video, character consistency, and motion-driven creative workflows.
+                    A cinematic AI production workspace for story, image, video,
+                    character consistency, and motion-driven creative workflows.
                   </p>
 
                   <p style={{ margin: 0, color: C.textDim, fontSize: "14px" }}>
@@ -962,23 +920,14 @@ flexShrink: 0,
                 </div>
 
                 {/* Quick action cards */}
-                <div
-  style={{
-    display: "flex",
-    flexDirection: isMobile ? "column" : "row",
-    gap: "10px",
-    flexWrap: isMobile ? "nowrap" : "wrap",
-    width: isMobile ? "100%" : "auto",
-  }}
->
+                <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
                   {quickActions.map((action) => {
                     const inner = (
                       <motion.div
                         whileHover={{ y: -3, borderColor: C.accentBorder }}
                         whileTap={{ scale: 0.97 }}
                         style={{
-                          minWidth: isMobile ? "100%" : "180px",
-width: isMobile ? "100%" : "auto",
+                          minWidth: "180px",
                           padding: "14px 16px",
                           borderRadius: radius.lg,
                           border: `1px solid ${C.border}`,
@@ -988,7 +937,13 @@ width: isMobile ? "100%" : "auto",
                           transition: "all 0.18s ease",
                         }}
                       >
-                        <div style={{ fontSize: "11.5px", color: C.textMuted, marginBottom: "8px" }}>
+                        <div
+                          style={{
+                            fontSize: "11.5px",
+                            color: C.textMuted,
+                            marginBottom: "8px",
+                          }}
+                        >
                           {action.subtitle}
                         </div>
 
@@ -1009,19 +964,13 @@ width: isMobile ? "100%" : "auto",
                     );
 
                     return action.href === "#" ? (
-                      <div key={action.title} style={{ width: isMobile ? "100%" : "auto" }}>
-  {inner}
-</div>
+                      <div key={action.title}>{inner}</div>
                     ) : (
                       <Link
-  key={action.title}
-  href={action.href}
-  style={{
-    textDecoration: "none",
-    color: "inherit",
-    width: isMobile ? "100%" : "auto",
-  }}
->
+                        key={action.title}
+                        href={action.href}
+                        style={{ textDecoration: "none", color: "inherit" }}
+                      >
                         {inner}
                       </Link>
                     );
@@ -1032,14 +981,13 @@ width: isMobile ? "100%" : "auto",
 
             {/* ── Feature cards ── */}
             <div
-  style={{
-    display: "grid",
-    gridTemplateColumns: isMobile ? "1fr" : isTablet ? "1fr" : "1.5fr 1fr",
-    gap: "16px",
-    marginBottom: "16px",
-    minWidth: 0,
-  }}
->
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1.5fr 1fr",
+                gap: "16px",
+                marginBottom: "16px",
+              }}
+            >
               {/* Story Engine hero card */}
               <motion.div
                 initial={{ opacity: 0, y: 24 }}
@@ -1051,7 +999,8 @@ width: isMobile ? "100%" : "auto",
                   border: `1px solid ${C.accentBorder}`,
                   background:
                     "linear-gradient(135deg, rgba(79,70,229,0.18), rgba(255,255,255,0.02) 40%, rgba(124,58,237,0.16))",
-                  boxShadow: `0 20px 48px rgba(0,0,0,0.3), 0 0 60px rgba(79,70,229,0.08)`,
+                  boxShadow:
+                    "0 20px 48px rgba(0,0,0,0.3), 0 0 60px rgba(79,70,229,0.08)",
                   position: "relative",
                   minHeight: "380px",
                 }}
@@ -1071,7 +1020,7 @@ width: isMobile ? "100%" : "auto",
                   style={{
                     position: "relative",
                     zIndex: 1,
-                    padding: isMobile ? "20px" : "32px",
+                    padding: "32px",
                     display: "flex",
                     flexDirection: "column",
                     height: "100%",
@@ -1086,7 +1035,7 @@ width: isMobile ? "100%" : "auto",
                         gap: "7px",
                         padding: "5px 12px",
                         borderRadius: radius.full,
-                        border: `1px solid rgba(34,197,94,0.3)`,
+                        border: "1px solid rgba(34,197,94,0.3)",
                         background: "rgba(34,197,94,0.1)",
                         color: "#86efac",
                         fontSize: "12px",
@@ -1107,7 +1056,7 @@ width: isMobile ? "100%" : "auto",
 
                     <h2
                       style={{
-                        fontSize: isMobile ? "28px" : "36px",
+                        fontSize: "36px",
                         lineHeight: 1.1,
                         margin: "0 0 14px",
                         letterSpacing: "-0.025em",
@@ -1121,19 +1070,28 @@ width: isMobile ? "100%" : "auto",
                       style={{
                         margin: 0,
                         color: "rgba(255,255,255,0.7)",
-                        fontSize: isMobile ? "14px" : "16px",
+                        fontSize: "16px",
                         lineHeight: 1.8,
                         maxWidth: "520px",
                       }}
                     >
-                      Generate story structures, save projects, open your workspace, and continue building characters, scenes, and cinematic development inside Kylor AI.
+                      Generate story structures, save projects, open your workspace,
+                      and continue building characters, scenes, and cinematic
+                      development inside Kylor AI.
                     </p>
                   </div>
 
-                  <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", marginTop: "28px" }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: "10px",
+                      flexWrap: "wrap",
+                      marginTop: "28px",
+                    }}
+                  >
                     <Link href={session ? "/story" : "/signup"} style={{ textDecoration: "none" }}>
                       <motion.div
-                        whileHover={{ boxShadow: `0 18px 40px rgba(124,58,237,0.4)` }}
+                        whileHover={{ boxShadow: "0 18px 40px rgba(124,58,237,0.4)" }}
                         whileTap={{ scale: 0.97 }}
                         style={{
                           height: "44px",
@@ -1187,8 +1145,9 @@ width: isMobile ? "100%" : "auto",
                 style={{
                   borderRadius: "24px",
                   border: `1px solid ${C.border}`,
-                  background: "linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.02))",
-                  padding: isMobile ? "20px" : "28px",
+                  background:
+                    "linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.02))",
+                  padding: "28px",
                   boxShadow: "0 18px 40px rgba(0,0,0,0.22)",
                 }}
               >
@@ -1208,7 +1167,7 @@ width: isMobile ? "100%" : "auto",
                 <h3
                   style={{
                     margin: "0 0 14px",
-                    fontSize: isMobile ? "22px" : "26px",
+                    fontSize: "26px",
                     lineHeight: 1.15,
                     fontWeight: 800,
                     letterSpacing: "-0.02em",
@@ -1225,14 +1184,19 @@ width: isMobile ? "100%" : "auto",
                     fontSize: "14.5px",
                   }}
                 >
-                  The current active experience is Story Engine. Next modules extend Kylor into image generation, video generation, consistency systems, and motion-aware AI tools.
+                  The current active experience is Story Engine. Next modules extend
+                  Kylor into image generation, video generation, consistency systems,
+                  and motion-aware AI tools.
                 </p>
 
                 <div style={{ display: "grid", gap: "10px" }}>
                   {[
                     { text: "Story development foundation is live", live: true },
                     { text: "Image and video engines are planned next", live: false },
-                    { text: "Consistency and motion will become core production tools", live: false },
+                    {
+                      text: "Consistency and motion will become core production tools",
+                      live: false,
+                    },
                   ].map(({ text, live }) => (
                     <div
                       key={text}
@@ -1285,7 +1249,9 @@ width: isMobile ? "100%" : "auto",
                       style={{
                         padding: "4px 10px",
                         borderRadius: "7px",
-                        border: `1px solid ${status === "live" ? "rgba(34,197,94,0.3)" : C.border}`,
+                        border: `1px solid ${
+                          status === "live" ? "rgba(34,197,94,0.3)" : C.border
+                        }`,
                         background: status === "live" ? "rgba(34,197,94,0.1)" : C.surface,
                         fontSize: "11.5px",
                         color: status === "live" ? "#86efac" : C.textMuted,
@@ -1304,16 +1270,7 @@ width: isMobile ? "100%" : "auto",
               initial={{ opacity: 0, y: 24 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6, delay: 0.2, ease: "easeOut" }}
-              style={{
-  display: "grid",
-  gridTemplateColumns: isMobile
-    ? "1fr"
-    : isTablet
-    ? "repeat(2, minmax(0, 1fr))"
-    : "repeat(4, minmax(0, 1fr))",
-  gap: "14px",
-  minWidth: 0,
-}}
+              style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "14px" }}
             >
               {TOOLS.map((tool) => {
                 const Icon = tool.icon;
@@ -1328,7 +1285,8 @@ width: isMobile ? "100%" : "auto",
                       border: `1px solid ${C.border}`,
                       borderRadius: "22px",
                       padding: "22px",
-                      background: "linear-gradient(180deg, rgba(255,255,255,0.045), rgba(255,255,255,0.02))",
+                      background:
+                        "linear-gradient(180deg, rgba(255,255,255,0.045), rgba(255,255,255,0.02))",
                       backdropFilter: "blur(14px)",
                       minHeight: "220px",
                       boxShadow: "0 10px 28px rgba(0,0,0,0.22)",
@@ -1414,20 +1372,14 @@ width: isMobile ? "100%" : "auto",
 
                 return tool.href !== "#" ? (
                   <Link
-  key={tool.title}
-  href={tool.href}
-  style={{
-    textDecoration: "none",
-    color: "inherit",
-    width: isMobile ? "100%" : "auto",
-  }}
->
+                    key={tool.title}
+                    href={tool.href}
+                    style={{ textDecoration: "none", color: "inherit" }}
+                  >
                     {inner}
                   </Link>
                 ) : (
-                  <div key={tool.title} style={{ width: isMobile ? "100%" : "auto" }}>
-  {inner}
-</div>
+                  <div key={tool.title}>{inner}</div>
                 );
               })}
             </motion.div>
@@ -1438,17 +1390,18 @@ width: isMobile ? "100%" : "auto",
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6, delay: 0.28, ease: "easeOut" }}
               style={{
-  marginTop: "20px",
-  borderRadius: "24px",
-  border: `1px solid ${C.border}`,
-  background: "linear-gradient(135deg, rgba(79,70,229,0.1), rgba(124,58,237,0.06))",
-  padding: isMobile ? "22px 18px" : "32px 36px",
-  display: "flex",
-  alignItems: isMobile ? "flex-start" : "center",
-  justifyContent: "space-between",
-  gap: "24px",
-  flexWrap: "wrap",
-}}
+                marginTop: "20px",
+                borderRadius: "24px",
+                border: `1px solid ${C.border}`,
+                background:
+                  "linear-gradient(135deg, rgba(79,70,229,0.1), rgba(124,58,237,0.06))",
+                padding: "32px 36px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: "24px",
+                flexWrap: "wrap",
+              }}
             >
               <div>
                 <div
@@ -1462,74 +1415,64 @@ width: isMobile ? "100%" : "auto",
                   Ready to build?
                 </div>
 
-                <p style={{ margin: 0, color: C.textMuted, fontSize: "14.5px", lineHeight: 1.7 }}>
-                  Start with Story Engine — the first live module of Kylor AI's cinematic production platform.
+                <p
+                  style={{
+                    margin: 0,
+                    color: C.textMuted,
+                    fontSize: "14.5px",
+                    lineHeight: 1.7,
+                  }}
+                >
+                  Start with Story Engine — the first live module of Kylor AI's
+                  cinematic production platform.
                 </p>
               </div>
 
-              <div
-  style={{
-    display: "flex",
-    gap: "10px",
-    flexShrink: 0,
-    flexWrap: "wrap",
-    width: isMobile ? "100%" : "auto",
-  }}
->
-                <Link
-  href={session ? "/story" : "/signup"}
-  style={{ textDecoration: "none", width: isMobile ? "100%" : "auto" }}
->
+              <div style={{ display: "flex", gap: "10px", flexShrink: 0 }}>
+                <Link href={session ? "/story" : "/signup"} style={{ textDecoration: "none" }}>
                   <motion.div
-  whileHover={{ boxShadow: `0 18px 40px rgba(124,58,237,0.38)` }}
-  whileTap={{ scale: 0.97 }}
-  style={{
-    height: "44px",
-    width: isMobile ? "100%" : "auto",
-    padding: "0 22px",
-    borderRadius: radius.md,
-    background: "linear-gradient(135deg, #4f46e5, #7c3aed)",
-    color: "white",
-    fontWeight: 700,
-    fontSize: "14px",
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: "8px",
-    cursor: "pointer",
-    boxShadow: `0 10px 28px ${C.accentGlow}`,
-    transition: "box-shadow 0.2s ease",
-  }}
->
+                    whileHover={{ boxShadow: "0 18px 40px rgba(124,58,237,0.38)" }}
+                    whileTap={{ scale: 0.97 }}
+                    style={{
+                      height: "44px",
+                      padding: "0 22px",
+                      borderRadius: radius.md,
+                      background: "linear-gradient(135deg, #4f46e5, #7c3aed)",
+                      color: "white",
+                      fontWeight: 700,
+                      fontSize: "14px",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "8px",
+                      cursor: "pointer",
+                      boxShadow: `0 10px 28px ${C.accentGlow}`,
+                      transition: "box-shadow 0.2s ease",
+                    }}
+                  >
                     <Zap size={14} />
                     {session ? "Open Story Engine" : "Get Started Free"}
                   </motion.div>
                 </Link>
 
                 {!session && (
-                  <Link
-  href="/login"
-  style={{ textDecoration: "none", width: isMobile ? "100%" : "auto" }}
->
-                    <motion.div                 
+                  <Link href="/login" style={{ textDecoration: "none" }}>
+                    <motion.div
                       whileHover={{ borderColor: C.borderHover }}
                       whileTap={{ scale: 0.97 }}
-style={{
-  height: "44px",
-  width: isMobile ? "100%" : "auto",
-  padding: "0 20px",
-  borderRadius: radius.md,
-  border: `1px solid ${C.border}`,
-  background: C.surface,
-  color: "rgba(255,255,255,0.8)",
-  fontWeight: 500,
-  fontSize: "14px",
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
-  cursor: "pointer",
-  transition: "border-color 0.15s ease",
-}}
+                      style={{
+                        height: "44px",
+                        padding: "0 20px",
+                        borderRadius: radius.md,
+                        border: `1px solid ${C.border}`,
+                        background: C.surface,
+                        color: "rgba(255,255,255,0.8)",
+                        fontWeight: 500,
+                        fontSize: "14px",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        cursor: "pointer",
+                        transition: "border-color 0.15s ease",
+                      }}
                     >
                       Sign In
                     </motion.div>

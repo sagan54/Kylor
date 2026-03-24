@@ -1,22 +1,45 @@
 "use client";
-
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Sparkles, Compass, Clapperboard, Image as ImageIcon, Video, UserCircle2,
-  Orbit, FolderKanban, Settings, Grid3X3, List, Wand2, ChevronRight,
-  Bell, BellOff, X, ChevronDown, Folder, Upload, Zap, Star, Download,
-  Share2, Trash2, Plus, Music, Check, Copy, CloudUpload,
+  Sparkles,
+  Compass,
+  Clapperboard,
+  Image as ImageIcon,
+  Video,
+  UserCircle2,
+  Orbit,
+  FolderKanban,
+  Settings,
+  Grid3X3,
+  List,
+  Wand2,
+  ChevronRight,
+  Bell,
+  BellOff,
+  X,
+  ChevronDown,
+  Folder,
+  Upload,
+  Zap,
+  Star,
+  Download,
+  Share2,
+  Trash2,
+  Plus,
+  Music,
+  Check,
+  Copy,
+  CloudUpload,
 } from "lucide-react";
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
-
 import { supabase } from "../../lib/supabase";
 
-// ─── Cache keys ───────────────────────────────────────────────────────────────
+// ─── Cache keys ──────────────────────────────────────────────────────────────
 const SESSION_KEY = "kylor_img_cache_v2";
 const CHAR_SESSION_KEY = "kylor_img_chars_cache_v2";
 
-// ─── Supabase helpers ─────────────────────────────────────────────────────────
+// ─── Supabase helpers ───────────────────────────────────────────────────────
 async function sbLoadAll(userId) {
   if (!userId) return [];
   const { data, error } = await supabase
@@ -25,12 +48,11 @@ async function sbLoadAll(userId) {
     .eq("user_id", userId)
     .order("created_at", { ascending: false })
     .limit(24);
-
- if (error) {
-  console.error("sbLoadAll failed:", error);
-  return [];
-}
-console.log("sbLoadAll result:", data);
+  if (error) {
+    console.error("sbLoadAll failed:", error);
+    return [];
+  }
+  console.log("sbLoadAll result:", data);
   return (data || []).map((row) => ({
     id: row.id,
     prompt: row.prompt,
@@ -40,28 +62,26 @@ console.log("sbLoadAll result:", data);
     style: row.style,
     createdAt: row.created_at,
     images: Array.isArray(row.images)
-  ? row.images.map((img) => {
-      if (typeof img === "string") return { url: img, starred: false };
-      if (img && typeof img === "object") {
-        return {
-          url: img.url || null,
-          starred: Boolean(img.starred),
-        };
-      }
-      return { url: null, starred: false };
-    })
-  : [],
+      ? row.images.map((img) => {
+          if (typeof img === "string") return { url: img, starred: false };
+          if (img && typeof img === "object") {
+            return {
+              url: img.url || null,
+              starred: Boolean(img.starred),
+            };
+          }
+          return { url: null, starred: false };
+        })
+      : [],
   }));
 }
 
 async function sbSaveGroup(group, userId) {
   console.log("sbSaveGroup called:", { userId, group });
-
   if (!userId) {
     console.error("sbSaveGroup aborted: missing userId");
     return;
   }
-
   const payload = {
     id: Number(group.id),
     user_id: userId,
@@ -73,14 +93,11 @@ async function sbSaveGroup(group, userId) {
     images: group.images,
     created_at: group.createdAt,
   };
-
   console.log("sbSaveGroup payload:", payload);
-
   const { data, error } = await supabase
     .from("image_generations")
     .upsert(payload, { onConflict: "id" })
     .select();
-
   if (error) {
     console.error("sbSaveGroup failed:", error);
   } else {
@@ -95,7 +112,6 @@ async function sbDeleteGroup(id, userId) {
     .delete()
     .eq("id", id)
     .eq("user_id", userId);
-
   if (error) console.error("sbDeleteGroup:", error.message);
 }
 
@@ -105,11 +121,10 @@ async function sbClearAll(userId) {
     .from("image_generations")
     .delete()
     .eq("user_id", userId);
-
   if (error) console.error("sbClearAll:", error.message);
 }
 
-// ─── Storage helpers ──────────────────────────────────────────────────────────
+// ─── Storage helpers ────────────────────────────────────────────────────────
 const STORAGE_BUCKET = "generated-images";
 
 async function deleteImageFromStorage(userId, imageId) {
@@ -124,7 +139,7 @@ async function deleteImageFromStorage(userId, imageId) {
   }
 }
 
-// ─── Tokens ───────────────────────────────────────────────────────────────────
+// ─── Tokens ──────────────────────────────────────────────────────────────────
 const C = {
   accent: "#7c3aed",
   accentSoft: "rgba(124,58,237,0.15)",
@@ -150,7 +165,7 @@ const radius = {
   full: "999px",
 };
 
-// ─── Style presets ────────────────────────────────────────────────────────────
+// ─── Style presets ───────────────────────────────────────────────────────────
 const STYLES = [
   { id: "cinematic", label: "Cinematic", desc: "Film-grade, anamorphic lens, deep color grade", color: "#6366f1" },
   { id: "neon_noir", label: "Neon Noir", desc: "Dark city, glowing neon reflections, rain-slick", color: "#a855f7" },
@@ -182,17 +197,16 @@ const MODES = ["1K SD", "2K HD", "4K"];
 const RATIOS = ["Auto", "9:16", "2:3", "3:4", "1:1", "4:3", "3:2", "16:9", "21:9"];
 const OUTPUTS = [1, 2, 3, 4];
 const CONTENT_TABS = ["All", "Images", "Videos", "Audio"];
-
 const CARD_GRADIENTS = [
   "linear-gradient(135deg, rgba(79,70,229,0.55), rgba(124,58,237,0.35))",
-  "linear-gradient(135deg, rgba(124,58,237,0.5),  rgba(17,17,34,0.9))",
-  "linear-gradient(135deg, rgba(49,46,129,0.65),  rgba(79,70,229,0.4))",
-  "linear-gradient(135deg, rgba(91,33,182,0.55),  rgba(55,48,163,0.45))",
-  "linear-gradient(135deg, rgba(67,56,202,0.6),   rgba(124,58,237,0.35))",
+  "linear-gradient(135deg, rgba(124,58,237,0.5), rgba(17,17,34,0.9))",
+  "linear-gradient(135deg, rgba(49,46,129,0.65), rgba(79,70,229,0.4))",
+  "linear-gradient(135deg, rgba(91,33,182,0.55), rgba(55,48,163,0.45))",
+  "linear-gradient(135deg, rgba(67,56,202,0.6), rgba(124,58,237,0.35))",
   "linear-gradient(135deg, rgba(109,92,255,0.45), rgba(49,46,129,0.55))",
 ];
 
-// ─── Misc helpers ─────────────────────────────────────────────────────────────
+// ─── Misc helpers ────────────────────────────────────────────────────────────
 function getApiSize(r) {
   if (["9:16", "2:3", "3:4"].includes(r)) return "1024x1536";
   if (["16:9", "21:9", "4:3", "3:2"].includes(r)) return "1536x1024";
@@ -204,72 +218,48 @@ function getApiQuality(m) {
   if (m === "4K") return "high";
   return "medium";
 }
+
 function getCompositionHint(ratio, sceneText = "") {
   const text = String(sceneText || "").toLowerCase();
-
   if (text.includes("close up") || text.includes("close-up") || text.includes("headshot")) {
     return "close-up framing, face-focused composition, intentional portrait crop";
   }
-
   if (text.includes("wide shot") || text.includes("wide angle") || text.includes("environment shot")) {
     return "wide shot, subject fully integrated in the environment, cinematic environmental framing, not a close-up portrait";
   }
-
   if (text.includes("full body") || text.includes("full-body")) {
     return "full-body composition, subject visible from head to toe, balanced framing, not cropped";
   }
-
   if (text.includes("medium shot") || text.includes("mid shot") || text.includes("mid-shot")) {
     return "medium shot composition, subject framed from the waist or torso upward, balanced cinematic framing";
   }
-
   if (ratio === "16:9" || ratio === "21:9") {
     return "widescreen cinematic composition, environment clearly visible, do not default to a face-only close-up";
   }
-
   if (ratio === "9:16") {
     return "vertical composition, full subject framing when relevant, not an accidental face-only crop";
   }
-
   return "composition should follow the scene request exactly and should not default to a close-up unless explicitly requested";
 }
 
 const STYLE_PROMPT_MAP = {
-  cinematic:
-    "cinematic film still, anamorphic lens feel, production-grade composition, dramatic lighting, rich color depth, high-end movie frame",
-  neon_noir:
-    "neon noir aesthetic, dark moody atmosphere, glowing neon reflections, rain-slick surfaces, deep shadows, stylish urban contrast",
-  anime:
-    "anime style, clean bold linework, expressive shapes, vibrant color separation, polished cinematic anime frame",
-  photorealistic:
-    "photorealistic, ultra-detailed, DSLR realism, natural lighting, realistic skin texture, grounded physical detail",
-  oil_painting:
-    "classical oil painting, rich painterly brushwork, textured canvas feel, museum-quality color treatment",
-  concept_art:
-    "high-end concept art, film-production design quality, dramatic atmosphere, detailed environment painting",
-  low_poly:
-    "low poly 3D style, faceted geometric forms, simplified surfaces, stylized minimal rendering",
-  watercolor:
-    "watercolor painting style, soft pigment washes, delicate paper texture, airy painterly finish",
-  retro_scifi:
-    "retro sci-fi illustration, 70s retrofuturism, vintage pulp aesthetic, gritty print-inspired visual treatment",
-  dark_fantasy:
-    "dark fantasy atmosphere, moody smoke and shadow, mythic tone, dramatic mystical environment",
-  studio_photo:
-    "professional studio photography, clean controlled lighting, neutral backdrop, polished editorial portrait setup",
-  impressionist:
-    "impressionist painting, loose brushstrokes, dappled light, atmospheric motion, painterly softness",
+  cinematic: "cinematic film still, anamorphic lens feel, production-grade composition, dramatic lighting, rich color depth, high-end movie frame",
+  neon_noir: "neon noir aesthetic, dark moody atmosphere, glowing neon reflections, rain-slick surfaces, deep shadows, stylish urban contrast",
+  anime: "anime style, clean bold linework, expressive shapes, vibrant color separation, polished cinematic anime frame",
+  photorealistic: "photorealistic, ultra-detailed, DSLR realism, natural lighting, realistic skin texture, grounded physical detail",
+  oil_painting: "classical oil painting, rich painterly brushwork, textured canvas feel, museum-quality color treatment",
+  concept_art: "high-end concept art, film-production design quality, dramatic atmosphere, detailed environment painting",
+  low_poly: "low poly 3D style, faceted geometric forms, simplified surfaces, stylized minimal rendering",
+  watercolor: "watercolor painting style, soft pigment washes, delicate paper texture, airy painterly finish",
+  retro_scifi: "retro sci-fi illustration, 70s retrofuturism, vintage pulp aesthetic, gritty print-inspired visual treatment",
+  dark_fantasy: "dark fantasy atmosphere, moody smoke and shadow, mythic tone, dramatic mystical environment",
+  studio_photo: "professional studio photography, clean controlled lighting, neutral backdrop, polished editorial portrait setup",
+  impressionist: "impressionist painting, loose brushstrokes, dappled light, atmospheric motion, painterly softness",
 };
 
-function buildPositivePrompt({
-  scenePrompt = "",
-  characterPrompt = "",
-  styleId = null,
-  ratio = "1:1",
-}) {
+function buildPositivePrompt({ scenePrompt = "", characterPrompt = "", styleId = null, ratio = "1:1" }) {
   const styleText = styleId ? STYLE_PROMPT_MAP[styleId] : "";
   const composition = getCompositionHint(ratio, scenePrompt);
-
   return [
     `Scene: ${scenePrompt.trim()}`,
     `Composition: ${composition}`,
@@ -302,41 +292,33 @@ async function filesToDataUrls(files = []) {
       }
     })
   );
-
   return urls.filter(Boolean);
 }
 
 function getCharacterReferenceImages(character) {
   if (!character) return [];
-
   const refs = [
     character.referenceImage,
     character.coverImage,
     ...(Array.isArray(character.generatedImages) ? character.generatedImages : []),
   ].filter(Boolean);
-
   return [...new Set(refs)];
 }
 
 async function downloadImage(url, filename = "kylor-output.png") {
   if (!url || typeof url !== "string") return;
-
   try {
     const res = await fetch(url);
     if (!res.ok) throw new Error(`Download failed: ${res.status}`);
-
     const blob = await res.blob();
     const objectUrl = URL.createObjectURL(blob);
-
     const a = Object.assign(document.createElement("a"), {
       href: objectUrl,
       download: filename,
     });
-
     document.body.appendChild(a);
     a.click();
     a.remove();
-
     setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
   } catch {
     window.open(url, "_blank", "noopener,noreferrer");
@@ -346,7 +328,6 @@ async function downloadImage(url, filename = "kylor-output.png") {
 async function shareImage({ url, title, text }) {
   try {
     if (!url || typeof url !== "string") return false;
-
     if (navigator.share) {
       await navigator.share({ title, text, url });
       return true;
@@ -380,7 +361,6 @@ function mapCharacterRow(row) {
   try {
     traits = JSON.parse(row.prompt || "{}");
   } catch {}
-
   return {
     id: row.id,
     name: row.name,
@@ -403,7 +383,7 @@ function mapCharacterRow(row) {
   };
 }
 
-// ─── Sidebar Item ─────────────────────────────────────────────────────────────
+// ─── Sidebar Item ────────────────────────────────────────────────────────────
 function SidebarItem({ item }) {
   const Icon = item.icon;
   const inner = (
@@ -432,16 +412,12 @@ function SidebarItem({ item }) {
           borderRadius: 12,
           display: "grid",
           placeItems: "center",
-          background: item.active
-            ? "rgba(255,255,255,0.07)"
-            : "rgba(255,255,255,0.02)",
+          background: item.active ? "rgba(255,255,255,0.07)" : "rgba(255,255,255,0.02)",
         }}
       >
         <Icon size={17} />
       </div>
-      <span style={{ fontSize: "10.5px", textAlign: "center", lineHeight: 1.2 }}>
-        {item.label}
-      </span>
+      <span style={{ fontSize: "10.5px", textAlign: "center", lineHeight: 1.2 }}>{item.label}</span>
     </motion.div>
   );
 
@@ -454,7 +430,7 @@ function SidebarItem({ item }) {
   );
 }
 
-// ─── Segment Control ──────────────────────────────────────────────────────────
+// ─── Segment Control ─────────────────────────────────────────────────────────
 function SegmentControl({ options, value, onChange }) {
   return (
     <div
@@ -478,9 +454,7 @@ function SegmentControl({ options, value, onChange }) {
             style={{
               height: 36,
               borderRadius: radius.sm,
-              border: active
-                ? `1px solid ${C.accentBorder}`
-                : "1px solid transparent",
+              border: active ? `1px solid ${C.accentBorder}` : "1px solid transparent",
               background: active
                 ? "linear-gradient(160deg,rgba(79,70,229,0.18),rgba(124,58,237,0.13))"
                 : "transparent",
@@ -499,7 +473,7 @@ function SegmentControl({ options, value, onChange }) {
   );
 }
 
-// ─── Drop Zone ────────────────────────────────────────────────────────────────
+// ─── Drop Zone ───────────────────────────────────────────────────────────────
 function DropZone({ files, onFiles }) {
   const [dragging, setDragging] = useState(false);
   const inputRef = useRef(null);
@@ -508,9 +482,7 @@ function DropZone({ files, onFiles }) {
     (e) => {
       e.preventDefault();
       setDragging(false);
-      const dropped = Array.from(e.dataTransfer.files).filter((f) =>
-        f.type.startsWith("image/")
-      );
+      const dropped = Array.from(e.dataTransfer.files).filter((f) => f.type.startsWith("image/"));
       if (dropped.length) onFiles((p) => [...p, ...dropped].slice(0, 10));
     },
     [onFiles]
@@ -550,9 +522,7 @@ function DropZone({ files, onFiles }) {
             onFiles((p) =>
               [
                 ...p,
-                ...Array.from(e.target.files).filter((f) =>
-                  f.type.startsWith("image/")
-                ),
+                ...Array.from(e.target.files).filter((f) => f.type.startsWith("image/")),
               ].slice(0, 10)
             );
             e.target.value = "";
@@ -576,9 +546,7 @@ function DropZone({ files, onFiles }) {
           <div style={{ fontSize: 13, color: C.text, fontWeight: 500 }}>
             Drop images or <span style={{ color: "#a78bfa" }}>browse</span>
           </div>
-          <div style={{ fontSize: 11, color: C.textMuted, marginTop: 2 }}>
-            PNG, JPG, WEBP · max 10 refs
-          </div>
+          <div style={{ fontSize: 11, color: C.textMuted, marginTop: 2 }}>PNG, JPG, WEBP · max 10 refs</div>
         </div>
         <div
           style={{
@@ -590,7 +558,6 @@ function DropZone({ files, onFiles }) {
           {files.length}/10
         </div>
       </motion.div>
-
       {files.length > 0 && (
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
           {files.map((file, i) => (
@@ -640,7 +607,7 @@ function DropZone({ files, onFiles }) {
   );
 }
 
-// ─── Styles Picker ────────────────────────────────────────────────────────────
+// ─── Styles Picker ───────────────────────────────────────────────────────────
 function StylesPicker({ value, onChange, onClose }) {
   return (
     <motion.div
@@ -656,11 +623,9 @@ function StylesPicker({ value, onChange, onClose }) {
         zIndex: 20,
         borderRadius: 20,
         border: `1px solid ${C.border}`,
-        background:
-          "linear-gradient(180deg, rgba(13,16,28,0.985), rgba(9,11,20,0.985))",
+        background: "linear-gradient(180deg, rgba(13,16,28,0.985), rgba(9,11,20,0.985))",
         backdropFilter: "blur(20px)",
-        boxShadow:
-          "0 30px 90px rgba(0,0,0,0.58), 0 0 0 1px rgba(255,255,255,0.025) inset",
+        boxShadow: "0 30px 90px rgba(0,0,0,0.58), 0 0 0 1px rgba(255,255,255,0.025) inset",
         padding: 14,
       }}
     >
@@ -686,11 +651,8 @@ function StylesPicker({ value, onChange, onClose }) {
           >
             Style Library
           </div>
-          <div style={{ fontSize: 12, color: C.textMuted }}>
-            Pick a visual direction for this generation
-          </div>
+          <div style={{ fontSize: 12, color: C.textMuted }}>Pick a visual direction for this generation</div>
         </div>
-
         <button
           onClick={onClose}
           style={{
@@ -708,7 +670,6 @@ function StylesPicker({ value, onChange, onClose }) {
           <X size={13} />
         </button>
       </div>
-
       <div
         style={{
           display: "grid",
@@ -718,7 +679,6 @@ function StylesPicker({ value, onChange, onClose }) {
       >
         {STYLES.map((s) => {
           const active = value === s.id;
-
           return (
             <motion.button
               key={s.id}
@@ -753,12 +713,9 @@ function StylesPicker({ value, onChange, onClose }) {
                   left: 0,
                   right: 0,
                   height: 2,
-                  background: active
-                    ? `linear-gradient(90deg, ${s.color}, rgba(255,255,255,0.2))`
-                    : "transparent",
+                  background: active ? `linear-gradient(90deg, ${s.color}, rgba(255,255,255,0.2))` : "transparent",
                 }}
               />
-
               <div
                 style={{
                   display: "flex",
@@ -791,10 +748,8 @@ function StylesPicker({ value, onChange, onClose }) {
                     {s.label}
                   </span>
                 </div>
-
                 {active && <Check size={12} color={s.color} />}
               </div>
-
               <span
                 style={{
                   fontSize: 10.8,
@@ -808,7 +763,6 @@ function StylesPicker({ value, onChange, onClose }) {
           );
         })}
       </div>
-
       {value && (
         <button
           onClick={() => onChange(null)}
@@ -832,7 +786,7 @@ function StylesPicker({ value, onChange, onClose }) {
   );
 }
 
-// ─── Generation Feed Card ─────────────────────────────────────────────────────
+// ─── Generation Feed Card ────────────────────────────────────────────────────
 function GenerationCard({
   group,
   isLatest,
@@ -843,8 +797,6 @@ function GenerationCard({
   onOpenLightbox,
   onVariation,
   generating,
-  isMobile,
-  isTablet,
 }) {
   const [copiedPrompt, setCopiedPrompt] = useState(false);
   const [featuredIdx, setFeaturedIdx] = useState(0);
@@ -920,7 +872,6 @@ function GenerationCard({
             </div>
           )}
         </div>
-
         <div style={{ display: "flex", gap: 6 }}>
           {[
             {
@@ -943,11 +894,7 @@ function GenerationCard({
                 borderRadius: 9,
                 cursor: "pointer",
                 border: `1px solid ${
-                  danger
-                    ? "rgba(248,113,113,0.25)"
-                    : active
-                    ? `${activeColor}40`
-                    : C.border
+                  danger ? "rgba(248,113,113,0.25)" : active ? `${activeColor}40` : C.border
                 }`,
                 background: danger
                   ? "rgba(248,113,113,0.07)"
@@ -964,20 +911,13 @@ function GenerationCard({
           ))}
         </div>
       </div>
-
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: isMobile || isTablet ? "1fr" : "1fr 320px",
-        }}
-      >
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 320px" }}>
         <div
           style={{
             position: "relative",
-            minHeight: isMobile ? 240 : isTablet ? 300 : 360,
+            minHeight: 360,
             background: "#05070c",
-            borderRight: isMobile || isTablet ? "none" : `1px solid ${C.border}`,
-            borderBottom: isMobile || isTablet ? `1px solid ${C.border}` : "none",
+            borderRight: `1px solid ${C.border}`,
             overflow: "hidden",
           }}
         >
@@ -1023,7 +963,6 @@ function GenerationCard({
               </span>
             </div>
           )}
-
           {group.images.length > 1 && (
             <div
               style={{
@@ -1046,26 +985,19 @@ function GenerationCard({
                     overflow: "hidden",
                     padding: 0,
                     cursor: "pointer",
-                    border: `2px solid ${
-                      featuredIdx === idx ? C.accent : "rgba(255,255,255,0.18)"
-                    }`,
+                    border: `2px solid ${featuredIdx === idx ? C.accent : "rgba(255,255,255,0.18)"}`,
                     background: CARD_GRADIENTS[idx % CARD_GRADIENTS.length],
                     flexShrink: 0,
                     transition: "border-color 0.15s ease",
                   }}
                 >
                   {img.url && (
-                    <img
-                      src={img.url}
-                      alt=""
-                      style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                    />
+                    <img src={img.url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                   )}
                 </button>
               ))}
             </div>
           )}
-
           {featured?.url && (
             <div
               style={{
@@ -1085,7 +1017,6 @@ function GenerationCard({
             </div>
           )}
         </div>
-
         <div
           style={{
             padding: 16,
@@ -1129,11 +1060,11 @@ function GenerationCard({
                   gap: 4,
                 }}
               >
-                <ImageIcon size={10} /> {group.images.length} images
+                <ImageIcon size={10} />
+                {group.images.length} images
               </div>
             )}
           </div>
-
           <div
             style={{
               flex: 1,
@@ -1187,7 +1118,6 @@ function GenerationCard({
                 {copiedPrompt ? "Copied" : "Copy"}
               </button>
             </div>
-
             <p
               style={{
                 margin: 0,
@@ -1204,7 +1134,6 @@ function GenerationCard({
               {group.prompt}
             </p>
           </div>
-
           {group.negativePrompt && (
             <div
               style={{
@@ -1238,7 +1167,6 @@ function GenerationCard({
               </p>
             </div>
           )}
-
           <div>
             <div
               style={{
@@ -1277,7 +1205,6 @@ function GenerationCard({
               ))}
             </div>
           </div>
-
           <button
             onClick={() => featured?.url && onDownload?.(featured)}
             style={{
@@ -1296,7 +1223,8 @@ function GenerationCard({
               fontFamily: "inherit",
             }}
           >
-            <Download size={13} /> Download image
+            <Download size={13} />
+            Download image
           </button>
         </div>
       </div>
@@ -1304,48 +1232,35 @@ function GenerationCard({
   );
 }
 
-// ─── Main Page ────────────────────────────────────────────────────────────────
+// ─── Main Page ───────────────────────────────────────────────────────────────
 export default function ImagePage() {
   const [topTab, setTopTab] = useState("All");
   const [contentFilter, setContentFilter] = useState("All");
   const [assetView, setAssetView] = useState("grid");
   const [favoritesOnly, setFavoritesOnly] = useState(false);
-
   const [prompt, setPrompt] = useState("");
   const [scenePrompt, setScenePrompt] = useState("");
   const charLimit = 500;
   const [negativeOpen, setNegativeOpen] = useState(false);
   const [negativePrompt, setNegativePrompt] = useState("");
-
   const [stylesOpen, setStylesOpen] = useState(false);
   const [selectedStyle, setSelectedStyle] = useState(null);
-
   const [refImages, setRefImages] = useState([]);
   const [showCharacterModal, setShowCharacterModal] = useState(false);
-
   const [savedCharacters, setSavedCharacters] = useState([]);
   const [selectedCharacter, setSelectedCharacter] = useState(null);
   const [loadingCharacters, setLoadingCharacters] = useState(false);
-
   const [ratio, setRatio] = useState("16:9");
   const [mode, setMode] = useState("2K HD");
   const [outputCount, setOutputCount] = useState(1);
   const [settingsOpen, setSettingsOpen] = useState(false);
-
   const [notifState, setNotifState] = useState("idle");
-
-const [userId, setUserId] = useState(null);
-const [authReady, setAuthReady] = useState(false);
-
-const [groups, setGroups] = useState([]);
+  const [userId, setUserId] = useState(null);
+  const [authReady, setAuthReady] = useState(false);
+  const [groups, setGroups] = useState([]);
   const [dbLoaded, setDbLoaded] = useState(false);
   const [generating, setGenerating] = useState(false);
-
   const [lightboxItem, setLightboxItem] = useState(null);
-
-  const [isMobile, setIsMobile] = useState(false);
-  const [isTablet, setIsTablet] = useState(false);
-
   const panelRef = useRef(null);
   const stylesRef = useRef(null);
   const textareaRef = useRef(null);
@@ -1364,23 +1279,18 @@ const [groups, setGroups] = useState([]);
   async function loadSavedCharacters() {
     try {
       setLoadingCharacters(true);
-
       const payloadCharacter = loadCharacterFromSessionPayload();
-
       try {
         const raw = localStorage.getItem(CHAR_SESSION_KEY);
         if (raw) {
           const cached = JSON.parse(raw);
           if (Array.isArray(cached) && cached.length > 0) {
             let cachedCharacters = cached.map(mapCharacterRow);
-
             if (payloadCharacter) {
               const exists = cachedCharacters.some((c) => String(c.id) === String(payloadCharacter.id));
               if (!exists) cachedCharacters = [payloadCharacter, ...cachedCharacters];
             }
-
             setSavedCharacters(cachedCharacters);
-
             const selectedId = sessionStorage.getItem("kylor_selected_character_id");
             if (selectedId) {
               const found = cachedCharacters.find((c) => String(c.id) === String(selectedId));
@@ -1392,14 +1302,16 @@ const [groups, setGroups] = useState([]);
         }
       } catch {}
 
-      const { data: { session } } = await supabase.auth.getSession();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
       let uid = session?.user?.id ?? null;
-
       if (!uid) {
-        const { data: { user } } = await supabase.auth.getUser();
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
         uid = user?.id ?? null;
       }
-
       if (!uid) {
         if (payloadCharacter) {
           setSavedCharacters([payloadCharacter]);
@@ -1410,16 +1322,13 @@ const [groups, setGroups] = useState([]);
         }
         return;
       }
-
       const { data, error } = await supabase
         .from("characters")
         .select("id, name, description, prompt, reference_image, generated_images, cover_image, created_at")
         .eq("user_id", uid)
         .order("created_at", { ascending: false });
-
       if (error || !data) {
         console.error("Failed to load saved characters:", error?.message);
-
         if (payloadCharacter) {
           setSavedCharacters([payloadCharacter]);
           setSelectedCharacter(payloadCharacter);
@@ -1428,24 +1337,18 @@ const [groups, setGroups] = useState([]);
         }
         return;
       }
-
       const mapped = data.map(mapCharacterRow);
-
       let finalCharacters = mapped;
-
       if (payloadCharacter) {
         const exists = mapped.some((c) => String(c.id) === String(payloadCharacter.id));
         if (!exists) {
           finalCharacters = [payloadCharacter, ...mapped];
         }
       }
-
       setSavedCharacters(finalCharacters);
-
       try {
         localStorage.setItem(CHAR_SESSION_KEY, JSON.stringify(data));
       } catch {}
-
       const selectedId = sessionStorage.getItem("kylor_selected_character_id");
       if (selectedId) {
         const found = finalCharacters.find((c) => String(c.id) === String(selectedId));
@@ -1481,17 +1384,6 @@ const [groups, setGroups] = useState([]);
     } catch {}
   }
 
-    useEffect(() => {
-    function handleResize() {
-      setIsMobile(window.innerWidth < 768);
-      setIsTablet(window.innerWidth >= 768 && window.innerWidth < 1100);
-    }
-
-    handleResize();
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
-  }, []);
-
   useEffect(() => {
     loadSavedCharacters();
   }, []);
@@ -1501,7 +1393,6 @@ const [groups, setGroups] = useState([]);
       setPrompt("");
       return;
     }
-
     const traitParts = [
       selectedCharacter.gender,
       selectedCharacter.ageRange,
@@ -1527,7 +1418,6 @@ const [groups, setGroups] = useState([]);
 
   useEffect(() => {
     let mounted = true;
-
     async function init() {
       try {
         const raw = localStorage.getItem(SESSION_KEY);
@@ -1538,69 +1428,55 @@ const [groups, setGroups] = useState([]);
           }
         }
       } catch {}
-
-      const { data: { session } } = await supabase.auth.getSession();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
       let uid = session?.user?.id ?? null;
-
       if (!uid) {
-        const { data: { user } } = await supabase.auth.getUser();
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
         uid = user?.id ?? null;
       }
-
       if (!mounted) return;
-
-setUserId(uid);
-setAuthReady(true);
-console.log("Resolved userId:", uid);
-
-if (!uid) {
-  setDbLoaded(true);
-  return;
-}
-
+      setUserId(uid);
+      setAuthReady(true);
+      console.log("Resolved userId:", uid);
+      if (!uid) {
+        setDbLoaded(true);
+        return;
+      }
       const fresh = await sbLoadAll(uid);
-
       if (!mounted) return;
-
       setGroups(fresh);
       setDbLoaded(true);
-
       try {
         localStorage.setItem(SESSION_KEY, JSON.stringify(fresh));
       } catch {}
     }
-
     init();
-
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (_event, session) => {
       let uid = session?.user?.id ?? null;
-
       if (!uid) {
-        const { data: { user } } = await supabase.auth.getUser();
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
         uid = user?.id ?? null;
       }
-
       if (!mounted) return;
-
-setUserId(uid);
-setAuthReady(true);
-
-if (!uid) return;
-
+      setUserId(uid);
+      setAuthReady(true);
+      if (!uid) return;
       const fresh = await sbLoadAll(uid);
-
       if (!mounted) return;
-
       setGroups(fresh);
       setDbLoaded(true);
-
       try {
         localStorage.setItem(SESSION_KEY, JSON.stringify(fresh));
       } catch {}
     });
-
     return () => {
       mounted = false;
       subscription.unsubscribe();
@@ -1616,7 +1492,6 @@ if (!uid) return;
         setStylesOpen(false);
       }
     }
-
     document.addEventListener("mousedown", handleOutside);
     return () => document.removeEventListener("mousedown", handleOutside);
   }, []);
@@ -1647,20 +1522,14 @@ if (!uid) return;
     const next = groups.filter((g) => g.id !== groupId);
     setGroups(next);
     syncCache(next);
-
     if (lightboxItem?.groupId === groupId) setLightboxItem(null);
-
     await sbDeleteGroup(groupId, userId);
-
-if (group && userId) {
-  const storageImages = group.images.filter(
-    (img) => typeof img?.url === "string" && img.url.includes("/storage/v1/object/public/")
-  );
-
-  await Promise.all(
-    storageImages.map((_, i) => deleteImageFromStorage(userId, `${groupId}-${i}`))
-  );
-}
+    if (group && userId) {
+      const storageImages = group.images.filter(
+        (img) => typeof img?.url === "string" && img.url.includes("/storage/v1/object/public/")
+      );
+      await Promise.all(storageImages.map((_, i) => deleteImageFromStorage(userId, `${groupId}-${i}`)));
+    }
   }
 
   async function toggleFavorite(groupId, imgIdx) {
@@ -1671,16 +1540,13 @@ if (group && userId) {
           ? g
           : {
               ...g,
-              images: g.images.map((img, i) =>
-                i === imgIdx ? { ...img, starred: !img.starred } : img
-              ),
+              images: g.images.map((img, i) => (i === imgIdx ? { ...img, starred: !img.starred } : img)),
             }
       );
       updated = next.find((g) => g.id === groupId);
       syncCache(next);
       return next;
     });
-
     if (updated) await sbSaveGroup(updated, userId);
   }
 
@@ -1691,11 +1557,7 @@ if (group && userId) {
 
   async function handleShare(img) {
     if (!img?.url || typeof img.url !== "string") return;
-    await shareImage({
-      url: img.url,
-      title: "Kylor image",
-      text: "Created with Kylor",
-    });
+    await shareImage({ url: img.url, title: "Kylor image", text: "Created with Kylor" });
   }
 
   async function clearAll() {
@@ -1705,252 +1567,215 @@ if (group && userId) {
     syncCache([]);
     await sbClearAll(userId);
   }
+
   async function handleGenerate() {
-  const trimmedScenePrompt = scenePrompt.trim();
-  if (!trimmedScenePrompt || generating) return;
+    const trimmedScenePrompt = scenePrompt.trim();
+    if (!trimmedScenePrompt || generating) return;
 
-  let effectiveUserId = userId;
-
-  if (!effectiveUserId) {
-    console.warn("userId state missing, checking Supabase auth directly...");
-
-    const {
-      data: { user },
-      error: userError,
-    } = await supabase.auth.getUser();
-
-    if (userError) {
-      console.error("Failed to get user from Supabase:", userError);
+    let effectiveUserId = userId;
+    if (!effectiveUserId) {
+      console.warn("userId state missing, checking Supabase auth directly...");
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+      if (userError) {
+        console.error("Failed to get user from Supabase:", userError);
+      }
+      effectiveUserId = user?.id ?? null;
+      if (effectiveUserId) {
+        setUserId(effectiveUserId);
+        console.log("Recovered userId from Supabase:", effectiveUserId);
+      }
+    }
+    if (!effectiveUserId) {
+      console.error("No userId found.");
+      alert("No user session found. Please log in again.");
+      return;
     }
 
-    effectiveUserId = user?.id ?? null;
+    setGenerating(true);
+    canvasRef.current?.scrollTo({ top: 0, behavior: "smooth" });
 
-    if (effectiveUserId) {
-      setUserId(effectiveUserId);
-      console.log("Recovered userId from Supabase:", effectiveUserId);
+    const styleLabel = activeStyle?.label ?? null;
+    const characterPrompt = selectedCharacter ? prompt.trim() : "";
+    const positivePrompt = buildPositivePrompt({
+      scenePrompt: trimmedScenePrompt,
+      characterPrompt,
+      styleId: selectedStyle,
+      ratio,
+    });
+
+    const uploadedReferenceImages = await filesToDataUrls(refImages);
+    const characterReferenceImages = getCharacterReferenceImages(selectedCharacter);
+    const uniqueReferenceImages = [
+      ...new Set([...characterReferenceImages, ...uploadedReferenceImages].filter(Boolean)),
+    ];
+    const hasCharacterControl = Boolean(characterPrompt) || uniqueReferenceImages.length > 0;
+    const n = Math.min(outputCount, 4);
+
+    try {
+      const requests = Array.from({ length: n }, () =>
+        fetch("/api/generate-image", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId: effectiveUserId,
+            prompt: positivePrompt,
+            scenePrompt: trimmedScenePrompt,
+            characterPrompt: hasCharacterControl ? characterPrompt : "",
+            style: selectedStyle,
+            styleLabel,
+            stylePrompt: selectedStyle ? STYLE_PROMPT_MAP[selectedStyle] : "",
+            negativePrompt: negativePrompt.trim(),
+            referenceImages: hasCharacterControl ? uniqueReferenceImages : [],
+            useCharacter: hasCharacterControl,
+            ratio,
+            size: getApiSize(ratio),
+            quality: getApiQuality(mode),
+            n: 1,
+          }),
+        }).then(async (r) => {
+          const data = await r.json().catch(() => ({}));
+          if (!r.ok) throw new Error(data?.error || "Generation failed");
+          return data;
+        })
+      );
+      const results = await Promise.all(requests);
+      const newGroups = results
+        .map((d) => {
+          const row = d?.generation;
+          if (!row) return null;
+          return {
+            id: row.id,
+            prompt: row.prompt,
+            negativePrompt: row.negative_prompt,
+            ratio: row.ratio,
+            mode: row.mode,
+            style: row.style,
+            createdAt: row.created_at,
+            images: Array.isArray(row.images)
+              ? row.images.map((img) => {
+                  if (typeof img === "string") return { url: img, starred: false };
+                  if (img && typeof img === "object") {
+                    return { url: img.url || null, path: img.path || null, starred: Boolean(img.starred) };
+                  }
+                  return { url: null, starred: false };
+                })
+              : [],
+          };
+        })
+        .filter(Boolean);
+
+      if (!newGroups.length) {
+        throw new Error("No saved generation returned from API");
+      }
+      setGroups((p) => {
+        const next = [...newGroups, ...p];
+        syncCache(next);
+        return next;
+      });
+      if (notifState === "granted" && "Notification" in window) {
+        new Notification("Kylor", { body: "Your image generation is complete." });
+      }
+    } catch (err) {
+      console.error("Generation failed:", err);
+      alert(err?.message || "Generation failed");
+    } finally {
+      setGenerating(false);
     }
   }
 
-  if (!effectiveUserId) {
-    console.error("No userId found.");
-    alert("No user session found. Please log in again.");
-    return;
-  }
+  async function handleVariation(group, variationIndex) {
+    if (!group?.prompt || generating) return;
+    setGenerating(true);
+    canvasRef.current?.scrollTo({ top: 0, behavior: "smooth" });
 
-  setGenerating(true);
-  canvasRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+    let effectiveUserId = userId;
+    if (!effectiveUserId) {
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+      if (userError) {
+        console.error("Failed to get user from Supabase:", userError);
+      }
+      effectiveUserId = user?.id ?? null;
+      if (effectiveUserId) {
+        setUserId(effectiveUserId);
+      }
+    }
+    if (!effectiveUserId) {
+      alert("No user session found. Please log in again.");
+      setGenerating(false);
+      return;
+    }
 
-  const styleLabel = activeStyle?.label ?? null;
-  const characterPrompt = selectedCharacter ? prompt.trim() : "";
+    const variationPrompt = [
+      group.prompt,
+      `Variation ${variationIndex + 1}. Keep the same subject and overall style, but change composition and details slightly.`,
+      "Preserve the requested scene instead of collapsing into a face-only close-up.",
+      "No text, no captions, no subtitles, no watermark.",
+    ]
+      .filter(Boolean)
+      .join("\n\n");
 
-  const positivePrompt = buildPositivePrompt({
-    scenePrompt: trimmedScenePrompt,
-    characterPrompt,
-    styleId: selectedStyle,
-    ratio,
-  });
-
-  const uploadedReferenceImages = await filesToDataUrls(refImages);
-  const characterReferenceImages = getCharacterReferenceImages(selectedCharacter);
-
-  const uniqueReferenceImages = [
-    ...new Set([...characterReferenceImages, ...uploadedReferenceImages].filter(Boolean)),
-  ];
-
-  const hasCharacterControl =
-    Boolean(characterPrompt) || uniqueReferenceImages.length > 0;
-
-  const n = Math.min(outputCount, 4);
-
-  try {
-    const requests = Array.from({ length: n }, () =>
-      fetch("/api/generate-image", {
+    try {
+      const res = await fetch("/api/generate-image", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           userId: effectiveUserId,
-          prompt: positivePrompt,
-          scenePrompt: trimmedScenePrompt,
-          characterPrompt: hasCharacterControl ? characterPrompt : "",
-          style: selectedStyle,
-          styleLabel,
-          stylePrompt: selectedStyle ? STYLE_PROMPT_MAP[selectedStyle] : "",
-          negativePrompt: negativePrompt.trim(),
-          referenceImages: hasCharacterControl ? uniqueReferenceImages : [],
-          useCharacter: hasCharacterControl,
-          ratio,
-          size: getApiSize(ratio),
-          quality: getApiQuality(mode),
+          prompt: variationPrompt,
+          negativePrompt: group.negativePrompt || "",
+          styleLabel: group.style || "",
+          ratio: group.ratio,
+          size: getApiSize(group.ratio),
+          quality: getApiQuality(group.mode),
           n: 1,
         }),
-      }).then(async (r) => {
-        const data = await r.json().catch(() => ({}));
-        if (!r.ok) throw new Error(data?.error || "Generation failed");
-        return data;
-      })
-    );
-
-    const results = await Promise.all(requests);
-
-    const newGroups = results
-      .map((d) => {
-        const row = d?.generation;
-        if (!row) return null;
-
-        return {
-          id: row.id,
-          prompt: row.prompt,
-          negativePrompt: row.negative_prompt,
-          ratio: row.ratio,
-          mode: row.mode,
-          style: row.style,
-          createdAt: row.created_at,
-          images: Array.isArray(row.images)
-            ? row.images.map((img) => {
-                if (typeof img === "string") return { url: img, starred: false };
-                if (img && typeof img === "object") {
-                  return {
-                    url: img.url || null,
-                    path: img.path || null,
-                    starred: Boolean(img.starred),
-                  };
-                }
-                return { url: null, starred: false };
-              })
-            : [],
-        };
-      })
-      .filter(Boolean);
-
-    if (!newGroups.length) {
-      throw new Error("No saved generation returned from API");
-    }
-
-    setGroups((p) => {
-      const next = [...newGroups, ...p];
-      syncCache(next);
-      return next;
-    });
-
-    if (notifState === "granted" && "Notification" in window) {
-      new Notification("Kylor", { body: "Your image generation is complete." });
-    }
-  } catch (err) {
-    console.error("Generation failed:", err);
-    alert(err?.message || "Generation failed");
-  } finally {
-    setGenerating(false);
-  }
-}
-
-  async function handleVariation(group, variationIndex) {
-  if (!group?.prompt || generating) return;
-
-  setGenerating(true);
-  canvasRef.current?.scrollTo({ top: 0, behavior: "smooth" });
-
-  let effectiveUserId = userId;
-
-  if (!effectiveUserId) {
-    const {
-      data: { user },
-      error: userError,
-    } = await supabase.auth.getUser();
-
-    if (userError) {
-      console.error("Failed to get user from Supabase:", userError);
-    }
-
-    effectiveUserId = user?.id ?? null;
-
-    if (effectiveUserId) {
-      setUserId(effectiveUserId);
-    }
-  }
-
-  if (!effectiveUserId) {
-    alert("No user session found. Please log in again.");
-    setGenerating(false);
-    return;
-  }
-
-  const variationPrompt = [
-    group.prompt,
-    `Variation ${variationIndex + 1}. Keep the same subject and overall style, but change composition and details slightly.`,
-    "Preserve the requested scene instead of collapsing into a face-only close-up.",
-    "No text, no captions, no subtitles, no watermark.",
-  ]
-    .filter(Boolean)
-    .join("\n\n");
-
-  try {
-    const res = await fetch("/api/generate-image", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        userId: effectiveUserId,
-        prompt: variationPrompt,
-        negativePrompt: group.negativePrompt || "",
-        styleLabel: group.style || "",
-        ratio: group.ratio,
-        size: getApiSize(group.ratio),
-        quality: getApiQuality(group.mode),
-        n: 1,
-      }),
-    });
-
-    const data = await res.json().catch(() => ({}));
-
-    if (!res.ok) {
-      throw new Error(data?.error || "Variation failed");
-    }
-
-    const row = data?.generation;
-    if (!row) {
-      throw new Error("No saved variation returned from API");
-    }
-
-    const newGroup = {
-      id: row.id,
-      prompt: row.prompt,
-      negativePrompt: row.negative_prompt,
-      ratio: row.ratio,
-      mode: row.mode,
-      style: row.style,
-      createdAt: row.created_at,
-      images: Array.isArray(row.images)
-        ? row.images.map((img) => {
-            if (typeof img === "string") return { url: img, starred: false };
-            if (img && typeof img === "object") {
-              return {
-                url: img.url || null,
-                path: img.path || null,
-                starred: Boolean(img.starred),
-              };
-            }
-            return { url: null, starred: false };
-          })
-        : [],
-    };
-
-    setGroups((p) => {
-      const next = [newGroup, ...p];
-      syncCache(next);
-      return next;
-    });
-
-    if (notifState === "granted" && "Notification" in window) {
-      new Notification("Kylor", {
-        body: `Variation V${variationIndex + 1} is ready.`,
       });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data?.error || "Variation failed");
+      }
+      const row = data?.generation;
+      if (!row) {
+        throw new Error("No saved variation returned from API");
+      }
+      const newGroup = {
+        id: row.id,
+        prompt: row.prompt,
+        negativePrompt: row.negative_prompt,
+        ratio: row.ratio,
+        mode: row.mode,
+        style: row.style,
+        createdAt: row.created_at,
+        images: Array.isArray(row.images)
+          ? row.images.map((img) => {
+              if (typeof img === "string") return { url: img, starred: false };
+              if (img && typeof img === "object") {
+                return { url: img.url || null, path: img.path || null, starred: Boolean(img.starred) };
+              }
+              return { url: null, starred: false };
+            })
+          : [],
+      };
+      setGroups((p) => {
+        const next = [newGroup, ...p];
+        syncCache(next);
+        return next;
+      });
+      if (notifState === "granted" && "Notification" in window) {
+        new Notification("Kylor", { body: `Variation V${variationIndex + 1} is ready.` });
+      }
+    } catch (err) {
+      console.error("Variation failed:", err);
+      alert(err?.message || "Variation failed");
+    } finally {
+      setGenerating(false);
     }
-  } catch (err) {
-    console.error("Variation failed:", err);
-    alert(err?.message || "Variation failed");
-  } finally {
-    setGenerating(false);
   }
-}
 
   const filteredGroups = useMemo(() => {
     if (contentFilter === "Videos" || contentFilter === "Audio") return [];
@@ -1961,27 +1786,24 @@ if (group && userId) {
   return (
     <main
       style={{
-        minHeight: "100vh",
+        height: "100vh",
+        overflow: "hidden",
         background: `radial-gradient(ellipse at 8% 12%,rgba(79,70,229,0.13),transparent 28%),radial-gradient(ellipse at 92% 8%,rgba(124,58,237,0.11),transparent 30%),${C.bg}`,
         color: C.text,
         fontFamily: "'Inter','SF Pro Display',sans-serif",
         display: "grid",
-        gridTemplateColumns: isMobile ? "1fr" : "88px 1fr",
-        overflow: "hidden",
+        gridTemplateColumns: "88px 1fr",
       }}
-    >      <aside
+    >
+      <aside
         style={{
-          borderRight: isMobile ? "none" : `1px solid ${C.border}`,
-          borderBottom: isMobile ? `1px solid ${C.border}` : "none",
+          borderRight: `1px solid ${C.border}`,
           background: C.sidebar,
-          padding: isMobile ? "12px 10px" : "18px 10px",
-          height: isMobile ? "auto" : "100vh",
+          padding: "18px 10px",
+          height: "100vh",
           display: "flex",
-          flexDirection: isMobile ? "row" : "column",
-          alignItems: "center",
-          overflowX: isMobile ? "auto" : "hidden",
-          overflowY: "hidden",
-          gap: isMobile ? 10 : 0,
+          flexDirection: "column",
+          overflow: "hidden",
         }}
       >
         <div
@@ -1989,10 +1811,9 @@ if (group && userId) {
             width: 46,
             height: 46,
             borderRadius: 16,
-            margin: isMobile ? "0 6px 0 0" : "0 auto 22px",
+            margin: "0 auto 22px",
             display: "grid",
             placeItems: "center",
-            flexShrink: 0,
             background: "linear-gradient(135deg,rgba(79,70,229,0.28),rgba(124,58,237,0.18))",
             border: `1px solid ${C.border}`,
             boxShadow: `0 0 20px ${C.accentGlow}`,
@@ -2000,19 +1821,9 @@ if (group && userId) {
         >
           <Sparkles size={20} color="#a78bfa" />
         </div>
-
-        <div
-          style={{
-            display: isMobile ? "flex" : "grid",
-            gap: 8,
-            overflowX: isMobile ? "auto" : "visible",
-            width: "100%",
-          }}
-        >
+        <div style={{ display: "grid", gap: 8 }}>
           {SIDEBAR_ITEMS.map((item) => (
-            <div key={item.label} style={{ flex: isMobile ? "0 0 auto" : "unset" }}>
-              <SidebarItem item={item} />
-            </div>
+            <SidebarItem key={item.label} item={item} />
           ))}
         </div>
       </aside>
@@ -2020,10 +1831,9 @@ if (group && userId) {
       <div
         style={{
           display: "grid",
-          gridTemplateRows: isMobile ? "auto auto 1fr" : "48px 1fr",
-          minHeight: isMobile ? "calc(100vh - 74px)" : "100vh",
+          gridTemplateRows: "48px 1fr",
+          height: "100vh",
           overflow: "hidden",
-          minWidth: 0,
         }}
       >
         <div
@@ -2032,13 +1842,11 @@ if (group && userId) {
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
-            padding: isMobile ? "10px 12px" : "0 18px",
+            padding: "0 18px",
             background: "rgba(255,255,255,0.01)",
-            flexWrap: isMobile ? "wrap" : "nowrap",
-            gap: isMobile ? 10 : 0,
           }}
         >
-          <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
             {["All", "Output", "Projects"].map((tab) => (
               <motion.button
                 key={tab}
@@ -2062,33 +1870,31 @@ if (group && userId) {
               </motion.button>
             ))}
           </div>
-
-          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-            {[{ icon: Grid3X3, val: "grid" }, { icon: List, val: "list" }].map(
-              ({ icon: Icon, val }) => (
-                <motion.button
-                  key={val}
-                  whileTap={{ scale: 0.94 }}
-                  onClick={() => setAssetView(val)}
-                  style={{
-                    width: 34,
-                    height: 34,
-                    borderRadius: radius.sm,
-                    border: `1px solid ${C.border}`,
-                    background:
-                      assetView === val ? "rgba(255,255,255,0.08)" : "transparent",
-                    color: assetView === val ? C.text : C.textMuted,
-                    display: "grid",
-                    placeItems: "center",
-                    cursor: "pointer",
-                    transition: "all 0.15s ease",
-                  }}
-                >
-                  <Icon size={15} />
-                </motion.button>
-              )
-            )}
-
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            {[
+              { icon: Grid3X3, val: "grid" },
+              { icon: List, val: "list" },
+            ].map(({ icon: Icon, val }) => (
+              <motion.button
+                key={val}
+                whileTap={{ scale: 0.94 }}
+                onClick={() => setAssetView(val)}
+                style={{
+                  width: 34,
+                  height: 34,
+                  borderRadius: radius.sm,
+                  border: `1px solid ${C.border}`,
+                  background: assetView === val ? "rgba(255,255,255,0.08)" : "transparent",
+                  color: assetView === val ? C.text : C.textMuted,
+                  display: "grid",
+                  placeItems: "center",
+                  cursor: "pointer",
+                  transition: "all 0.15s ease",
+                }}
+              >
+                <Icon size={15} />
+              </motion.button>
+            ))}
             <motion.button
               whileHover={{ borderColor: C.borderHover }}
               style={{
@@ -2106,7 +1912,8 @@ if (group && userId) {
                 fontFamily: "inherit",
               }}
             >
-              <Folder size={13} /> Assets
+              <Folder size={13} />
+              Assets
             </motion.button>
           </div>
         </div>
@@ -2114,25 +1921,23 @@ if (group && userId) {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: isMobile ? "1fr" : isTablet ? "320px 1fr" : "380px 1fr",
+            gridTemplateColumns: "380px 1fr",
             height: "100%",
             overflow: "hidden",
-            minWidth: 0,
           }}
         >
+          {/* ─── LEFT PANEL ─── */}
           <div
             style={{
-              borderRight: isMobile ? "none" : `1px solid ${C.border}`,
-              borderBottom: isMobile ? `1px solid ${C.border}` : "none",
+              borderRight: `1px solid ${C.border}`,
               background: "linear-gradient(180deg,rgba(7,9,15,0.98),rgba(9,11,17,0.98))",
               height: "100%",
-              overflow: isMobile ? "visible" : "hidden",
+              overflow: "hidden",
               display: "flex",
               flexDirection: "column",
-              padding: isMobile ? 12 : 16,
+              padding: 16,
               gap: 12,
               boxSizing: "border-box",
-              minWidth: 0,
             }}
           >
             <div
@@ -2270,7 +2075,6 @@ if (group && userId) {
               >
                 <UserCircle2 size={15} />
               </div>
-
               <div style={{ flex: 1, minWidth: 0, textAlign: "left" }}>
                 <div style={{ fontSize: 13.5, fontWeight: 700 }}>Use Character</div>
                 <div
@@ -2285,7 +2089,6 @@ if (group && userId) {
                   Select a saved character from Consistency
                 </div>
               </div>
-
               <ChevronRight size={14} color={C.textMuted} />
             </motion.button>
 
@@ -2326,7 +2129,6 @@ if (group && userId) {
                     </div>
                   )}
                 </div>
-
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div
                     style={{
@@ -2352,7 +2154,6 @@ if (group && userId) {
                     Character applied
                   </div>
                 </div>
-
                 <button
                   onClick={clearSelectedCharacter}
                   style={{
@@ -2408,7 +2209,6 @@ if (group && userId) {
                     >
                       Defined Character Prompt
                     </div>
-
                     <div
                       style={{
                         width: "100%",
@@ -2431,7 +2231,6 @@ if (group && userId) {
                     </div>
                   </div>
                 )}
-
                 <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
                   <div
                     style={{
@@ -2446,7 +2245,6 @@ if (group && userId) {
                   >
                     Scene Prompt
                   </div>
-
                   <textarea
                     ref={textareaRef}
                     value={scenePrompt}
@@ -2526,20 +2324,18 @@ if (group && userId) {
                 )}
               </AnimatePresence>
 
-<div
-  style={{
-    display: "flex",
-    alignItems: isMobile ? "stretch" : "center",
-    justifyContent: "space-between",
-    flexDirection: isMobile ? "column" : "row",
-    gap: isMobile ? 10 : 0,
-    marginTop: 10,
-    paddingTop: 10,
-    borderTop: `1px solid ${C.border}`,
-    flexShrink: 0,
-  }}
->
-                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  marginTop: 10,
+                  paddingTop: 10,
+                  borderTop: `1px solid ${C.border}`,
+                  flexShrink: 0,
+                }}
+              >
+                <div style={{ display: "flex", gap: 6 }}>
                   <motion.button
                     whileTap={{ scale: 0.95 }}
                     onClick={() => setStylesOpen((p) => !p)}
@@ -2547,9 +2343,7 @@ if (group && userId) {
                       height: 30,
                       padding: "0 12px",
                       borderRadius: 9,
-                      border: `1px solid ${
-                        activeStyle ? activeStyle.color + "55" : C.accentBorder
-                      }`,
+                      border: `1px solid ${activeStyle ? activeStyle.color + "55" : C.accentBorder}`,
                       background: activeStyle ? activeStyle.color + "18" : C.accentSoft,
                       color: activeStyle ? C.text : "#a78bfa",
                       fontSize: 12,
@@ -2570,7 +2364,6 @@ if (group && userId) {
                       "Styles"
                     )}
                   </motion.button>
-
                   <motion.button
                     whileTap={{ scale: 0.95 }}
                     onClick={() => setNegativeOpen((p) => !p)}
@@ -2579,14 +2372,10 @@ if (group && userId) {
                       padding: "0 12px",
                       borderRadius: 9,
                       border: `1px solid ${
-                        negativeOpen || negativePrompt
-                          ? "rgba(248,113,113,0.3)"
-                          : C.border
+                        negativeOpen || negativePrompt ? "rgba(248,113,113,0.3)" : C.border
                       }`,
                       background:
-                        negativeOpen || negativePrompt
-                          ? "rgba(248,113,113,0.08)"
-                          : C.surface,
+                        negativeOpen || negativePrompt ? "rgba(248,113,113,0.08)" : C.surface,
                       color: negativeOpen || negativePrompt ? "#fca5a5" : C.textMuted,
                       fontSize: 12,
                       cursor: "pointer",
@@ -2597,8 +2386,7 @@ if (group && userId) {
                     Negative{negativePrompt ? " ✓" : ""}
                   </motion.button>
                 </div>
-
-                <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "space-between", width: isMobile ? "100%" : "auto" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                   <span
                     style={{
                       fontSize: 11,
@@ -2685,7 +2473,6 @@ if (group && userId) {
                         </div>
                         <SegmentControl options={MODES} value={mode} onChange={setMode} />
                       </div>
-
                       <div>
                         <div
                           style={{
@@ -2702,7 +2489,7 @@ if (group && userId) {
                         <div
                           style={{
                             display: "grid",
-                            gridTemplateColumns: isMobile ? "repeat(3,1fr)" : "repeat(5,1fr)",
+                            gridTemplateColumns: "repeat(5,1fr)",
                             gap: 6,
                           }}
                         >
@@ -2734,7 +2521,6 @@ if (group && userId) {
                           ))}
                         </div>
                       </div>
-
                       <div>
                         <div
                           style={{
@@ -2790,13 +2576,7 @@ if (group && userId) {
                   )}
                 </AnimatePresence>
 
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: isMobile ? "1fr" : "auto 1fr",
-                    gap: 10,
-                  }}
-                >
+                <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: 10 }}>
                   <motion.button
                     whileHover={{ borderColor: C.borderHover }}
                     whileTap={{ scale: 0.97 }}
@@ -2836,11 +2616,7 @@ if (group && userId) {
                         ? { boxShadow: "0 18px 40px rgba(124,58,237,0.42)" }
                         : {}
                     }
-                    whileTap={
-                      scenePrompt.trim() && !generating
-                        ? { scale: 0.98 }
-                        : {}
-                    }
+                    whileTap={scenePrompt.trim() && !generating ? { scale: 0.98 } : {}}
                     onClick={handleGenerate}
                     disabled={generating}
                     style={{
@@ -2849,21 +2625,17 @@ if (group && userId) {
                       borderRadius: radius.md,
                       border: "none",
                       background:
-  scenePrompt.trim() && !generating && authReady
-    ? "linear-gradient(135deg,#4f46e5,#7c3aed)"
-    : "rgba(255,255,255,0.06)",
-color:
-  scenePrompt.trim() && !generating && authReady
-    ? "white"
-    : C.textMuted,
-cursor:
-  scenePrompt.trim() && !generating && authReady
-    ? "pointer"
-    : "default",
-boxShadow:
-  scenePrompt.trim() && !generating && authReady
-    ? "0 10px 28px rgba(124,58,237,0.28)"
-    : "none",
+                        scenePrompt.trim() && !generating && authReady
+                          ? "linear-gradient(135deg,#4f46e5,#7c3aed)"
+                          : "rgba(255,255,255,0.06)",
+                      color:
+                        scenePrompt.trim() && !generating && authReady ? "white" : C.textMuted,
+                      cursor:
+                        scenePrompt.trim() && !generating && authReady ? "pointer" : "default",
+                      boxShadow:
+                        scenePrompt.trim() && !generating && authReady
+                          ? "0 10px 28px rgba(124,58,237,0.28)"
+                          : "none",
                       display: "inline-flex",
                       alignItems: "center",
                       justifyContent: "center",
@@ -2883,11 +2655,7 @@ boxShadow:
                         >
                           <motion.div
                             animate={{ rotate: 360 }}
-                            transition={{
-                              repeat: Infinity,
-                              duration: 1,
-                              ease: "linear",
-                            }}
+                            transition={{ repeat: Infinity, duration: 1, ease: "linear" }}
                           >
                             <Zap size={15} />
                           </motion.div>
@@ -2901,7 +2669,9 @@ boxShadow:
                           exit={{ opacity: 0 }}
                           style={{ display: "flex", alignItems: "center", gap: 8 }}
                         >
-                          <Wand2 size={15} /> Generate <ChevronRight size={15} />
+                          <Wand2 size={15} />
+                          Generate
+                          <ChevronRight size={15} />
                         </motion.span>
                       )}
                     </AnimatePresence>
@@ -2911,6 +2681,7 @@ boxShadow:
             </div>
           </div>
 
+          {/* ─── RIGHT PANEL ─── */}
           <div
             style={{
               background: "rgba(4,5,12,0.95)",
@@ -2918,7 +2689,6 @@ boxShadow:
               flexDirection: "column",
               height: "100%",
               overflow: "hidden",
-              minWidth: 0,
             }}
           >
             <AnimatePresence>
@@ -2929,18 +2699,17 @@ boxShadow:
                   exit={{ height: 0, opacity: 0 }}
                   transition={{ duration: 0.2 }}
                   style={{
-  borderBottom: `1px solid ${C.border}`,
-  background: "#12141e",
-  padding: isMobile ? "10px 12px" : "0 16px",
-  display: "flex",
-  alignItems: isMobile ? "flex-start" : "center",
-  justifyContent: "space-between",
-  gap: 10,
-  overflow: "hidden",
-  flexShrink: 0,
-  minHeight: isMobile ? "auto" : 44,
-  flexWrap: isMobile ? "wrap" : "nowrap",
-}}
+                    borderBottom: `1px solid ${C.border}`,
+                    background: "#12141e",
+                    padding: "0 16px",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: 10,
+                    overflow: "hidden",
+                    flexShrink: 0,
+                    height: 44,
+                  }}
                 >
                   <div
                     style={{
@@ -2984,7 +2753,6 @@ boxShadow:
                   </motion.button>
                 </motion.div>
               )}
-
               {notifState === "granted" && (
                 <motion.div
                   key="notif-ok"
@@ -3004,8 +2772,11 @@ boxShadow:
                     flexShrink: 0,
                   }}
                 >
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#86efac", fontSize: 13 }}>
-                    <Check size={13} /> Notifications enabled — you'll be notified when generation completes.
+                  <div
+                    style={{ display: "flex", alignItems: "center", gap: 8, color: "#86efac", fontSize: 13 }}
+                  >
+                    <Check size={13} />
+                    Notifications enabled — you'll be notified when generation completes.
                   </div>
                   <button
                     onClick={() => setNotifState("dismissed")}
@@ -3020,7 +2791,6 @@ boxShadow:
                   </button>
                 </motion.div>
               )}
-
               {notifState === "denied" && (
                 <motion.div
                   key="notif-denied"
@@ -3040,8 +2810,11 @@ boxShadow:
                     flexShrink: 0,
                   }}
                 >
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#fca5a5", fontSize: 13 }}>
-                    <BellOff size={13} /> Notifications blocked — enable them in your browser settings.
+                  <div
+                    style={{ display: "flex", alignItems: "center", gap: 8, color: "#fca5a5", fontSize: 13 }}
+                  >
+                    <BellOff size={13} />
+                    Notifications blocked — enable them in your browser settings.
                   </div>
                   <button
                     onClick={() => setNotifState("dismissed")}
@@ -3061,17 +2834,15 @@ boxShadow:
             <div
               style={{
                 display: "flex",
-                alignItems: isMobile ? "flex-start" : "center",
+                alignItems: "center",
                 justifyContent: "space-between",
-                padding: isMobile ? "10px 12px" : "0 16px",
+                padding: "0 16px",
                 borderBottom: `1px solid ${C.border}`,
-                minHeight: isMobile ? "auto" : 48,
+                height: 48,
                 flexShrink: 0,
-                flexWrap: isMobile ? "wrap" : "nowrap",
-                gap: isMobile ? 10 : 0,
               }}
             >
-              <div style={{ display: "flex", gap: 4, alignItems: "center", flexWrap: "wrap" }}>
+              <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
                 {CONTENT_TABS.map((tab) => (
                   <motion.button
                     key={tab}
@@ -3081,11 +2852,8 @@ boxShadow:
                       height: 28,
                       padding: "0 12px",
                       borderRadius: 8,
-                      border: `1px solid ${
-                        contentFilter === tab ? C.border : "transparent"
-                      }`,
-                      background:
-                        contentFilter === tab ? "rgba(255,255,255,0.09)" : "transparent",
+                      border: `1px solid ${contentFilter === tab ? C.border : "transparent"}`,
+                      background: contentFilter === tab ? "rgba(255,255,255,0.09)" : "transparent",
                       color: contentFilter === tab ? C.text : C.textMuted,
                       cursor: "pointer",
                       fontSize: 12.5,
@@ -3102,7 +2870,6 @@ boxShadow:
                     {tab}
                   </motion.button>
                 ))}
-
                 <label
                   style={{
                     display: "flex",
@@ -3123,8 +2890,7 @@ boxShadow:
                   Favorites
                 </label>
               </div>
-
-              <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                 {groups.length > 0 && (
                   <motion.button
                     whileTap={{ scale: 0.95 }}
@@ -3144,10 +2910,10 @@ boxShadow:
                       gap: 5,
                     }}
                   >
-                    <Trash2 size={11} /> Clear all
+                    <Trash2 size={11} />
+                    Clear all
                   </motion.button>
                 )}
-
                 <motion.button
                   whileHover={{ borderColor: C.borderHover }}
                   style={{
@@ -3165,7 +2931,8 @@ boxShadow:
                     fontFamily: "inherit",
                   }}
                 >
-                  <Folder size={12} /> Assets
+                  <Folder size={12} />
+                  Assets
                 </motion.button>
               </div>
             </div>
@@ -3194,11 +2961,9 @@ boxShadow:
                         >
                           <FolderKanban size={30} color={C.textDim} />
                         </div>
-
                         <p style={{ margin: "0 0 8px", color: C.text, fontSize: 16, fontWeight: 700 }}>
                           No projects yet
                         </p>
-
                         <p style={{ margin: 0, color: C.textMuted, fontSize: 13, lineHeight: 1.7 }}>
                           Generate some images first. They will appear here as your saved image projects.
                         </p>
@@ -3207,22 +2972,18 @@ boxShadow:
                   ) : (
                     <div style={{ display: "grid", gap: 12 }}>
                       {groups.map((group, idx) => (
-<GenerationCard
-  key={group.id}
-  group={group}
-  isLatest={idx === 0 && !generating}
-  generating={generating}
-  onDelete={deleteGroup}
-  onToggleFavorite={toggleFavorite}
-  onDownload={handleDownload}
-  onShare={handleShare}
-  onVariation={handleVariation}
-  onOpenLightbox={(img, promptText) =>
-    setLightboxItem({ ...img, promptText })
-  }
-  isMobile={isMobile}
-  isTablet={isTablet}
-/>
+                        <GenerationCard
+                          key={group.id}
+                          group={group}
+                          isLatest={idx === 0}
+                          generating={false}
+                          onDelete={deleteGroup}
+                          onToggleFavorite={toggleFavorite}
+                          onDownload={handleDownload}
+                          onShare={handleShare}
+                          onVariation={handleVariation}
+                          onOpenLightbox={(img, promptText) => setLightboxItem({ ...img, promptText })}
+                        />
                       ))}
                     </div>
                   )}
@@ -3273,12 +3034,21 @@ boxShadow:
                                 borderBottomColor: "transparent",
                               }}
                             />
-                            <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center" }}>
+                            <div
+                              style={{
+                                position: "absolute",
+                                inset: 0,
+                                display: "grid",
+                                placeItems: "center",
+                              }}
+                            >
                               <Sparkles size={14} color="#a78bfa" />
                             </div>
                           </div>
                           <div>
-                            <div style={{ fontSize: 14, fontWeight: 700, color: C.text, marginBottom: 3 }}>
+                            <div
+                              style={{ fontSize: 14, fontWeight: 700, color: C.text, marginBottom: 3 }}
+                            >
                               Generating your image…
                             </div>
                             <div style={{ fontSize: 12, color: C.textMuted }}>
@@ -3376,7 +3146,8 @@ boxShadow:
                               lineHeight: 1.7,
                             }}
                           >
-                            Describe what you want to create and hit Generate — your images will be auto-saved and reappear after refresh.
+                            Describe what you want to create and hit Generate — your images will be
+                            auto-saved and reappear after refresh.
                           </p>
                           <motion.button
                             whileTap={{ scale: 0.96 }}
@@ -3396,7 +3167,8 @@ boxShadow:
                               gap: 7,
                             }}
                           >
-                            <Plus size={13} /> Start with a prompt
+                            <Plus size={13} />
+                            Start with a prompt
                           </motion.button>
                         </motion.div>
                       </div>
@@ -3413,22 +3185,20 @@ boxShadow:
                         }}
                       >
                         {filteredGroups.map((group, idx) => (
-  <GenerationCard
-  key={group.id}
-  group={group}
-  isLatest={idx === 0}
-  generating={false}
-  onDelete={deleteGroup}
-  onToggleFavorite={toggleFavorite}
-  onDownload={handleDownload}
-  onShare={handleShare}
-  onVariation={handleVariation}
-  onOpenLightbox={(img, promptText) =>
-    setLightboxItem({ ...img, promptText })
-  }
-  isMobile={isMobile}
-  isTablet={isTablet}
-/>
+                          <GenerationCard
+                            key={group.id}
+                            group={group}
+                            isLatest={idx === 0 && !generating}
+                            generating={generating}
+                            onDelete={deleteGroup}
+                            onToggleFavorite={toggleFavorite}
+                            onDownload={handleDownload}
+                            onShare={handleShare}
+                            onVariation={handleVariation}
+                            onOpenLightbox={(img, promptText) =>
+                              setLightboxItem({ ...img, promptText })
+                            }
+                          />
                         ))}
                       </div>
                     )}
@@ -3439,6 +3209,7 @@ boxShadow:
         </div>
       </div>
 
+      {/* ─── Character Modal ─── */}
       <AnimatePresence>
         {showCharacterModal && (
           <motion.div
@@ -3455,7 +3226,7 @@ boxShadow:
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              padding: isMobile ? 12 : 24,
+              padding: 24,
             }}
           >
             <motion.div
@@ -3466,7 +3237,7 @@ boxShadow:
               onClick={(e) => e.stopPropagation()}
               style={{
                 width: "100%",
-                maxWidth: isMobile ? "100%" : 680,
+                maxWidth: 680,
                 borderRadius: 22,
                 border: `1px solid ${C.border}`,
                 background: "linear-gradient(180deg, rgba(10,12,20,0.98), rgba(8,10,18,0.98))",
@@ -3484,14 +3255,11 @@ boxShadow:
                 }}
               >
                 <div>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: C.text }}>
-                    Use Character
-                  </div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: C.text }}>Use Character</div>
                   <div style={{ fontSize: 12, color: C.textMuted }}>
                     Select a saved character from Consistency
                   </div>
                 </div>
-
                 <button
                   onClick={() => setShowCharacterModal(false)}
                   style={{
@@ -3509,7 +3277,6 @@ boxShadow:
                   <X size={14} />
                 </button>
               </div>
-
               <div style={{ padding: 14 }}>
                 {loadingCharacters ? (
                   <div
@@ -3580,7 +3347,7 @@ boxShadow:
                   <div
                     style={{
                       display: "grid",
-                      gridTemplateColumns: isMobile ? "1fr" : "repeat(2, minmax(0, 1fr))",
+                      gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
                       gap: 12,
                       maxHeight: 420,
                       overflowY: "auto",
@@ -3588,7 +3355,6 @@ boxShadow:
                   >
                     {savedCharacters.map((character) => {
                       const active = String(selectedCharacter?.id) === String(character.id);
-
                       return (
                         <button
                           key={character.id}
@@ -3622,12 +3388,13 @@ boxShadow:
                                 style={{ width: "100%", height: "100%", objectFit: "cover" }}
                               />
                             ) : (
-                              <div style={{ width: "100%", height: "100%", display: "grid", placeItems: "center" }}>
+                              <div
+                                style={{ width: "100%", height: "100%", display: "grid", placeItems: "center" }}
+                              >
                                 <UserCircle2 size={22} color={C.textDim} />
                               </div>
                             )}
                           </div>
-
                           <div
                             style={{
                               display: "flex",
@@ -3649,10 +3416,8 @@ boxShadow:
                             >
                               {character.name}
                             </div>
-
                             {active && <Check size={13} color="#a78bfa" />}
                           </div>
-
                           <div
                             style={{
                               fontSize: 11.5,
