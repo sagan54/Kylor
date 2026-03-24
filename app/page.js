@@ -14,7 +14,7 @@ import {
   Zap,
   ArrowUpRight,
 } from "lucide-react";
-import { supabase } from "../../lib/supabase";
+import { supabase } from "../lib/supabase";
 import AppSidebar from "./components/AppSidebar";
 
 // ─── Tokens (matches image/story/project pages) ───────────────────────────────
