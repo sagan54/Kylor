@@ -4,6 +4,8 @@ const replicate = new Replicate({
   auth: process.env.REPLICATE_API_TOKEN,
 });
 
+const MODEL = "black-forest-labs/flux-2-pro";
+
 function normalizeReferenceImage(image) {
   if (!image || typeof image !== "string") return null;
 
@@ -50,15 +52,333 @@ async function fileOutputToUrl(output) {
   return s && s !== "[object Object]" ? s : null;
 }
 
+function detectViewType(prompt = "") {
+  const p = String(prompt || "").toLowerCase();
+
+  if (
+    p.includes("left profile") ||
+    p.includes("left side profile") ||
+    p.includes("strict left side profile") ||
+    p.includes("facing left")
+  ) {
+    return "left_profile";
+  }
+
+  if (
+    p.includes("right profile") ||
+    p.includes("right side profile") ||
+    p.includes("strict right side profile") ||
+    p.includes("facing right")
+  ) {
+    return "right_profile";
+  }
+
+  if (
+    p.includes("back view") ||
+    p.includes("back shot") ||
+    p.includes("back full-body") ||
+    p.includes("facing away from camera")
+  ) {
+    return "back";
+  }
+
+  if (
+    p.includes("close-up") ||
+    p.includes("close up") ||
+    p.includes("upper-body close-up") ||
+    p.includes("upper body close-up") ||
+    p.includes("tight portrait") ||
+    p.includes("portrait")
+  ) {
+    return "closeup";
+  }
+
+  if (
+    p.includes("upper body") ||
+    p.includes("upper-body") ||
+    p.includes("mid shot") ||
+    p.includes("medium shot")
+  ) {
+    return "upper_body";
+  }
+
+  if (p.includes("full body") || p.includes("full-body") || p.includes("head to toe")) {
+    return "full_body";
+  }
+
+  return "auto";
+}
+
+function buildShotInstruction(viewType) {
+  switch (viewType) {
+    case "left_profile":
+      return [
+        "Single person only.",
+        "Strict left side profile.",
+        "Face turned to the left.",
+        "Preserve exact facial identity even from the side.",
+        "Full body visible unless the user request explicitly asks otherwise.",
+        "Standing straight, neutral pose, relaxed arms.",
+        "Do not turn toward camera.",
+      ].join(" ");
+
+    case "right_profile":
+      return [
+        "Single person only.",
+        "Strict right side profile.",
+        "Face turned to the right.",
+        "Preserve exact facial identity even from the side.",
+        "Full body visible unless the user request explicitly asks otherwise.",
+        "Standing straight, neutral pose, relaxed arms.",
+        "Do not turn toward camera.",
+      ].join(" ");
+
+    case "back":
+      return [
+        "Single person only.",
+        "Back view.",
+        "Maintain the same body type, hairstyle, hair length, silhouette, neck, shoulders, and overall identity.",
+        "Standing straight, neutral pose, relaxed arms.",
+        "Full body visible.",
+        "Do not show multiple angles.",
+      ].join(" ");
+
+    case "closeup":
+      return [
+        "Single person only.",
+        "Tight close-up portrait or upper-body close-up depending on the request.",
+        "Face clearly visible and highly recognizable.",
+        "Preserve exact face shape, skin tone, hairstyle, hairline, eyebrows, eyes, nose, lips, jawline, ears, and facial hair.",
+        "Natural realistic photography.",
+      ].join(" ");
+
+    case "upper_body":
+      return [
+        "Single person only.",
+        "Upper body / mid shot framing.",
+        "Face clearly visible and highly recognizable.",
+        "Preserve exact face shape, skin tone, hairstyle, hairline, eyebrows, eyes, nose, lips, jawline, ears, and facial hair.",
+        "Natural realistic photography.",
+      ].join(" ");
+
+    case "full_body":
+      return [
+        "Single person only.",
+        "Full body visible from head to toe.",
+        "Face must still remain clearly visible and recognizable.",
+        "Natural realistic photography.",
+      ].join(" ");
+
+    default:
+      return [
+        "Single person only.",
+        "Choose the most natural framing based on the request.",
+        "Keep the face clearly visible and recognizable unless the request explicitly asks otherwise.",
+        "Natural realistic photography.",
+      ].join(" ");
+  }
+}
+
+function buildIdentityLockBlock(hasRefs, strictIdentity = true) {
+  if (!hasRefs) {
+    return [
+      "Create one stable realistic human identity.",
+      "Keep face structure, hairstyle, skin tone, body type, and overall appearance internally consistent.",
+      "Do not beautify, idealize, or redesign the face.",
+      "Do not change age, gender expression, ethnicity presentation, or facial structure unexpectedly.",
+    ].join(" ");
+  }
+
+  const strictLines = strictIdentity
+    ? [
+        "This is the SAME EXACT person from the reference image(s), not a similar-looking person.",
+        "Preserve exact identity from the reference image(s).",
+        "Preserve exact face shape, jawline, cheek structure, forehead, hairline, eyebrows, eyes, eyelids, nose shape, nostrils, lips, chin, ears, skin tone, hairstyle, hair texture, hair volume, neck, shoulders, and body proportions.",
+        "If facial hair is present in the reference, preserve the same moustache, beard, stubble pattern, density, and placement.",
+        "Do not turn this person into someone else.",
+      ]
+    : [
+        "Use the provided reference image(s) as the same person.",
+        "Keep the person recognizable and consistent with the reference image(s).",
+      ];
+
+  return [
+    ...strictLines,
+    "Do not beautify, idealize, glamorize, age-shift, masculinity-shift, femininity-shift, ethnicity-shift, or redesign the face.",
+    "Do not smooth away real skin texture.",
+    "Do not make the subject look like CGI, a 3D render, plastic skin, wax skin, or beauty-filtered skin.",
+    "Only change pose, framing, outfit, camera angle, environment, lighting mood, and action when requested.",
+    "Identity must remain the same person at all times.",
+  ].join(" ");
+}
+
+function buildNegativeBlock(negativePrompt = "", viewType = "auto") {
+  const base = [
+    "different person",
+    "wrong identity",
+    "identity drift",
+    "generic face",
+    "altered face shape",
+    "different jawline",
+    "different cheek structure",
+    "different nose",
+    "different eyes",
+    "different lips",
+    "different eyebrows",
+    "different hairstyle",
+    "different hairline",
+    "different skin tone",
+    "beauty filter",
+    "plastic skin",
+    "waxy skin",
+    "cgi look",
+    "3d render",
+    "stylized face",
+    "anime face",
+    "doll face",
+    "over-retouched skin",
+    "blurry face",
+    "deformed face",
+    "duplicate person",
+    "multiple people",
+    "extra person",
+    "collage",
+    "split screen",
+    "contact sheet",
+    "character sheet",
+    "text",
+    "watermark",
+  ];
+
+  if (
+    viewType === "full_body" ||
+    viewType === "left_profile" ||
+    viewType === "right_profile" ||
+    viewType === "back"
+  ) {
+    base.push("close-up crop", "head-only crop", "partial body cut-off", "cropped feet", "cropped head");
+  }
+
+  if (negativePrompt && String(negativePrompt).trim()) {
+    base.push(String(negativePrompt).trim());
+  }
+
+  return base.join(", ");
+}
+
+function buildFinalPrompt({
+  prompt,
+  hasRefs,
+  viewType,
+  negativePrompt = "",
+  strictIdentity = true,
+}) {
+  const identityBlock = buildIdentityLockBlock(hasRefs, strictIdentity);
+  const shotBlock = buildShotInstruction(viewType);
+  const negativeBlock = buildNegativeBlock(negativePrompt, viewType);
+
+  const realismBlock = [
+    "Highly realistic human photography.",
+    "Natural skin texture, natural pores, realistic hair strands, realistic facial detail.",
+    "Grounded lighting, physically believable skin and hair.",
+    "No over-stylization.",
+  ].join(" ");
+
+  const strictBlock = strictIdentity
+    ? [
+        "Strict identity preservation mode.",
+        "Face must stay as close as possible to the reference identity.",
+        "Hairstyle must stay as close as possible to the reference identity unless the request explicitly asks for a hairstyle change.",
+        "Skin tone must stay as close as possible to the reference identity.",
+        "Do not creatively reinterpret the person.",
+      ].join(" ")
+    : "";
+
+  return [
+    identityBlock,
+    strictBlock,
+    shotBlock,
+    realismBlock,
+    `User request: ${String(prompt || "").trim()}`,
+    `Avoid: ${negativeBlock}`,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+async function runSingleGeneration({
+  prompt,
+  refs,
+  size,
+  negativePrompt,
+  strictIdentity,
+}) {
+  const hasRefs = refs.length > 0;
+  const aspect_ratio = mapSizeToAspectRatio(size);
+  const viewType = detectViewType(prompt);
+
+  const finalPrompt = buildFinalPrompt({
+    prompt,
+    hasRefs,
+    viewType,
+    negativePrompt,
+    strictIdentity,
+  });
+
+  const input = hasRefs
+    ? {
+        prompt: finalPrompt,
+        aspect_ratio,
+        output_format: "png",
+        reference_images: refs,
+      }
+    : {
+        prompt: finalPrompt,
+        aspect_ratio,
+        output_format: "png",
+      };
+
+  const output = await replicate.run(MODEL, { input });
+  const imageUrl = await fileOutputToUrl(output);
+
+  return {
+    imageUrl,
+    finalPrompt,
+    viewType,
+    hasRefs,
+    aspect_ratio,
+  };
+}
+
+function dedupeResults(results) {
+  const seen = new Set();
+  const deduped = [];
+
+  for (const item of results) {
+    if (!item?.url) continue;
+    if (seen.has(item.url)) continue;
+    seen.add(item.url);
+    deduped.push(item);
+  }
+
+  return deduped.map((item, index) => ({
+    ...item,
+    starred: index === 0,
+  }));
+}
+
 export async function POST(req) {
   try {
     const {
       prompt,
       size = "1024x1024",
       referenceImages = [],
+      negativePrompt = "",
+      strictIdentity = true,
+      attempts = 2,
     } = await req.json();
 
-    if (!prompt || !prompt.trim()) {
+    if (!prompt || !String(prompt).trim()) {
       return Response.json({ error: "Prompt is required" }, { status: 400 });
     }
 
@@ -66,68 +386,65 @@ export async function POST(req) {
       ? referenceImages.map(normalizeReferenceImage).filter(Boolean).slice(0, 8)
       : [];
 
-    const hasRefs = refs.length > 0;
-    const aspect_ratio = mapSizeToAspectRatio(size);
+    const safeAttempts = Math.min(Math.max(Number(attempts) || 1, 1), 4);
 
-    let finalPrompt;
+    let results = [];
+    let lastError = null;
+    let debug = null;
 
-    if (hasRefs) {
-      finalPrompt = [
-        "Use the provided reference images as the same exact person.",
-        "Preserve the exact identity, face shape, jawline, nose, eyes, lips, eyebrows, skin tone, hairstyle, and body type.",
-        "Do not beautify, idealize, age-shift, masculinize, feminize, or change facial structure.",
-        "Keep the same person, only change pose, framing, camera angle, outfit, and scene as requested.",
-        "Maintain realistic human skin texture, natural pores, subtle imperfections, realistic lighting, and grounded photography.",
-        "No plastic skin, no waxy skin, no beauty filter, no CGI look, no 3D render look.",
-        prompt,
-      ].join(" ");
-    } else {
-      finalPrompt = [
-        "Generate the same character consistently and keep facial identity stable across future generations.",
-        "Create a realistic human character with stable identity, stable facial structure, and stable overall appearance.",
-        "Preserve face shape, jawline, nose, eyes, lips, eyebrows, skin tone, hairstyle, and body type consistently.",
-        "Do not beautify, idealize, age-shift, masculinize, feminize, or change facial structure.",
-        "Maintain realistic human skin texture, natural pores, subtle imperfections, realistic lighting, and grounded photography.",
-        "No plastic skin, no waxy skin, no beauty filter, no CGI look, no 3D render look.",
-        prompt,
-      ].join(" ");
-    }
+    for (let i = 0; i < safeAttempts; i += 1) {
+      try {
+        const generated = await runSingleGeneration({
+          prompt,
+          refs,
+          size,
+          negativePrompt,
+          strictIdentity,
+        });
 
-    const input = hasRefs
-      ? {
-          prompt: finalPrompt,
-          aspect_ratio,
-          output_format: "png",
-          reference_images: refs,
-        }
-      : {
-          prompt: finalPrompt,
-          aspect_ratio,
-          output_format: "png",
+        debug = {
+          finalPrompt: generated.finalPrompt,
+          viewType: generated.viewType,
+          hasRefs: generated.hasRefs,
+          aspect_ratio: generated.aspect_ratio,
         };
 
-    const output = await replicate.run("black-forest-labs/flux-2-pro", {
-      input,
-    });
+        if (generated.imageUrl) {
+          results.push({
+            url: generated.imageUrl,
+            starred: results.length === 0,
+            attempt: i + 1,
+          });
+        }
+      } catch (err) {
+        lastError = err;
+        console.error(`Consistency attempt ${i + 1} failed:`, err);
+      }
+    }
 
-    const firstUrl = await fileOutputToUrl(output);
+    results = dedupeResults(results);
 
-    const images = firstUrl ? [firstUrl] : [];
-
-    if (!images.length) {
+    if (!results.length) {
       return Response.json(
-        { error: "No image returned from Replicate" },
+        {
+          error: lastError?.message || "No image returned from Replicate",
+        },
         { status: 500 }
       );
     }
 
     return Response.json({
-      image: images[0],
-      images,
+      image: results[0].url,
+      images: results,
       meta: {
-        model: "black-forest-labs/flux-2-pro",
+        model: MODEL,
         referenceCount: refs.length,
-        usedReferences: hasRefs,
+        usedReferences: refs.length > 0,
+        strictIdentity: Boolean(strictIdentity),
+        attempts: safeAttempts,
+        returnedCount: results.length,
+        viewType: debug?.viewType || detectViewType(prompt),
+        aspectRatio: debug?.aspect_ratio || mapSizeToAspectRatio(size),
       },
     });
   } catch (error) {

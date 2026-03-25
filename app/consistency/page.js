@@ -248,6 +248,94 @@ function outputsFromCharacter(char) {
   }));
 }
 
+function extractGeneratedUrl(data) {
+  if (!data) return null;
+
+  if (typeof data.image === "string" && data.image) return data.image;
+
+  if (Array.isArray(data.images) && data.images.length > 0) {
+    const first = data.images[0];
+    if (typeof first === "string") return first;
+    if (first && typeof first.url === "string") return first.url;
+  }
+
+  return null;
+}
+
+function buildActiveCharacterTraitDesc(char) {
+  return [
+    char.gender,
+    char.ageRange,
+    char.ethnicity,
+    char.hairColor && char.hairStyle ? `${char.hairColor} ${char.hairStyle} hair` : null,
+    char.eyeColor ? `${char.eyeColor} eyes` : null,
+    char.build ? `${char.build} build` : null,
+  ]
+    .filter(Boolean)
+    .join(", ");
+}
+
+function buildLockedCharacterPrompt({
+  char,
+  shot,
+  extraPrompt = "",
+  hasRefs = false,
+  mode = "front",
+}) {
+  const traitDesc = buildActiveCharacterTraitDesc(char);
+
+  const identityBlock = hasRefs
+    ? [
+        `Generate the EXACT SAME real person as the provided reference image(s).`,
+        `This is a specific human identity, not a similar-looking character.`,
+        `Preserve exact face shape, cheek structure, jawline, chin, forehead, hairline, eyebrows, eyes, eyelids, nose, lips, ears, skin tone, hairstyle, hair texture, hair volume, neck, shoulders, body proportions, and overall build.`,
+        `If facial hair exists in the reference, preserve the exact moustache, beard, stubble pattern, density, and placement.`,
+        `Do not beautify, idealize, glamorize, age-shift, gender-shift, ethnicity-shift, or redesign the person.`,
+        `Do not generate a different person.`,
+      ].join(" ")
+    : [
+        `Generate one stable realistic human identity.`,
+        `Keep the exact same identity consistently across outputs.`,
+        `Do not redesign the face between generations.`,
+      ].join(" ");
+
+  const realismBlock = [
+    `Photorealistic human image.`,
+    `Natural skin texture, realistic pores, real facial detail, realistic hair strands.`,
+    `No waxy skin, no plastic skin, no CGI look, no 3D render look, no beauty-filtered face.`,
+  ].join(" ");
+
+  const sceneBlock =
+    mode === "front"
+      ? [
+          `Plain light studio background.`,
+          `Neutral reference-photo style.`,
+          `Same outfit unless explicitly changed.`,
+        ].join(" ")
+      : [
+          `Keep the same person identity while changing only the angle / framing requested.`,
+          `Keep the same outfit, same background family, same neutral lighting unless explicitly changed.`,
+        ].join(" ");
+
+  const avoidBlock = [
+    `Avoid: different person, generic face, identity drift, altered face shape, altered nose, altered eyes, altered lips, altered jawline, changed hairstyle, changed hairline, changed skin tone, duplicate person, multiple people, split screen, collage, character sheet, contact sheet, text, watermark.`,
+  ].join(" ");
+
+  return [
+    identityBlock,
+    char.triggerToken ? `Character token: ${char.triggerToken}.` : null,
+    traitDesc ? `Locked physical traits: ${traitDesc}.` : null,
+    char.desc ? `Locked character details: ${char.desc}.` : null,
+    extraPrompt?.trim() ? `Locked reference notes: ${extraPrompt.trim()}.` : null,
+    `Shot request: ${shot}.`,
+    sceneBlock,
+    realismBlock,
+    avoidBlock,
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
 function SidebarItem({ item }) {
   const Icon = item.icon;
   const inner = (
@@ -427,16 +515,16 @@ function OutputCard({ item, onDelete, onOpen }) {
         background: CARD_GRADIENTS[getIdNumber(item.id) % CARD_GRADIENTS.length], aspectRatio: "2/3", transition: "border-color 0.16s ease" }}>
       {item.url && item.url !== "__FAILED__" ? (
         <img
-  src={item.url}
-  alt={item.scene}
-  style={{
-    width: "100%",
-    height: "100%",
-    objectFit: "cover",
-    position: "absolute",
-    inset: 0,
-  }}
-/>
+          src={item.url}
+          alt={item.scene}
+          style={{
+            width: "100%",
+            height: "100%",
+            objectFit: "cover",
+            position: "absolute",
+            inset: 0,
+          }}
+        />
       ) : item.url === "__FAILED__" ? (
         <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", padding: 16, textAlign: "center" }}>
           <div><div style={{ fontSize: 13, fontWeight: 700, color: "white", marginBottom: 6 }}>Failed</div><div style={{ fontSize: 11.5, color: C.textMuted }}>{item.scene}</div></div>
@@ -494,7 +582,7 @@ export default function ConsistencyPage() {
   const [generating,      setGenerating]      = useState(false);
   const [formSection,     setFormSection]     = useState("traits");
   const [lightboxItem, setLightboxItem] = useState(null);
-const [lightboxIndex, setLightboxIndex] = useState(0);
+  const [lightboxIndex, setLightboxIndex] = useState(0);
   const [userId,          setUserId]          = useState(null);
   const [saving,          setSaving]          = useState(false);
   const [characterImages, setCharacterImages] = useState([]);
@@ -503,15 +591,15 @@ const [lightboxIndex, setLightboxIndex] = useState(0);
   const generatingRef = useRef(false);
 
   const activeChar = characters.find(c => c.id === activeCharId) || null;
-const charOutputs = outputs.filter(o => o.charId === activeCharId);
-const visibleCharOutputs = charOutputs.filter(o => o.url && o.url !== "__FAILED__");
-const orderedVisibleOutputs = CHARACTER_PACK_VIEWS
-  .map(view => visibleCharOutputs.find(o => o.scene === view.label))
-  .filter(Boolean);
+  const charOutputs = outputs.filter(o => o.charId === activeCharId);
+  const visibleCharOutputs = charOutputs.filter(o => o.url && o.url !== "__FAILED__");
+  const orderedVisibleOutputs = CHARACTER_PACK_VIEWS
+    .map(view => visibleCharOutputs.find(o => o.scene === view.label))
+    .filter(Boolean);
 
-const frontOutput = visibleCharOutputs.find(o => o.scene === "Front Full-Body");
-const otherOutputs = visibleCharOutputs.filter(o => o.scene !== "Front Full-Body");
-const shouldShowGenerateMorePanel = !!frontOutput && otherOutputs.length < 4;
+  const frontOutput = visibleCharOutputs.find(o => o.scene === "Front Full-Body");
+  const otherOutputs = visibleCharOutputs.filter(o => o.scene !== "Front Full-Body");
+  const shouldShowGenerateMorePanel = !!frontOutput && otherOutputs.length < 4;
 
   const updateCharactersCache = useCallback((chars) => {
     try {
@@ -731,76 +819,76 @@ const shouldShowGenerateMorePanel = !!frontOutput && otherOutputs.length < 4;
   }, [activeCharId, characters, generatingMore]);
 
   useEffect(() => {
-  let mounted = true;
+    let mounted = true;
 
-  try {
-    const raw = localStorage.getItem(SESSION_KEY);
-    if (raw) {
-      const cached = JSON.parse(raw);
-      if (Array.isArray(cached) && cached.length > 0) {
-        setCharacters(hydrateCachedCharacters(cached));
+    try {
+      const raw = localStorage.getItem(SESSION_KEY);
+      if (raw) {
+        const cached = JSON.parse(raw);
+        if (Array.isArray(cached) && cached.length > 0) {
+          setCharacters(hydrateCachedCharacters(cached));
+        }
       }
-    }
-  } catch {}
+    } catch {}
 
-  async function bootstrapCharacters() {
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
+    async function bootstrapCharacters() {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
 
-    const uid = session?.user?.id ?? null;
+      const uid = session?.user?.id ?? null;
 
-    if (!mounted) return;
-
-    setUserId(uid);
-
-    if (!uid) return;
-
-    const { data, error } = await supabase
-      .from("characters")
-      .select("id, name, description, prompt, reference_image, generated_images, cover_image, style, seed, created_at, trigger_token, status, lora_path, base_model, locked_traits, metadata")
-      .eq("user_id", uid)
-      .order("created_at", { ascending: false });
-
-    if (!mounted) return;
-
-    if (error) {
-      console.error("Failed to load saved characters:", error);
-      return;
-    }
-
-    if (data && !generatingRef.current) {
-      const allImageRows = await loadCharacterImages(null, data);
       if (!mounted) return;
 
-      const grouped = new Map();
-      for (const img of allImageRows) {
-        if (!grouped.has(img.character_id)) grouped.set(img.character_id, []);
-        grouped.get(img.character_id).push(img);
+      setUserId(uid);
+
+      if (!uid) return;
+
+      const { data, error } = await supabase
+        .from("characters")
+        .select("id, name, description, prompt, reference_image, generated_images, cover_image, style, seed, created_at, trigger_token, status, lora_path, base_model, locked_traits, metadata")
+        .eq("user_id", uid)
+        .order("created_at", { ascending: false });
+
+      if (!mounted) return;
+
+      if (error) {
+        console.error("Failed to load saved characters:", error);
+        return;
       }
 
-      const mapped = data.map(row => rowToCharacter(row, grouped.get(row.id) || []));
-      setCharacters(mapped);
-      updateCharactersCache(mapped);
+      if (data && !generatingRef.current) {
+        const allImageRows = await loadCharacterImages(null, data);
+        if (!mounted) return;
+
+        const grouped = new Map();
+        for (const img of allImageRows) {
+          if (!grouped.has(img.character_id)) grouped.set(img.character_id, []);
+          grouped.get(img.character_id).push(img);
+        }
+
+        const mapped = data.map(row => rowToCharacter(row, grouped.get(row.id) || []));
+        setCharacters(mapped);
+        updateCharactersCache(mapped);
+      }
     }
-  }
 
-  bootstrapCharacters();
+    bootstrapCharacters();
 
-  const {
-    data: { subscription },
-  } = supabase.auth.onAuthStateChange((event, session) => {
-    if (!mounted) return;
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if (!mounted) return;
 
-    const uid = session?.user?.id ?? null;
-    setUserId(uid);
-  });
+      const uid = session?.user?.id ?? null;
+      setUserId(uid);
+    });
 
-  return () => {
-    mounted = false;
-    subscription.unsubscribe();
-  };
-}, [hydrateCachedCharacters, updateCharactersCache]);
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
+  }, [hydrateCachedCharacters, updateCharactersCache]);
 
   async function saveCharacter() {
     if (!charName.trim()) return;
@@ -981,27 +1069,28 @@ const shouldShowGenerateMorePanel = !!frontOutput && otherOutputs.length < 4;
       setCharacterImages(rows.filter(r => r.character_id === char.id));
     }
   }
+
   function openLightboxForItem(item) {
-  const index = orderedVisibleOutputs.findIndex(o => o.id === item.id);
-  setLightboxIndex(index >= 0 ? index : 0);
-  setLightboxItem(item);
-}
+    const index = orderedVisibleOutputs.findIndex(o => o.id === item.id);
+    setLightboxIndex(index >= 0 ? index : 0);
+    setLightboxItem(item);
+  }
 
-function goPrevLightbox() {
-  if (!orderedVisibleOutputs.length) return;
-  const nextIndex =
-    lightboxIndex <= 0 ? orderedVisibleOutputs.length - 1 : lightboxIndex - 1;
-  setLightboxIndex(nextIndex);
-  setLightboxItem(orderedVisibleOutputs[nextIndex]);
-}
+  function goPrevLightbox() {
+    if (!orderedVisibleOutputs.length) return;
+    const nextIndex =
+      lightboxIndex <= 0 ? orderedVisibleOutputs.length - 1 : lightboxIndex - 1;
+    setLightboxIndex(nextIndex);
+    setLightboxItem(orderedVisibleOutputs[nextIndex]);
+  }
 
-function goNextLightbox() {
-  if (!orderedVisibleOutputs.length) return;
-  const nextIndex =
-    lightboxIndex >= orderedVisibleOutputs.length - 1 ? 0 : lightboxIndex + 1;
-  setLightboxIndex(nextIndex);
-  setLightboxItem(orderedVisibleOutputs[nextIndex]);
-}
+  function goNextLightbox() {
+    if (!orderedVisibleOutputs.length) return;
+    const nextIndex =
+      lightboxIndex >= orderedVisibleOutputs.length - 1 ? 0 : lightboxIndex + 1;
+    setLightboxIndex(nextIndex);
+    setLightboxItem(orderedVisibleOutputs[nextIndex]);
+  }
 
   async function deleteAllOutputs() {
     setOutputs(prev => prev.filter(o => o.charId !== activeCharId));
@@ -1095,172 +1184,144 @@ function goNextLightbox() {
   }
 
   async function generateOtherProfiles() {
-  if (!activeChar || generatingMore) return;
+    if (!activeChar || generatingMore) return;
 
-  const existingFront = charOutputs.find(
-    (o) => o.scene === "Front Full-Body" && o.url && o.url !== "__FAILED__"
-  );
+    const existingFront = charOutputs.find(
+      o => o.scene === "Front Full-Body" && o.url && o.url !== "__FAILED__"
+    );
 
-  if (!existingFront) {
-    alert("Generate the first image first.");
-    return;
-  }
+    if (!existingFront) {
+      alert("Generate the first image first.");
+      return;
+    }
 
-  setGeneratingMore(true);
+    setGeneratingMore(true);
 
-  const views = [
-    {
-      key: "left",
-      label: "Left Profile Full-Body",
-      shot: "strict left side profile, full-body, facing left, standing straight, arms relaxed, centered composition",
-      size: "1024x1536",
-    },
-    {
-      key: "right",
-      label: "Right Profile Full-Body",
-      shot: "strict right side profile, full-body, facing right, standing straight, arms relaxed, centered composition",
-      size: "1024x1536",
-    },
-    {
-      key: "back",
-      label: "Back Full-Body",
-      shot: "back view, full-body, standing straight, arms relaxed, centered composition",
-      size: "1024x1536",
-    },
-    {
-      key: "close",
-      label: "Upper-Body Close-Up",
-      shot: "upper body portrait, facing camera, shoulders visible, neutral expression, centered composition",
-      size: "1024x1024",
-    },
-  ];
+    const views = [
+      {
+        key: "left",
+        label: "Left Profile Full-Body",
+        shot: "strict left side profile, full-body, facing left, standing straight, arms relaxed, centered composition",
+        size: "1024x1536",
+      },
+      {
+        key: "right",
+        label: "Right Profile Full-Body",
+        shot: "strict right side profile, full-body, facing right, standing straight, arms relaxed, centered composition",
+        size: "1024x1536",
+      },
+      {
+        key: "back",
+        label: "Back Full-Body",
+        shot: "back view, full-body, standing straight, arms relaxed, centered composition",
+        size: "1024x1536",
+      },
+      {
+        key: "closeup",
+        label: "Upper-Body Close-Up",
+        shot: "upper-body close-up portrait, facing camera, neutral expression, centered composition",
+        size: "1024x1024",
+      },
+    ];
 
-  const traitDesc = [
-    activeChar.gender,
-    activeChar.ageRange,
-    activeChar.ethnicity,
-    activeChar.hairColor && activeChar.hairStyle
-      ? `${activeChar.hairColor} ${activeChar.hairStyle} hair`
-      : null,
-    activeChar.eyeColor ? `${activeChar.eyeColor} eyes` : null,
-    activeChar.build ? `${activeChar.build} build` : null,
-  ]
-    .filter(Boolean)
-    .join(", ");
+    let accumulatedImages = [...(activeChar.generatedImages || []).filter(Boolean)];
 
-  let accumulatedImages = [...(activeChar.generatedImages || []).filter(Boolean)];
+    const effectiveRefs = activeChar.refEntries.length > 0 ? activeChar.refEntries : refEntries;
+    const uploadedRefs = await entriesToReferenceImages(effectiveRefs);
 
-  const effectiveRefs =
-    activeChar.refEntries.length > 0 ? activeChar.refEntries : refEntries;
+    const sharedReferenceImages = [
+      ...uploadedRefs.filter(Boolean),
+      existingFront.url,
+    ].filter(Boolean);
 
-  const uploadedRefs = await entriesToReferenceImages(effectiveRefs);
+    try {
+      for (const view of views) {
+        const placeholder = {
+          id: `${activeCharId}-${view.key}-${Date.now()}`,
+          charId: activeCharId,
+          prompt: view.shot,
+          scene: view.label,
+          url: null,
+          createdAt: new Date().toISOString(),
+        };
 
-  const sharedReferenceImages = [
-    ...uploadedRefs.filter(Boolean),
-    existingFront.url,
-  ].filter(Boolean);
+        setOutputs(prev => [
+          ...prev.filter(o => !(o.charId === activeCharId && o.scene === view.label)),
+          placeholder,
+        ]);
 
-  try {
-    for (const view of views) {
-      const placeholder = {
-        id: `${activeCharId}-${view.key}-${Date.now()}`,
-        charId: activeCharId,
-        prompt: view.shot,
-        scene: view.label,
-        url: null,
-        createdAt: new Date().toISOString(),
-      };
-
-      setOutputs((prev) => [
-        ...prev.filter(
-          (o) => !(o.charId === activeCharId && o.scene === view.label)
-        ),
-        placeholder,
-      ]);
-
-      const finalPrompt = [
-        `Generate the EXACT SAME person named ${activeChar.name} as the provided reference images and the existing front-view image.`,
-        "Preserve identical facial identity, face shape, jawline, nose, lips, eyes, eyebrows, skin tone, ears, hairline, hairstyle, neck, shoulders, body proportions, and overall build.",
-        "Do NOT change identity. Do NOT beautify. Do NOT stylize. Do NOT generate a similar-looking person. Generate the SAME exact human in a different angle only.",
-        traitDesc
-          ? `Exact physical traits: ${traitDesc}.`
-          : null,
-        activeChar.desc
-          ? `Fixed character details: ${activeChar.desc}.`
-          : null,
-        extraPrompt.trim()
-          ? `Locked notes: ${extraPrompt.trim()}.`
-          : null,
-        "Same outfit, same black t-shirt, same jeans, same neutral studio background, same lighting, same body proportions.",
-        `Shot type: ${view.shot}.`,
-        "Photorealistic skin, visible pores, subtle imperfections, realistic facial texture, natural lighting, no plastic skin, no waxy skin, no CGI look.",
-        "Exactly one person only. No collage. No multiple people. No split screen. No character sheet. No text. No watermark.",
-      ]
-        .filter(Boolean)
-        .join(" ");
-
-      const res = await fetch("/api/generate-consistency", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          prompt: finalPrompt,
-          size: view.size,
-          referenceImages: sharedReferenceImages,
-        }),
-      });
-
-      const data = await res.json();
-      const url = Array.isArray(data?.images)
-        ? data.images[0]
-        : data?.image ?? null;
-
-      setOutputs((prev) =>
-        prev.map((o) =>
-          o.id === placeholder.id ? { ...o, url: url || "__FAILED__" } : o
-        )
-      );
-
-      if (url) {
-        accumulatedImages = [...accumulatedImages, url];
-
-        await insertGeneratedCharacterImage(
-          activeCharId,
-          url,
-          view.label,
-          accumulatedImages.length - 1,
-          false
-        );
-
-        await supabase
-          .from("characters")
-          .update({ generated_images: accumulatedImages })
-          .eq("id", activeCharId)
-          .eq("user_id", userId);
-
-        setCharacters((prev) => {
-          const updated = prev.map((c) =>
-            c.id === activeCharId
-              ? {
-                  ...c,
-                  generatedImages: accumulatedImages,
-                  generations: accumulatedImages.length,
-                }
-              : c
-          );
-          updateCharactersCache(updated);
-          return updated;
+        const finalPrompt = buildLockedCharacterPrompt({
+          char: activeChar,
+          shot: view.shot,
+          extraPrompt,
+          hasRefs: sharedReferenceImages.length > 0,
+          mode: "profile",
         });
 
-        const rows = await loadCharacterImages(activeCharId);
-        setCharacterImages(rows.filter((r) => r.character_id === activeCharId));
+        const res = await fetch("/api/generate-consistency", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            prompt: finalPrompt,
+            size: view.size,
+            referenceImages: sharedReferenceImages,
+            negativePrompt:
+              "different person, identity drift, altered face shape, altered hairline, altered hairstyle, altered skin tone, changed beard, generic face, beauty filter, CGI, 3D render, multiple people, collage, split screen, text, watermark",
+            strictIdentity: true,
+            attempts: 3,
+          }),
+        });
+
+        const data = await res.json();
+        const url = extractGeneratedUrl(data);
+
+        setOutputs(prev =>
+          prev.map(o =>
+            o.id === placeholder.id ? { ...o, url: url || "__FAILED__" } : o
+          )
+        );
+
+        if (url) {
+          accumulatedImages = [...accumulatedImages, url];
+
+          await insertGeneratedCharacterImage(
+            activeCharId,
+            url,
+            view.label,
+            accumulatedImages.length - 1,
+            false
+          );
+
+          await supabase
+            .from("characters")
+            .update({ generated_images: accumulatedImages })
+            .eq("id", activeCharId)
+            .eq("user_id", userId);
+
+          setCharacters(prev => {
+            const updated = prev.map(c =>
+              c.id === activeCharId
+                ? {
+                    ...c,
+                    generatedImages: accumulatedImages,
+                    generations: accumulatedImages.length,
+                  }
+                : c
+            );
+            updateCharactersCache(updated);
+            return updated;
+          });
+
+          const rows = await loadCharacterImages(activeCharId);
+          setCharacterImages(rows.filter(r => r.character_id === activeCharId));
+        }
       }
+    } catch (err) {
+      console.error("Generate other profiles failed:", err);
+    } finally {
+      setGeneratingMore(false);
     }
-  } catch (err) {
-    console.error("Generate other profiles failed:", err);
-  } finally {
-    setGeneratingMore(false);
   }
-}
 
   async function handleGenerate() {
     if (!activeChar || generating) return;
@@ -1269,15 +1330,6 @@ function goNextLightbox() {
     setGenerating(true);
 
     const frontView = CHARACTER_PACK_VIEWS[0];
-    const traitDesc = [
-      activeChar.gender,
-      activeChar.ageRange,
-      activeChar.ethnicity,
-      activeChar.hairColor && activeChar.hairStyle ? `${activeChar.hairColor} ${activeChar.hairStyle} hair` : null,
-      activeChar.eyeColor ? `${activeChar.eyeColor} eyes` : null,
-      activeChar.build ? `${activeChar.build} build` : null,
-    ].filter(Boolean).join(", ");
-
     const effectiveRefs = activeChar.refEntries.length > 0 ? activeChar.refEntries : refEntries;
     const hasRefs = effectiveRefs.length > 0;
 
@@ -1296,22 +1348,16 @@ function goNextLightbox() {
     try {
       const uploadedRefs = hasRefs ? await entriesToReferenceImages(effectiveRefs) : [];
 
-      const finalPrompt = [
-        hasRefs
-          ? `CRITICAL: You must generate the EXACT SAME real person named ${activeChar.name} from the reference photos. Copy their face exactly — same facial bone structure, same jawline shape, same nose shape and width, same lip shape, same eye shape and spacing, same eyebrow thickness and arch, same exact skin tone and texture, same hairline. This is a SPECIFIC REAL HUMAN — do NOT idealise, do NOT change any facial feature, do NOT generate a similar-looking person. Generate THIS exact person.`
-          : `Generate a character named ${activeChar.name} with completely consistent appearance. Lock all facial features and do not vary them.`,
-        activeChar.triggerToken ? `Character token: ${activeChar.triggerToken}.` : null,
-        traitDesc ? `Exact physical traits (must match precisely): ${traitDesc}.` : null,
-        activeChar.desc ? `Additional fixed character details: ${activeChar.desc}.` : null,
-        extraPrompt.trim() ? `Locked style notes: ${extraPrompt.trim()}.` : null,
-        `Shot type: ${frontView.shot}.`,
-        "Photorealistic human skin, visible pores, natural facial texture, realistic lighting, no waxy skin, no CGI look, no plastic skin.",
-        "Plain light studio background. Neutral reference photo style.",
-        "Exactly one person only. No duplicate person. No collage. No split screen. No multiple angles in one image. No character sheet. No contact sheet. No grid layout. No text. No watermark.",
-      ].filter(Boolean).join(" ");
+      const finalPrompt = buildLockedCharacterPrompt({
+        char: activeChar,
+        shot: "front-facing, full-body, standing straight, arms relaxed, centered composition",
+        extraPrompt,
+        hasRefs,
+        mode: "front",
+      });
 
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 120000);
+      const timeout = setTimeout(() => controller.abort(), 180000);
 
       let data = null;
       try {
@@ -1323,15 +1369,25 @@ function goNextLightbox() {
             prompt: finalPrompt,
             size: frontView.size,
             referenceImages: uploadedRefs,
+            negativePrompt:
+              "different person, identity drift, generic face, altered hairstyle, altered skin tone, beauty filter, CGI, 3D render, duplicate person, collage, split screen, text, watermark",
+            strictIdentity: true,
+            attempts: 3,
           }),
         });
+
         data = await res.json();
       } finally {
         clearTimeout(timeout);
       }
 
-      const url = Array.isArray(data?.images) ? data.images[0] : data?.image ?? null;
-      setOutputs(prev => prev.map(o => o.id === frontOutputItem.id ? { ...o, url: url || "__FAILED__" } : o));
+      const url = extractGeneratedUrl(data);
+
+      setOutputs(prev =>
+        prev.map(o =>
+          o.id === frontOutputItem.id ? { ...o, url: url || "__FAILED__" } : o
+        )
+      );
 
       if (url) {
         await insertGeneratedCharacterImage(activeCharId, url, frontView.label, 0, true);
@@ -1345,7 +1401,7 @@ function goNextLightbox() {
         };
 
         setCharacters(prev => {
-          const updated = prev.map(c => c.id === activeCharId ? updatedChar : c);
+          const updated = prev.map(c => (c.id === activeCharId ? updatedChar : c));
           updateCharactersCache(updated);
           return updated;
         });
@@ -1388,7 +1444,11 @@ function goNextLightbox() {
       }
     } catch (err) {
       console.error("Generate failed:", err);
-      setOutputs(prev => prev.map(o => o.id === frontOutputItem.id ? { ...o, url: "__FAILED__" } : o));
+      setOutputs(prev =>
+        prev.map(o =>
+          o.id === frontOutputItem.id ? { ...o, url: "__FAILED__" } : o
+        )
+      );
     } finally {
       generatingRef.current = false;
       setGenerating(false);
@@ -1714,10 +1774,10 @@ function goNextLightbox() {
                         outputView === "grid" ? (
                           <motion.div key={item.id} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}>
                             <OutputCard
-  item={item}
-  onDelete={() => deleteOutput(item.id)}
-  onOpen={openLightboxForItem}
-/>
+                              item={item}
+                              onDelete={() => deleteOutput(item.id)}
+                              onOpen={openLightboxForItem}
+                            />
                           </motion.div>
                         ) : (
                           <motion.div key={item.id} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.04 }}
@@ -1757,10 +1817,10 @@ function goNextLightbox() {
                   <div style={{ display: "grid", gridTemplateColumns: "210px 1fr", gap: 16, alignItems: "stretch" }}>
                     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                       <OutputCard
-  item={frontOutput}
-  onDelete={() => deleteOutput(frontOutput.id)}
-  onOpen={openLightboxForItem}
-/>
+                        item={frontOutput}
+                        onDelete={() => deleteOutput(frontOutput.id)}
+                        onOpen={openLightboxForItem}
+                      />
                       <motion.button whileHover={!generating ? { borderColor: C.accentBorder, color: "#c4b5fd" } : {}} whileTap={!generating ? { scale: 0.97 } : {}}
                         onClick={handleGenerate} disabled={generating}
                         style={{ height: 36, borderRadius: radius.sm, border: `1px solid ${C.border}`, background: C.surface, color: C.textMuted, cursor: generating ? "default" : "pointer", fontSize: 12, fontWeight: 600, fontFamily: "inherit", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, transition: "all 0.15s ease" }}>
@@ -1835,155 +1895,155 @@ function goNextLightbox() {
       </div>
 
       <AnimatePresence>
-  {lightboxItem && (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      onClick={() => setLightboxItem(null)}
-      style={{
-        position: "fixed",
-        inset: 0,
-        zIndex: 9999,
-        background: "rgba(0,0,0,0.92)",
-        backdropFilter: "blur(14px)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: 24,
-      }}
-    >
-      <motion.div
-        initial={{ scale: 0.9, opacity: 0 }}
-        animate={{ scale: 1, opacity: 1 }}
-        exit={{ scale: 0.9, opacity: 0 }}
-        transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          position: "relative",
-          maxWidth: "90vw",
-          maxHeight: "90vh",
-          borderRadius: radius.xl,
-          overflow: "hidden",
-          boxShadow: "0 40px 100px rgba(0,0,0,0.7)",
-        }}
-      >
-        <img
-          src={lightboxItem.url}
-          alt={lightboxItem.scene}
-          style={{
-            display: "block",
-            maxWidth: "90vw",
-            maxHeight: "88vh",
-            objectFit: "contain",
-          }}
-        />
-
-        {orderedVisibleOutputs.length > 1 && (
-          <>
-            <motion.button
-              whileTap={{ scale: 0.92 }}
-              onClick={goPrevLightbox}
+        {lightboxItem && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setLightboxItem(null)}
+            style={{
+              position: "fixed",
+              inset: 0,
+              zIndex: 9999,
+              background: "rgba(0,0,0,0.92)",
+              backdropFilter: "blur(14px)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: 24,
+            }}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
+              onClick={(e) => e.stopPropagation()}
               style={{
-                position: "absolute",
-                left: 18,
-                top: "50%",
-                transform: "translateY(-50%)",
-                width: 44,
-                height: 44,
-                borderRadius: 14,
-                border: "1px solid rgba(255,255,255,0.12)",
-                background: "rgba(0,0,0,0.6)",
-                backdropFilter: "blur(8px)",
-                color: "white",
-                display: "grid",
-                placeItems: "center",
-                cursor: "pointer",
+                position: "relative",
+                maxWidth: "90vw",
+                maxHeight: "90vh",
+                borderRadius: radius.xl,
+                overflow: "hidden",
+                boxShadow: "0 40px 100px rgba(0,0,0,0.7)",
               }}
             >
-              <ChevronLeft size={18} />
-            </motion.button>
+              <img
+                src={lightboxItem.url}
+                alt={lightboxItem.scene}
+                style={{
+                  display: "block",
+                  maxWidth: "90vw",
+                  maxHeight: "88vh",
+                  objectFit: "contain",
+                }}
+              />
 
-            <motion.button
-              whileTap={{ scale: 0.92 }}
-              onClick={goNextLightbox}
-              style={{
-                position: "absolute",
-                right: 18,
-                top: "50%",
-                transform: "translateY(-50%)",
-                width: 44,
-                height: 44,
-                borderRadius: 14,
-                border: "1px solid rgba(255,255,255,0.12)",
-                background: "rgba(0,0,0,0.6)",
-                backdropFilter: "blur(8px)",
-                color: "white",
-                display: "grid",
-                placeItems: "center",
-                cursor: "pointer",
-              }}
-            >
-              <ChevronRight size={18} />
-            </motion.button>
-          </>
+              {orderedVisibleOutputs.length > 1 && (
+                <>
+                  <motion.button
+                    whileTap={{ scale: 0.92 }}
+                    onClick={goPrevLightbox}
+                    style={{
+                      position: "absolute",
+                      left: 18,
+                      top: "50%",
+                      transform: "translateY(-50%)",
+                      width: 44,
+                      height: 44,
+                      borderRadius: 14,
+                      border: "1px solid rgba(255,255,255,0.12)",
+                      background: "rgba(0,0,0,0.6)",
+                      backdropFilter: "blur(8px)",
+                      color: "white",
+                      display: "grid",
+                      placeItems: "center",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <ChevronLeft size={18} />
+                  </motion.button>
+
+                  <motion.button
+                    whileTap={{ scale: 0.92 }}
+                    onClick={goNextLightbox}
+                    style={{
+                      position: "absolute",
+                      right: 18,
+                      top: "50%",
+                      transform: "translateY(-50%)",
+                      width: 44,
+                      height: 44,
+                      borderRadius: 14,
+                      border: "1px solid rgba(255,255,255,0.12)",
+                      background: "rgba(0,0,0,0.6)",
+                      backdropFilter: "blur(8px)",
+                      color: "white",
+                      display: "grid",
+                      placeItems: "center",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <ChevronRight size={18} />
+                  </motion.button>
+                </>
+              )}
+
+              <div style={{ position: "absolute", top: 14, right: 14, display: "flex", gap: 8 }}>
+                {[Download, X].map((Icon, i) => (
+                  <motion.button
+                    key={i}
+                    whileTap={{ scale: 0.9 }}
+                    onClick={() => {
+                      if (i === 0 && lightboxItem?.url) {
+                        const a = document.createElement("a");
+                        a.href = lightboxItem.url;
+                        a.download = `${lightboxItem.scene || "character"}.png`;
+                        document.body.appendChild(a);
+                        a.click();
+                        a.remove();
+                      }
+                      if (i === 1) setLightboxItem(null);
+                    }}
+                    style={{
+                      width: 40,
+                      height: 40,
+                      borderRadius: 12,
+                      border: "1px solid rgba(255,255,255,0.12)",
+                      background: "rgba(0,0,0,0.6)",
+                      backdropFilter: "blur(8px)",
+                      color: "white",
+                      display: "grid",
+                      placeItems: "center",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <Icon size={15} />
+                  </motion.button>
+                ))}
+              </div>
+
+              <div
+                style={{
+                  position: "absolute",
+                  bottom: 0,
+                  left: 0,
+                  right: 0,
+                  background: "linear-gradient(to top,rgba(0,0,0,0.8),transparent)",
+                  padding: "40px 20px 18px",
+                }}
+              >
+                <p style={{ margin: "0 0 4px", fontSize: 14, fontWeight: 600, color: "white" }}>
+                  {lightboxItem.scene || "Portrait"}
+                </p>
+                <p style={{ margin: 0, fontSize: 12, color: C.textMuted }}>
+                  {new Date(lightboxItem.createdAt).toLocaleString()}
+                </p>
+              </div>
+            </motion.div>
+          </motion.div>
         )}
-
-        <div style={{ position: "absolute", top: 14, right: 14, display: "flex", gap: 8 }}>
-          {[Download, X].map((Icon, i) => (
-            <motion.button
-              key={i}
-              whileTap={{ scale: 0.9 }}
-              onClick={() => {
-                if (i === 0 && lightboxItem?.url) {
-                  const a = document.createElement("a");
-                  a.href = lightboxItem.url;
-                  a.download = `${lightboxItem.scene || "character"}.png`;
-                  document.body.appendChild(a);
-                  a.click();
-                  a.remove();
-                }
-                if (i === 1) setLightboxItem(null);
-              }}
-              style={{
-                width: 40,
-                height: 40,
-                borderRadius: 12,
-                border: "1px solid rgba(255,255,255,0.12)",
-                background: "rgba(0,0,0,0.6)",
-                backdropFilter: "blur(8px)",
-                color: "white",
-                display: "grid",
-                placeItems: "center",
-                cursor: "pointer",
-              }}
-            >
-              <Icon size={15} />
-            </motion.button>
-          ))}
-        </div>
-
-        <div
-          style={{
-            position: "absolute",
-            bottom: 0,
-            left: 0,
-            right: 0,
-            background: "linear-gradient(to top,rgba(0,0,0,0.8),transparent)",
-            padding: "40px 20px 18px",
-          }}
-        >
-          <p style={{ margin: "0 0 4px", fontSize: 14, fontWeight: 600, color: "white" }}>
-            {lightboxItem.scene || "Portrait"}
-          </p>
-          <p style={{ margin: 0, fontSize: 12, color: C.textMuted }}>
-            {new Date(lightboxItem.createdAt).toLocaleString()}
-          </p>
-        </div>
-      </motion.div>
-    </motion.div>
-  )}
-</AnimatePresence>
+      </AnimatePresence>
     </main>
   );
 }
