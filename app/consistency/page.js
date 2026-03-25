@@ -169,11 +169,16 @@ function rowToCharacter(row, imageRows = []) {
   const traits = normalizeLockedTraits(row);
 
   const uploadImages = imageRows
-    .filter(img => img.source_type === "upload")
+    .filter(img => img.source_type === "upload" || img.source_type === "master_identity")
     .sort((a, b) => {
+      const aCanon = a.is_canon ? 1 : 0;
+      const bCanon = b.is_canon ? 1 : 0;
+      if (aCanon !== bCanon) return bCanon - aCanon;
+
       const aSort = a.sort_order ?? 0;
       const bSort = b.sort_order ?? 0;
       if (aSort !== bSort) return aSort - bSort;
+
       return new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime();
     });
 
@@ -187,7 +192,10 @@ function rowToCharacter(row, imageRows = []) {
     });
 
   const fallbackGeneratedImages = Array.isArray(row.generated_images) ? row.generated_images : [];
-  const generatedImages = generatedRows.length > 0 ? generatedRows.map(img => img.image_url).filter(Boolean) : fallbackGeneratedImages;
+  const generatedImages =
+    generatedRows.length > 0
+      ? generatedRows.map(img => img.image_url).filter(Boolean)
+      : fallbackGeneratedImages;
 
   const refEntries = uploadImages.length > 0
     ? uploadImages.map(img => ({
@@ -199,6 +207,7 @@ function rowToCharacter(row, imageRows = []) {
         isCanon: !!img.is_canon,
         isCover: !!img.is_cover,
         packView: img.pack_view || null,
+        metadata: img.metadata || {},
       }))
     : (row.reference_image ? [{
         id: null,
@@ -209,7 +218,11 @@ function rowToCharacter(row, imageRows = []) {
         isCanon: false,
         isCover: true,
         packView: null,
+        metadata: {},
       }] : []);
+
+  const canonRef = refEntries.find(entry => entry.isCanon && entry.previewUrl);
+  const coverRef = refEntries.find(entry => entry.isCover && entry.previewUrl);
 
   return {
     id: row.id,
@@ -232,7 +245,7 @@ function rowToCharacter(row, imageRows = []) {
     triggerToken: row.trigger_token || "",
     status: row.status || "draft",
     loraPath: row.lora_path || null,
-    coverImage: row.cover_image || refEntries[0]?.previewUrl || null,
+    coverImage: canonRef?.previewUrl || row.cover_image || coverRef?.previewUrl || refEntries[0]?.previewUrl || null,
   };
 }
 
@@ -334,6 +347,52 @@ function buildLockedCharacterPrompt({
   ]
     .filter(Boolean)
     .join(" ");
+}
+
+function extractGeneratedUrls(data) {
+  if (!data) return [];
+
+  if (Array.isArray(data.images)) {
+    return data.images
+      .map((item, i) => {
+        if (typeof item === "string") {
+          return {
+            id: `img-${i}`,
+            url: item,
+            attempt: i + 1,
+          };
+        }
+
+        if (item && typeof item.url === "string") {
+          return {
+            id: item.id || `img-${i}`,
+            url: item.url,
+            attempt: item.attempt || i + 1,
+          };
+        }
+
+        return null;
+      })
+      .filter(Boolean);
+  }
+
+  if (typeof data.image === "string" && data.image) {
+    return [{ id: "img-0", url: data.image, attempt: 1 }];
+  }
+
+  return [];
+}
+
+function getMasterImageForCharacter(char) {
+  if (!char) return null;
+
+  const canonRef = (char.refEntries || []).find((entry) => entry?.isCanon && entry?.previewUrl);
+  if (canonRef?.previewUrl) return canonRef.previewUrl;
+
+  const coverRef = (char.refEntries || []).find((entry) => entry?.isCover && entry?.previewUrl);
+  if (coverRef?.previewUrl) return coverRef.previewUrl;
+
+  return char.coverImage || null;
 }
 
 function SidebarItem({ item }) {
@@ -586,6 +645,10 @@ export default function ConsistencyPage() {
   const [userId,          setUserId]          = useState(null);
   const [saving,          setSaving]          = useState(false);
   const [characterImages, setCharacterImages] = useState([]);
+    const [masterCandidates, setMasterCandidates] = useState([]);
+  const [masterIdentityImage, setMasterIdentityImage] = useState(null);
+  const [generatingMaster, setGeneratingMaster] = useState(false);
+  const [savingMaster, setSavingMaster] = useState(false);
 
   const canvasRef = useRef(null);
   const generatingRef = useRef(false);
@@ -725,6 +788,38 @@ export default function ConsistencyPage() {
     return data;
   }
 
+    async function insertMasterIdentityImage(characterId, imageUrl, sortOrder = 0) {
+    if (!userId || !characterId || !imageUrl) return null;
+
+    await supabase
+      .from("character_images")
+      .update({ is_canon: false })
+      .eq("character_id", characterId)
+      .eq("source_type", "master_identity");
+
+    const { data, error } = await supabase
+      .from("character_images")
+      .insert({
+        user_id: userId,
+        character_id: characterId,
+        image_url: imageUrl,
+        source_type: "master_identity",
+        is_canon: true,
+        is_cover: true,
+        sort_order: sortOrder,
+        metadata: { role: "master_identity" },
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error("Failed to insert master identity image:", error);
+      return null;
+    }
+
+    return data;
+  }
+
   async function markAsCanon(imageId) {
     const { error } = await supabase
       .from("character_images")
@@ -817,6 +912,15 @@ export default function ConsistencyPage() {
     );
     setOutputs(outputsFromCharacter(current));
   }, [activeCharId, characters, generatingMore]);
+
+    useEffect(() => {
+    if (!activeChar) {
+      setMasterIdentityImage(null);
+      return;
+    }
+
+    setMasterIdentityImage(getMasterImageForCharacter(activeChar));
+  }, [activeChar]);
 
   useEffect(() => {
     let mounted = true;
@@ -1182,6 +1286,124 @@ export default function ConsistencyPage() {
 
     router.push("/image");
   }
+  
+  async function handleGenerateMasterIdentity() {
+    if (!activeChar || generatingMaster) return;
+
+    const effectiveRefs = activeChar.refEntries.length > 0 ? activeChar.refEntries : refEntries;
+    const uploadedRefs = await entriesToReferenceImages(effectiveRefs);
+
+    if (!uploadedRefs.length) {
+      alert("Please upload at least one reference image first.");
+      return;
+    }
+
+    setGeneratingMaster(true);
+    setMasterCandidates([]);
+
+    try {
+      const res = await fetch("/api/generate-master-identity", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt: [
+            activeChar.desc || "",
+            extraPrompt || "",
+            "close-up master identity portrait, neutral expression, plain light studio background, same exact person",
+          ]
+            .filter(Boolean)
+            .join(". "),
+          referenceImages: uploadedRefs,
+          negativePrompt:
+            "different person, identity drift, generic face, altered hairstyle, altered skin tone, beauty filter, cgi, 3d render, text, watermark",
+          strictIdentity: true,
+          candidates: 4,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data?.error || "Failed to generate master identity");
+      }
+
+      const urls = extractGeneratedUrls(data);
+      setMasterCandidates(urls);
+    } catch (err) {
+      console.error("Master identity generation failed:", err);
+      alert(err?.message || "Failed to generate master identity.");
+    } finally {
+      setGeneratingMaster(false);
+    }
+  }
+
+  async function useMasterIdentity(candidate) {
+    if (!activeChar || !candidate?.url || savingMaster) return;
+
+    setSavingMaster(true);
+
+    try {
+      await insertMasterIdentityImage(activeChar.id, candidate.url, 0);
+
+      await supabase
+        .from("characters")
+        .update({
+          cover_image: candidate.url,
+          reference_image: candidate.url,
+        })
+        .eq("id", activeChar.id)
+        .eq("user_id", userId);
+
+      const rows = await loadCharacterImages(activeChar.id);
+      const mapped = rowToCharacter(
+        {
+          ...activeChar,
+          cover_image: candidate.url,
+          reference_image: candidate.url,
+          prompt: buildTraitsPayload({
+            charDesc: activeChar.desc,
+            gender: activeChar.gender,
+            ageRange: activeChar.ageRange,
+            ethnicity: activeChar.ethnicity,
+            hairStyle: activeChar.hairStyle,
+            hairColor: activeChar.hairColor,
+            eyeColor: activeChar.eyeColor,
+            build: activeChar.build,
+            charLocked: activeChar.locked,
+            extraPrompt,
+          }),
+          locked_traits: {
+            gender: activeChar.gender || "",
+            age: activeChar.ageRange || "",
+            ethnicity: activeChar.ethnicity || "",
+            hair_style: activeChar.hairStyle || "",
+            hair_color: activeChar.hairColor || "",
+            eye_color: activeChar.eyeColor || "",
+            build: activeChar.build || "",
+            charLocked: !!activeChar.locked,
+          },
+        },
+        rows
+      );
+
+      setCharacters(prev => {
+        const updated = prev.map(c => (c.id === activeChar.id ? mapped : c));
+        updateCharactersCache(updated);
+        return updated;
+      });
+
+      setCharacterImages(rows.filter(r => r.character_id === activeChar.id));
+      setRefEntries(mapped.refEntries);
+      setMasterIdentityImage(candidate.url);
+      setMasterCandidates([]);
+      alert("Master identity selected.");
+    } catch (err) {
+      console.error("Use master identity failed:", err);
+      alert("Failed to save master identity.");
+    } finally {
+      setSavingMaster(false);
+    }
+  }
 
   async function generateOtherProfiles() {
     if (!activeChar || generatingMore) return;
@@ -1229,8 +1451,11 @@ export default function ConsistencyPage() {
     const effectiveRefs = activeChar.refEntries.length > 0 ? activeChar.refEntries : refEntries;
     const uploadedRefs = await entriesToReferenceImages(effectiveRefs);
 
+        const masterRef = masterIdentityImage || getMasterImageForCharacter(activeChar);
+
     const sharedReferenceImages = [
       ...uploadedRefs.filter(Boolean),
+      masterRef,
       existingFront.url,
     ].filter(Boolean);
 
@@ -1331,8 +1556,6 @@ export default function ConsistencyPage() {
 
     const frontView = CHARACTER_PACK_VIEWS[0];
     const effectiveRefs = activeChar.refEntries.length > 0 ? activeChar.refEntries : refEntries;
-    const hasRefs = effectiveRefs.length > 0;
-
     const frontOutputItem = {
       id: `${activeCharId}-${frontView.key}-${Date.now()}`,
       charId: activeCharId,
@@ -1346,8 +1569,10 @@ export default function ConsistencyPage() {
     canvasRef.current?.scrollTo({ top: 0, behavior: "smooth" });
 
     try {
-      const uploadedRefs = hasRefs ? await entriesToReferenceImages(effectiveRefs) : [];
-
+const uploadedRefs = await entriesToReferenceImages(effectiveRefs);
+const masterRef = masterIdentityImage || getMasterImageForCharacter(activeChar);
+const finalRefs = [...uploadedRefs, masterRef].filter(Boolean);
+const hasRefs = finalRefs.length > 0;
       const finalPrompt = buildLockedCharacterPrompt({
         char: activeChar,
         shot: "front-facing, full-body, standing straight, arms relaxed, centered composition",
@@ -1368,7 +1593,7 @@ export default function ConsistencyPage() {
           body: JSON.stringify({
             prompt: finalPrompt,
             size: frontView.size,
-            referenceImages: uploadedRefs,
+            referenceImages: finalRefs,
             negativePrompt:
               "different person, identity drift, generic face, altered hairstyle, altered skin tone, beauty filter, CGI, 3D render, duplicate person, collage, split screen, text, watermark",
             strictIdentity: true,
@@ -1677,6 +1902,120 @@ export default function ConsistencyPage() {
                       </div>
                     </div>
                     <button onClick={() => setFormSection("refs")} style={{ border: "none", background: "transparent", color: C.textMuted, cursor: "pointer", display: "grid", placeItems: "center" }}><Camera size={13} /></button>
+                  </div>
+                  <div style={{ padding: 12, borderRadius: radius.md, border: `1px solid ${C.border}`, background: C.surface }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                      <div style={{ fontSize: 12.5, fontWeight: 700, color: C.text }}>Master Identity</div>
+                      {masterIdentityImage && (
+                        <div style={{ fontSize: 10.5, padding: "2px 8px", borderRadius: radius.full, border: `1px solid rgba(34,197,94,0.25)`, background: "rgba(34,197,94,0.08)", color: "#86efac" }}>
+                          Selected
+                        </div>
+                      )}
+                    </div>
+
+                    {masterIdentityImage ? (
+                      <div style={{ display: "grid", gap: 10 }}>
+                        <div style={{ width: "100%", aspectRatio: "1/1", borderRadius: radius.md, overflow: "hidden", border: `1px solid ${C.accentBorder}`, background: "rgba(255,255,255,0.03)" }}>
+                          <img
+                            src={masterIdentityImage}
+                            alt="Master identity"
+                            style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                          />
+                        </div>
+                        <div style={{ fontSize: 11.5, color: C.textMuted, lineHeight: 1.6 }}>
+                          This approved master portrait will be used as the strongest identity reference for pack generation.
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: 11.5, color: C.textMuted, lineHeight: 1.6, marginBottom: 10 }}>
+                        Generate 4 close-up identity candidates first, then choose the best one as the master identity.
+                      </div>
+                    )}
+
+                    <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+                      <motion.button
+                        whileTap={{ scale: 0.97 }}
+                        onClick={handleGenerateMasterIdentity}
+                        disabled={generatingMaster || !(activeChar?.refEntries?.length || refEntries.length)}
+                        style={{
+                          height: 38,
+                          padding: "0 14px",
+                          borderRadius: radius.sm,
+                          border: `1px solid ${C.accentBorder}`,
+                          background: C.accentSoft,
+                          color: "#c4b5fd",
+                          fontSize: 12.5,
+                          fontWeight: 700,
+                          cursor: generatingMaster ? "default" : "pointer",
+                          fontFamily: "inherit",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 7,
+                        }}
+                      >
+                        {generatingMaster ? (
+                          <>
+                            <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: "linear" }}>
+                              <Zap size={13} />
+                            </motion.div>
+                            Generating…
+                          </>
+                        ) : (
+                          <>
+                            <Camera size={13} />
+                            Generate Master Identity
+                          </>
+                        )}
+                      </motion.button>
+                    </div>
+
+                    {masterCandidates.length > 0 && (
+                      <div style={{ marginTop: 14, display: "grid", gap: 10 }}>
+                        <div style={{ fontSize: 11.5, color: C.textMuted }}>Choose the closest identity:</div>
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                          {masterCandidates.map((candidate, i) => (
+                            <div
+                              key={candidate.id || i}
+                              style={{
+                                borderRadius: radius.md,
+                                overflow: "hidden",
+                                border: `1px solid ${C.border}`,
+                                background: "rgba(255,255,255,0.02)",
+                              }}
+                            >
+                              <div style={{ width: "100%", aspectRatio: "1/1", overflow: "hidden" }}>
+                                <img
+                                  src={candidate.url}
+                                  alt={`Master candidate ${i + 1}`}
+                                  style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                                />
+                              </div>
+                              <div style={{ padding: 8 }}>
+                                <motion.button
+                                  whileTap={{ scale: 0.97 }}
+                                  onClick={() => useMasterIdentity(candidate)}
+                                  disabled={savingMaster}
+                                  style={{
+                                    width: "100%",
+                                    height: 32,
+                                    borderRadius: 8,
+                                    border: `1px solid ${C.accentBorder}`,
+                                    background: C.accentSoft,
+                                    color: "#c4b5fd",
+                                    fontSize: 11.5,
+                                    fontWeight: 700,
+                                    cursor: savingMaster ? "default" : "pointer",
+                                    fontFamily: "inherit",
+                                  }}
+                                >
+                                  Use as Master
+                                </motion.button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </>)}
               </>)}
