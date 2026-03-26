@@ -812,6 +812,37 @@ const hydrateCachedCharacters = useCallback((cached) => {
     return rows;
   }
 
+  async function persistGeneratedImage(imageUrl, characterId, folder = "generated") {
+  if (!imageUrl || !userId || !characterId) return null;
+
+  try {
+    const res = await fetch("/api/persist-character-image", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        imageUrl,
+        userId,
+        characterId,
+        folder,
+      }),
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      console.error("Persist image failed:", data);
+      return null;
+    }
+
+    return data.url || null;
+  } catch (err) {
+    console.error("Persist image request failed:", err);
+    return null;
+  }
+}
+
   async function insertGeneratedCharacterImage(characterId, imageUrl, scene, sortOrder = 0, isCover = false) {
     if (!userId || !characterId || !imageUrl) return null;
 
@@ -1407,14 +1438,24 @@ useEffect(() => {
     setSavingMaster(true);
 
     try {
-      await insertMasterIdentityImage(activeChar.id, candidate.url, 0);
+      const savedMasterUrl = await persistGeneratedImage(
+  candidate.url,
+  activeChar.id,
+  "master"
+);
 
-      await supabase
-        .from("characters")
-        .update({
-          cover_image: candidate.url,
-          reference_image: candidate.url,
-        })
+if (!savedMasterUrl) {
+  throw new Error("Failed to persist master identity image.");
+}
+
+await insertMasterIdentityImage(activeChar.id, savedMasterUrl, 0);
+
+await supabase
+  .from("characters")
+  .update({
+    cover_image: savedMasterUrl,
+    reference_image: savedMasterUrl,
+  })
         .eq("id", activeChar.id)
         .eq("user_id", userId);
 
@@ -1422,8 +1463,8 @@ useEffect(() => {
       const mapped = rowToCharacter(
         {
           ...activeChar,
-          cover_image: candidate.url,
-          reference_image: candidate.url,
+          cover_image: savedMasterUrl,
+reference_image: savedMasterUrl,
           prompt: buildTraitsPayload({
             charDesc: activeChar.desc,
             gender: activeChar.gender,
@@ -1458,7 +1499,7 @@ useEffect(() => {
 
       setCharacterImages(rows.filter(r => r.character_id === activeChar.id));
       setRefEntries(mapped.refEntries);
-      setMasterIdentityImage(candidate.url);
+      setMasterIdentityImage(savedMasterUrl);
       setMasterCandidates([]);
       alert("Master identity selected.");
     } catch (err) {
@@ -1564,26 +1605,27 @@ useEffect(() => {
         const data = await res.json();
         console.log("PROFILE RESPONSE:", data);
 
-const url = extractGeneratedUrl(data);
+const rawUrl = extractGeneratedUrl(data);
+const savedUrl = rawUrl
+  ? await persistGeneratedImage(rawUrl, activeCharId, "generated")
+  : null;
 
-console.log("PROFILE URL:", url);
+setOutputs(prev =>
+  prev.map(o =>
+    o.id === placeholder.id ? { ...o, url: savedUrl || "__FAILED__" } : o
+  )
+);
 
-        setOutputs(prev =>
-          prev.map(o =>
-            o.id === placeholder.id ? { ...o, url: url || "__FAILED__" } : o
-          )
-        );
+if (savedUrl) {
+  accumulatedImages = [...accumulatedImages, savedUrl];
 
-        if (url) {
-          accumulatedImages = [...accumulatedImages, url];
-
-          await insertGeneratedCharacterImage(
-            activeCharId,
-            url,
-            view.label,
-            accumulatedImages.length - 1,
-            false
-          );
+  await insertGeneratedCharacterImage(
+    activeCharId,
+    savedUrl,
+    view.label,
+    accumulatedImages.length - 1,
+    false
+  );
 
           await supabase
             .from("characters")
@@ -1676,26 +1718,27 @@ const hasRefs = finalRefs.length > 0;
 
       console.log("GEN RESPONSE:", data);
 
-const url = extractGeneratedUrl(data);
+const rawUrl = extractGeneratedUrl(data);
+const savedUrl = rawUrl
+  ? await persistGeneratedImage(rawUrl, activeCharId, "generated")
+  : null;
 
-console.log("EXTRACTED URL:", url);
+setOutputs(prev =>
+  prev.map(o =>
+    o.id === frontOutputItem.id ? { ...o, url: savedUrl || "__FAILED__" } : o
+  )
+);
 
-      setOutputs(prev =>
-        prev.map(o =>
-          o.id === frontOutputItem.id ? { ...o, url: url || "__FAILED__" } : o
-        )
-      );
+if (savedUrl) {
+  await insertGeneratedCharacterImage(activeCharId, savedUrl, frontView.label, 0, true);
 
-      if (url) {
-        await insertGeneratedCharacterImage(activeCharId, url, frontView.label, 0, true);
-
-        const updatedChar = {
-          ...activeChar,
-          generations: 1,
-          generatedImages: [url],
-          extraPrompt: extraPrompt || activeChar.extraPrompt || "",
-          coverImage: url,
-        };
+  const updatedChar = {
+    ...activeChar,
+    generations: 1,
+    generatedImages: [savedUrl],
+    extraPrompt: extraPrompt || activeChar.extraPrompt || "",
+    coverImage: savedUrl,
+  };
 
         setCharacters(prev => {
           const updated = prev.map(c => (c.id === activeCharId ? updatedChar : c));
@@ -1707,8 +1750,8 @@ console.log("EXTRACTED URL:", url);
           await supabase
             .from("characters")
             .update({
-              generated_images: [url],
-              cover_image: url,
+              generated_images: [savedUrl],
+cover_image: savedUrl,
               prompt: buildTraitsPayload({
                 charDesc: activeChar.desc,
                 gender: activeChar.gender,
