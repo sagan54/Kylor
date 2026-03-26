@@ -1562,7 +1562,11 @@ useEffect(() => {
         });
 
         const data = await res.json();
-        const url = extractGeneratedUrl(data);
+        console.log("PROFILE RESPONSE:", data);
+
+const url = extractGeneratedUrl(data);
+
+console.log("PROFILE URL:", url);
 
         setOutputs(prev =>
           prev.map(o =>
@@ -1670,7 +1674,11 @@ const hasRefs = finalRefs.length > 0;
         clearTimeout(timeout);
       }
 
-      const url = extractGeneratedUrl(data);
+      console.log("GEN RESPONSE:", data);
+
+const url = extractGeneratedUrl(data);
+
+console.log("EXTRACTED URL:", url);
 
       setOutputs(prev =>
         prev.map(o =>
