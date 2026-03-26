@@ -77,7 +77,12 @@ async function entriesToReferenceImages(entries) {
   const refs = await Promise.all(
     entries.map(async (entry) => {
       if (entry?.file) return await fileToBase64(entry.file);
-      if (entry?.previewUrl) return entry.previewUrl;
+
+      // only allow permanent urls here, never dead blob urls
+      if (entry?.previewUrl && !entry.previewUrl.startsWith("blob:")) {
+        return entry.previewUrl;
+      }
+
       return null;
     })
   );
@@ -508,7 +513,16 @@ function RefUpload({ entries, onEntries, label, hint, max = 5 }) {
         onDrop={onDrop} onClick={() => inputRef.current?.click()}
         animate={{ borderColor: drag ? C.accent : "rgba(255,255,255,0.09)", background: drag ? C.accentSoft : C.surface }}
         style={{ borderRadius: radius.md, border: "1.5px dashed rgba(255,255,255,0.09)", padding: "14px", cursor: "pointer", display: "flex", alignItems: "center", gap: 12 }}>
-        <input ref={inputRef} type="file" accept="image/*" multiple style={{ display: "none" }} onChange={onInputChange} />
+<input
+  id="character-ref-upload"
+  name="characterRefUpload"
+  ref={inputRef}
+  type="file"
+  accept="image/*"
+  multiple
+  style={{ display: "none" }}
+  onChange={onInputChange}
+/>
         <div style={{ width: 36, height: 36, borderRadius: radius.sm, flexShrink: 0, background: C.accentSoft, border: `1px solid ${C.accentBorder}`, display: "grid", placeItems: "center" }}><Camera size={14} color="#a78bfa" /></div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 12.5, color: C.text, fontWeight: 600 }}>{label}</div>
@@ -664,19 +678,57 @@ export default function ConsistencyPage() {
   const otherOutputs = visibleCharOutputs.filter(o => o.scene !== "Front Full-Body");
   const shouldShowGenerateMorePanel = !!frontOutput && otherOutputs.length < 4;
 
-  const updateCharactersCache = useCallback((chars) => {
-    try {
-      localStorage.setItem(SESSION_KEY, JSON.stringify(chars));
-    } catch {}
-  }, []);
+const updateCharactersCache = useCallback((chars) => {
+  try {
+    const safeChars = (chars || []).map((char) => ({
+      ...char,
+      refEntries: (char.refEntries || []).map((entry) => ({
+        ...entry,
+        file: null,
+        previewUrl:
+          typeof entry?.previewUrl === "string" && entry.previewUrl.startsWith("blob:")
+            ? null
+            : entry?.previewUrl || null,
+      })),
+      generatedImages: (char.generatedImages || []).filter(
+        (url) => typeof url === "string" && !url.startsWith("blob:")
+      ),
+      coverImage:
+        typeof char?.coverImage === "string" && char.coverImage.startsWith("blob:")
+          ? null
+          : char?.coverImage || null,
+    }));
 
-  const hydrateCachedCharacters = useCallback((cached) => {
-    if (!Array.isArray(cached)) return [];
-    return cached.map(item => {
-      if (item && Array.isArray(item.refEntries)) return item;
-      return rowToCharacter(item || {}, []);
-    });
-  }, []);
+    localStorage.setItem(SESSION_KEY, JSON.stringify(safeChars));
+  } catch {}
+}, []);
+
+const hydrateCachedCharacters = useCallback((cached) => {
+  if (!Array.isArray(cached)) return [];
+
+  return cached.map((item) => {
+    const normalized =
+      item && Array.isArray(item.refEntries) ? item : rowToCharacter(item || {}, []);
+
+    return {
+      ...normalized,
+      refEntries: (normalized.refEntries || []).filter(
+        (entry) =>
+          entry &&
+          typeof entry.previewUrl === "string" &&
+          !entry.previewUrl.startsWith("blob:")
+      ),
+      generatedImages: (normalized.generatedImages || []).filter(
+        (url) => typeof url === "string" && !url.startsWith("blob:")
+      ),
+      coverImage:
+        typeof normalized?.coverImage === "string" &&
+        !normalized.coverImage.startsWith("blob:")
+          ? normalized.coverImage
+          : null,
+    };
+  });
+}, []);
 
   async function loadCharacterImages(characterId, allCharacters = null) {
     if (!characterId && !allCharacters?.length) {
@@ -873,14 +925,26 @@ export default function ConsistencyPage() {
     setCharacterImages(refRows);
   }
 
-  useEffect(() => {
-    if (!activeCharId) return;
-    setCharacters(prev => {
-      const updated = prev.map(c => c.id === activeCharId ? { ...c, refEntries } : c);
-      updateCharactersCache(updated);
-      return updated;
-    });
-  }, [refEntries, activeCharId, updateCharactersCache]);
+useEffect(() => {
+  if (!activeCharId) return;
+
+  setCharacters((prev) => {
+    const updated = prev.map((c) =>
+      c.id === activeCharId
+        ? {
+            ...c,
+            refEntries: (refEntries || []).map((entry) => ({
+              ...entry,
+              file: null,
+            })),
+          }
+        : c
+    );
+
+    updateCharactersCache(updated);
+    return updated;
+  });
+}, [refEntries, activeCharId, updateCharactersCache]);
 
   useEffect(() => {
     if (!activeCharId) {
@@ -1800,13 +1864,21 @@ const hasRefs = finalRefs.length > 0;
               {formSection === "traits" && (<>
                 <div>
                   <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: C.textMuted, marginBottom: 6 }}>Character Name *</div>
-                  <input value={charName} onChange={e => setCharName(e.target.value)} placeholder="e.g. Aria Voss, Marcus Kane…"
+ <input
+  id="character-name"
+  name="characterName"
+  value={charName}
+  onChange={e => setCharName(e.target.value)}
+  placeholder="e.g. Aria Voss, Marcus Kane…"
                     style={{ width: "100%", height: 38, padding: "0 12px", borderRadius: radius.sm, border: `1px solid ${charName ? C.accentBorder : C.border}`, background: charName ? C.accentSoft : C.surface, color: C.text, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box", transition: "all 0.16s ease" }} />
                 </div>
                 <div>
                   <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: C.textMuted, marginBottom: 6 }}>Description</div>
-                  <textarea ref={el => { if (el) { el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; } }}
-                    value={charDesc} onChange={e => { setCharDesc(e.target.value.slice(0, 1000)); e.target.style.height = "auto"; e.target.style.height = e.target.scrollHeight + "px"; }}
+                  <textarea
+  id="character-description"
+  name="characterDescription"
+  ref={el => { if (el) { el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; } }}
+  value={charDesc} onChange={e => { setCharDesc(e.target.value.slice(0, 1000)); e.target.style.height = "auto"; e.target.style.height = e.target.scrollHeight + "px"; }}
                     placeholder="Scar above left eyebrow, always wears a silver necklace…" rows={3}
                     style={{ width: "100%", padding: "8px 12px", borderRadius: radius.sm, border: `1px solid ${C.border}`, background: C.surface, color: C.text, resize: "none", overflow: "hidden", fontSize: 12.5, fontFamily: "inherit", lineHeight: 1.6, outline: "none", boxSizing: "border-box", minHeight: 80 }} />
                 </div>
@@ -1884,8 +1956,11 @@ const hasRefs = finalRefs.length > 0;
                   <div>
                     <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: C.textMuted, marginBottom: 6 }}>Reference Notes</div>
                     <div style={{ position: "relative" }}>
-                      <textarea ref={el => { if (el) { el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; } }}
-                        value={extraPrompt} onChange={e => { setExtraPrompt(e.target.value.slice(0, charLimit)); e.target.style.height = "auto"; e.target.style.height = e.target.scrollHeight + "px"; }}
+                      <textarea
+  id="reference-notes"
+  name="referenceNotes"
+  ref={el => { if (el) { el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; } }}
+  value={extraPrompt} onChange={e => { setExtraPrompt(e.target.value.slice(0, charLimit)); e.target.style.height = "auto"; e.target.style.height = e.target.scrollHeight + "px"; }}
                         placeholder="outfit details, facial details, accessories, exact look notes…" rows={1}
                         style={{ width: "100%", minHeight: 110, padding: "10px 12px", borderRadius: radius.md, border: `1px solid ${C.border}`, background: C.surface, color: C.text, resize: "none", overflow: "hidden", fontSize: 12.5, fontFamily: "inherit", lineHeight: 1.6, outline: "none", boxSizing: "border-box" }} />
                       <div style={{ position: "absolute", bottom: 8, right: 10, fontSize: 10.5, color: extraPrompt.length > charLimit * 0.9 ? "#f87171" : C.textDim }}>{extraPrompt.length}/{charLimit}</div>
