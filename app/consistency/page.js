@@ -1049,19 +1049,19 @@ useEffect(() => {
     } catch {}
 
     async function bootstrapCharacters() {
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
 
-  const uid = session?.user?.id ?? null;
+      const uid = session?.user?.id ?? null;
 
-  if (!mounted) return;
+      if (!mounted) return;
 
-  setUserId(uid);
+      setUserId(uid);
 
-  if (!uid) return;
+      if (!uid) return;
 
-  const { data, error } = await supabase
+const { data, error } = await supabase
     .from("characters")
     .select("id, name, description, prompt, reference_image, generated_images, cover_image, master_image, style, seed, created_at, trigger_token, status, lora_path, base_model, locked_traits, metadata")
     .eq("user_id", uid)
@@ -1082,21 +1082,21 @@ useEffect(() => {
     return;
   }
 
-  if (data && !generatingRef.current) {
-    const allImageRows = await loadCharacterImages(null, data);
-    if (!mounted) return;
+      if (data && !generatingRef.current) {
+        const allImageRows = await loadCharacterImages(null, data);
+        if (!mounted) return;
 
-    const grouped = new Map();
-    for (const img of allImageRows) {
-      if (!grouped.has(img.character_id)) grouped.set(img.character_id, []);
-      grouped.get(img.character_id).push(img);
+        const grouped = new Map();
+        for (const img of allImageRows) {
+          if (!grouped.has(img.character_id)) grouped.set(img.character_id, []);
+          grouped.get(img.character_id).push(img);
+        }
+
+        const mapped = data.map(row => rowToCharacter(row, grouped.get(row.id) || []));
+        setCharacters(mapped);
+        updateCharactersCache(mapped);
+      }
     }
-
-    const mapped = data.map(row => rowToCharacter(row, grouped.get(row.id) || []));
-    setCharacters(mapped);
-    updateCharactersCache(mapped);
-  }
-}
 
     bootstrapCharacters();
 
