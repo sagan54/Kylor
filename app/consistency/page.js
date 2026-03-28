@@ -1061,18 +1061,7 @@ useEffect(() => {
 
       if (!uid) return;
 
-      const { data, error } = await supabase
-        .from("characters")
-        .select("id, name, description, prompt, reference_image, generated_images, cover_image, master_image, style, seed, created_at, trigger_token, status, lora_path, base_model, locked_traits, metadata")
-        .eq("user_id", uid)
-        .order("created_at", { ascending: false });
 
-      if (!mounted) return;
-
-      if (error) {
-        console.error("Failed to load saved characters:", error);
-        return;
-      }
 
       if (data && !generatingRef.current) {
         const allImageRows = await loadCharacterImages(null, data);
