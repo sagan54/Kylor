@@ -11,7 +11,7 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-const MODEL = "black-forest-labs/flux-2-pro";
+const MODEL = "black-forest-labs/flux-1.1-pro-ultra";
 const STORAGE_BUCKET = "character-refs";
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
@@ -1264,20 +1264,20 @@ function trimReferencesForView(viewType, refs) {
 
   switch (viewType) {
     case IMAGE_TYPES.FRONT:
-      return uniqueRefs.slice(0, 2);
+      return uniqueRefs.slice(0, 4);
 
     case IMAGE_TYPES.LEFT:
     case IMAGE_TYPES.RIGHT:
-      return uniqueRefs.slice(0, 3);
+      return uniqueRefs.slice(0, 4);
 
     case IMAGE_TYPES.BACK:
-      return uniqueRefs.slice(0, 3);
+      return uniqueRefs.slice(0, 4);
 
     case IMAGE_TYPES.CLOSEUP:
-      return uniqueRefs.slice(0, 2);
+      return uniqueRefs.slice(0, 3);
 
     default:
-      return uniqueRefs.slice(0, 2);
+      return uniqueRefs.slice(0, 3);
   }
 }
 
@@ -1306,9 +1306,17 @@ function scoreReferenceCandidate({
     score -= 4;
   }
 
-  const typeIndex = preferredTypeOrder.indexOf(candidate.type);
+    const typeIndex = preferredTypeOrder.indexOf(candidate.type);
   if (typeIndex !== -1) {
     score += Math.max(0, 12 - typeIndex * 3);
+  }
+
+  if (candidate.type === "UPLOAD") {
+    score += 14;
+  }
+
+  if (candidate.type === "MASTER") {
+    score += 16;
   }
 
   if (targetViewType === IMAGE_TYPES.CLOSEUP) {
@@ -1362,7 +1370,7 @@ function buildReferenceCandidates({
     if (!anchorUrl || anchorUrl === masterImage) continue;
 
     candidates.push({
-      type: "ANCHOR",
+      type: "UPLOAD",
       url: anchorUrl,
       finalScore: 9,
       identityScore: 9,
@@ -1506,6 +1514,25 @@ async function loadCharacterMemory(characterId, userId) {
   }
 
   return data;
+}
+
+async function loadUploadedReferenceUrls(characterId, userId) {
+  const { data, error } = await supabase
+    .from("character_images")
+    .select("image_url, source_type, is_canon, is_cover, sort_order, created_at")
+    .eq("character_id", characterId)
+    .eq("user_id", userId)
+    .eq("source_type", "upload")
+    .order("sort_order", { ascending: true })
+    .order("created_at", { ascending: true });
+
+  if (error) {
+    throw new Error(error.message || "Failed to load uploaded reference images");
+  }
+
+  return (data || [])
+    .map((row) => normalizeReferenceImage(row.image_url))
+    .filter(Boolean);
 }
 
 function buildLockedTraitsBlock(lockedTraits = {}) {
@@ -2342,15 +2369,26 @@ export async function POST(req) {
     }
 
     const characterMemory = await loadCharacterMemory(characterId, userId);
+const uploadedReferenceUrls = await loadUploadedReferenceUrls(characterId, userId);
+
 const dnaIdentityBlock = buildDnaIdentityBlock(characterMemory?.dna_profile || {});
 const lockedTraitsBlock = buildLockedTraitsBlock(characterMemory?.locked_traits || {});
 const anchorRefs = getAnchorRefs(characterMemory);
+
+const baseAnchorRefs = Array.from(
+  new Set([
+    ...uploadedReferenceUrls,
+    ...anchorRefs,
+  ])
+).filter(Boolean);
 
 console.log("🧠 Loaded character memory", {
   characterId,
   hasMasterImage: !!characterMemory?.master_image,
   dnaConfidence: characterMemory?.dna_confidence ?? null,
+  uploadedReferenceCount: uploadedReferenceUrls.length,
   anchorRefCount: anchorRefs.length,
+  baseAnchorRefCount: baseAnchorRefs.length,
 });
 
     const results = [];
@@ -2368,7 +2406,7 @@ const referenceSelection = buildReferenceSet({
   viewType: view.key,
   masterImage: normalizedMaster,
   acceptedViewMap,
-  anchorRefs,
+  anchorRefs: baseAnchorRefs,
 });
 
       const currentRefs = referenceSelection.refs;
@@ -2376,7 +2414,12 @@ const referenceSelection = buildReferenceSet({
 
       maxReferenceCountUsed = Math.max(maxReferenceCountUsed, currentRefs.length);
 
-      console.log("Generating view:", view.key, "refs:", currentRefs.length, currentRefs);
+      console.log("Generating view:", view.key, {
+  refCount: currentRefs.length,
+  refs: currentRefs,
+  uploadedReferenceCount: uploadedReferenceUrls.length,
+  baseAnchorRefCount: baseAnchorRefs.length,
+});
 
       let acceptedResult = null;
       let lastError = null;
@@ -2538,7 +2581,7 @@ const repaired = await repairFailedViews({
   userId,
   characterId,
   frontImageUrl: finalFrontImageUrl,
-  anchorRefs,
+  anchorRefs: baseAnchorRefs,
   dnaIdentityBlock,
   lockedTraitsBlock,
 });
@@ -2573,17 +2616,17 @@ const repaired = await repairFailedViews({
         usedCohesionRepair = true;
 
 const repairedWeakView = await runRepairPassForView({
-failedView: {
-  ...weakView,
-  failureType: "identity_drift",
-},
+  failedView: {
+    ...weakView,
+    failureType: "identity_drift",
+  },
   normalizedMaster,
   acceptedViewMap,
   negativePrompt,
   userId,
   characterId,
   frontImageUrl: finalFrontImageUrl,
-  anchorRefs,
+  anchorRefs: baseAnchorRefs,
   dnaIdentityBlock,
   lockedTraitsBlock,
 });
