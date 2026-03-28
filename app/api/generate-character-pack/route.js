@@ -1613,29 +1613,6 @@ async function savePermanentImage({
   return publicData?.publicUrl || null;
 }
 
-async function loadCharacterIdentityMemory(characterId, userId) {
-  const { data, error } = await supabase
-    .from("characters")
-    .select(`
-      id,
-      user_id,
-      master_image,
-      dna_profile,
-      dna_confidence,
-      anchor_views,
-      locked_traits
-    `)
-    .eq("id", characterId)
-    .eq("user_id", userId)
-    .single();
-
-  if (error || !data) {
-    throw new Error("Character identity memory not found");
-  }
-
-  return data;
-}
-
 async function runSingleGeneration({
   prompt,
   refs,
@@ -2252,11 +2229,11 @@ const generated = await runSingleGeneration({
   }
 
   if (!repairedResult) {
-    return {
-      ...failedView,
-      repairedInPass2: false,
-      repairError: lastError?.message || "repair_failed",
-    };
+return {
+  ...failedView,
+  repairedInPass2: false,
+  repairError: lastError?.message || "repair_failed",
+};
   }
 
   return repairedResult;
@@ -2596,10 +2573,10 @@ const repaired = await repairFailedViews({
         usedCohesionRepair = true;
 
 const repairedWeakView = await runRepairPassForView({
-  failedView: {
-    ...weakView,
-    failureType: "identity_drift",
-  },
+failedView: {
+  ...weakView,
+  failureType: "identity_drift",
+},
   normalizedMaster,
   acceptedViewMap,
   negativePrompt,
@@ -2778,7 +2755,7 @@ console.log("✅ DNA saved successfully:", updatedCharacterRows[0]);
       },
     });
   } catch (error) {
-    console.error("Character pack generation error:", error);
+    console.error("PACK ROUTE ERROR:", error);
     return Response.json(
       { error: error?.message || "Failed to generate character pack" },
       { status: 500 }

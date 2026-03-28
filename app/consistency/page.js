@@ -1607,25 +1607,32 @@ console.log("PACK MASTER DEBUG", {
 
   try {
     const res = await fetch("/api/generate-character-pack", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        characterId: activeChar.id,
-        masterImage: masterRef,
-        userId,
-        negativePrompt:
-          "different person, identity drift, altered face shape, altered hairstyle, altered skin tone, generic face, beauty filter, CGI, 3D render, multiple people, collage, split screen, text, watermark",
-      }),
-    });
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({
+    characterId: activeChar.id,
+    masterImage: masterRef,
+    userId,
+    negativePrompt:
+      "different person, identity drift, altered face shape, altered hairstyle, altered skin tone, generic face, beauty filter, CGI, 3D render, multiple people, collage, split screen, text, watermark",
+  }),
+});
 
-    const data = await res.json();
+const raw = await res.text();
 
-    if (!res.ok) {
-      throw new Error(data?.error || "Failed to generate character pack");
-    }
+let data;
+try {
+  data = JSON.parse(raw);
+} catch {
+  console.error("PACK API NON-JSON RESPONSE:", raw);
+  throw new Error("Server returned non-JSON response. Check Vercel function logs.");
+}
 
+if (!res.ok) {
+  throw new Error(data?.error || "Failed to generate character pack");
+}
     const pack = Array.isArray(data?.pack) ? data.pack : [];
 
     const nextOutputs = pack.map((item) => ({
