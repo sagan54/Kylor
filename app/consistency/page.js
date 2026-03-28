@@ -1215,10 +1215,17 @@ const { data, error } = await supabase
         .eq("id", data.id)
         .eq("user_id", userId);
 
-      const savedChar = rowToCharacter(
-        { ...data, reference_image: firstRefUrl, cover_image: data.cover_image || firstRefUrl, prompt: promptPayload, locked_traits: lockedTraits },
-        combinedRefRows
-      );
+const savedChar = rowToCharacter(
+  {
+    ...data,
+    reference_image: firstRefUrl,
+    cover_image: data.cover_image || firstRefUrl,
+    master_image: firstRefUrl,
+    prompt: promptPayload,
+    locked_traits: lockedTraits,
+  },
+  combinedRefRows
+);
 
       setCharacters(prev => {
         const exists = prev.some(c => c.id === savedChar.id);
@@ -1473,11 +1480,11 @@ await insertMasterIdentityImage(activeChar.id, savedMasterUrl, 0);
 await supabase
   .from("characters")
   .update({
-    reference_image: firstRefUrl,
-    cover_image: data.cover_image || firstRefUrl,
-    master_image: firstRefUrl,
+    reference_image: savedMasterUrl,
+    cover_image: savedMasterUrl,
+    master_image: savedMasterUrl,
   })
-  .eq("id", data.id)
+  .eq("id", activeChar.id)
   .eq("user_id", userId);
 
       const rows = await loadCharacterImages(activeChar.id);
@@ -1534,31 +1541,38 @@ await supabase
 async function handleGenerateCharacterPack() {
   if (!activeChar || generating) return;
 
+const firstPermanentRef =
+  (activeChar?.refEntries || []).find(
+    (entry) =>
+      typeof entry?.previewUrl === "string" &&
+      entry.previewUrl &&
+      !entry.previewUrl.startsWith("blob:")
+  )?.previewUrl || null;
+
 let masterRef =
   activeChar?.masterImage ||
   activeChar?.coverImage ||
-  activeChar?.refEntries?.[0]?.previewUrl ||
+  firstPermanentRef ||
   masterIdentityImage ||
   getMasterImageForCharacter(activeChar);
 
-  console.log("PACK MASTER DEBUG", {
-  activeChar,
-  masterImage: activeChar?.masterImage,
-  coverImage: activeChar?.coverImage,
-  firstRef: activeChar?.refEntries?.[0]?.previewUrl,
-  masterIdentityImage,
-});
+if (typeof masterRef === "string" && masterRef.startsWith("blob:")) {
+  masterRef = null;
+}
 
 if (!masterRef) {
-  const fallbackRef = activeChar?.refEntries?.[0]?.previewUrl;
-
-  if (!fallbackRef) {
-    alert("Please upload at least one reference image.");
-    return;
-  }
-
-  masterRef = fallbackRef;
+  alert("Please save the character first so the reference image gets uploaded.");
+  return;
 }
+
+console.log("PACK MASTER DEBUG", {
+  masterRef,
+  masterImage: activeChar?.masterImage,
+  coverImage: activeChar?.coverImage,
+  firstPermanentRef,
+  refEntries: activeChar?.refEntries,
+  masterIdentityImage,
+});
 
   generatingRef.current = true;
   setGenerating(true);
