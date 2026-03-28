@@ -1,5 +1,5 @@
 import Replicate from "replicate";
-import { IMAGE_TYPES, IMAGE_ORDER, PACK_VIEWS } from "../../lib/character-constants";
+import { IMAGE_TYPES, IMAGE_ORDER, PACK_VIEWS } from "../../../lib/character-constants";
 import { createClient } from "@supabase/supabase-js";
 
 const replicate = new Replicate({
