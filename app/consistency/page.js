@@ -1534,12 +1534,24 @@ await supabase
 async function handleGenerateCharacterPack() {
   if (!activeChar || generating) return;
 
-  const masterRef = activeChar.masterImage || masterIdentityImage || getMasterImageForCharacter(activeChar);
+  let masterRef =
+  activeChar.masterImage ||
+  activeChar.coverImage ||
+  activeChar.referenceImages?.[0]?.previewUrl ||
+  masterIdentityImage ||
+  getMasterImageForCharacter(activeChar);
 
-  if (!masterRef) {
-    alert("Please select a master identity first.");
+if (!masterRef) {
+  // fallback to uploaded reference
+  const fallbackRef = activeChar?.referenceImages?.[0]?.previewUrl;
+
+  if (!fallbackRef) {
+    alert("Please upload at least one reference image.");
     return;
   }
+
+  masterRef = fallbackRef;
+}
 
   generatingRef.current = true;
   setGenerating(true);
