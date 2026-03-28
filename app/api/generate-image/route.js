@@ -224,20 +224,21 @@ export async function POST(req) {
     const requests = Array.from({ length: safeN }, async () => {
       let input;
 
-      if (useConsistencyModel) {
-        input = {
-          prompt: finalPrompt,
-          aspect_ratio,
-          output_format: "png",
-        };
-      } else {
-        input = {
-          prompt: finalPrompt,
-          aspect_ratio,
-          output_format: "png",
-          prompt_upsampling: false,
-        };
-      }
+if (useConsistencyModel) {
+  input = {
+    prompt: finalPrompt,
+    aspect_ratio,
+    output_format: "png",
+    reference_images: refs,
+  };
+} else {
+  input = {
+    prompt: finalPrompt,
+    aspect_ratio,
+    output_format: "png",
+    prompt_upsampling: false,
+  };
+}
 
       const output = await replicate.run(model, { input });
       const tempUrl = await fileOutputToUrl(output);

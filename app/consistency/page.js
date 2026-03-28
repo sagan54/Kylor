@@ -982,10 +982,7 @@ useEffect(() => {
       c.id === activeCharId
         ? {
             ...c,
-            refEntries: (refEntries || []).map((entry) => ({
-              ...entry,
-              file: null,
-            })),
+            refEntries: refEntries || [],
           }
         : c
     );
@@ -1485,9 +1482,9 @@ await supabase
 
       const rows = await loadCharacterImages(activeChar.id);
       const mapped = rowToCharacter(
-  {
-    ...activeChar,
-    cover_image: savedMasterUrl,
+ {
+  ...activeChar,
+  cover_image: savedMasterUrl,
     reference_image: savedMasterUrl,
     master_image: savedMasterUrl,
           prompt: buildTraitsPayload({

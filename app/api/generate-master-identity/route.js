@@ -55,10 +55,12 @@ function buildMasterIdentityPrompt({
   const identityBlock = hasRefs
     ? [
         "Generate the EXACT SAME real person as the provided reference image(s).",
-        "This is a specific real human identity, not a similar-looking person.",
-        "Preserve exact face shape, forehead, hairline, eyebrows, eyes, eyelids, nose, lips, ears, jawline, cheek structure, chin, skin tone, hair texture, hair volume, hairstyle, facial hair pattern, neck, and shoulders.",
-        "Do not beautify, idealize, glamorize, or redesign the person.",
+        "This is a real specific human identity, not a similar-looking person.",
+        "The output must preserve the exact same ethnicity, facial identity, and overall appearance from the reference.",
+        "Preserve exact face shape, skull shape, forehead, hairline, eyebrows, eyes, eyelids, nose bridge, nose tip, nostrils, lips, ears, jawline, cheek structure, chin, skin tone family, hair texture, hair density, hair volume, hairstyle, neck, and shoulders.",
+        "Do not beautify, idealize, glamorize, age-shift, gender-shift, or ethnicity-shift the person.",
         "Do not generate a different person.",
+        "Similarity is not enough. Identity match is required.",
       ].join(" ")
     : [
         "Generate one stable realistic human identity.",
@@ -68,31 +70,61 @@ function buildMasterIdentityPrompt({
   const strictBlock = strictIdentity
     ? [
         "Strict identity preservation mode.",
-        "Face must stay as close as possible to the reference identity.",
-        "Hairstyle must stay as close as possible to the reference identity.",
-        "Skin tone must stay as close as possible to the reference identity.",
+        "Face must remain as close as possible to the uploaded reference identity.",
+        "Ethnicity must remain the same as the uploaded reference identity.",
+        "Skin tone family must remain the same as the uploaded reference identity.",
+        "Hairstyle, hairline, and facial proportions must remain as close as possible to the uploaded reference identity.",
         "Do not creatively reinterpret the person.",
       ].join(" ")
     : "";
 
   const shotBlock = [
     "Single person only.",
-    "Close-up or upper-body portrait.",
-    "Face facing camera or very slight 3/4 angle only.",
+    "Clean close-up or upper-body portrait.",
+    "Facing camera or very slight 3/4 angle only.",
     "Neutral expression.",
     "Plain light studio background.",
-    "Neutral reference-photo style.",
+    "Reference-photo style.",
     "Natural realistic photography.",
   ].join(" ");
 
   const realismBlock = [
-    "Photorealistic human image.",
-    "Natural skin texture, realistic pores, real facial detail, realistic hair strands.",
-    "No waxy skin, no plastic skin, no CGI look, no 3D render look, no beauty-filtered face.",
+    "Photorealistic real human portrait.",
+    "Natural skin texture, realistic pores, realistic facial detail, realistic hair strands.",
+    "No beauty retouching, no glamour look, no CGI, no 3D render, no stylized face.",
   ].join(" ");
 
   const avoidBlock = [
-    "Avoid: different person, identity drift, generic face, altered face shape, altered nose, altered eyes, altered lips, altered jawline, changed hairstyle, changed hairline, changed skin tone, changed beard, multiple people, collage, split screen, text, watermark",
+    "different person",
+    "wrong identity",
+    "identity drift",
+    "different ethnicity",
+    "ethnicity shift",
+    "different skin tone family",
+    "generic face",
+    "altered face shape",
+    "altered skull shape",
+    "altered forehead",
+    "altered jawline",
+    "altered cheek structure",
+    "altered nose",
+    "altered eyes",
+    "altered lips",
+    "altered eyebrows",
+    "changed hairstyle",
+    "changed hairline",
+    "changed facial proportions",
+    "beauty filter",
+    "glamour portrait",
+    "waxy skin",
+    "plastic skin",
+    "cgi",
+    "3d render",
+    "multiple people",
+    "collage",
+    "split screen",
+    "text",
+    "watermark",
     negativePrompt || "",
   ]
     .filter(Boolean)
@@ -103,7 +135,7 @@ function buildMasterIdentityPrompt({
     strictBlock,
     shotBlock,
     realismBlock,
-    `User request: ${String(prompt || "").trim() || "close-up master identity portrait"}`,
+    `User request: ${String(prompt || "").trim() || "exact same real-person master identity portrait"}`,
     `Avoid: ${avoidBlock}`,
   ]
     .filter(Boolean)
@@ -173,13 +205,13 @@ async function runSingleCandidate({
     refs.length > 0
       ? {
           prompt: finalPrompt,
-          aspect_ratio: "1:1",
+          aspect_ratio: "2:3",
           output_format: "png",
           reference_images: refs,
         }
       : {
           prompt: finalPrompt,
-          aspect_ratio: "1:1",
+          aspect_ratio: "2:3",
           output_format: "png",
         };
 
@@ -210,7 +242,7 @@ export async function POST(req) {
       referenceImages = [],
       negativePrompt = "",
       strictIdentity = true,
-      candidates = 4,
+      candidates = 1,
       userId = "anonymous",
     } = await req.json();
 
@@ -225,7 +257,7 @@ export async function POST(req) {
       );
     }
 
-    const safeCandidates = Math.min(Math.max(Number(candidates) || 4, 1), 6);
+    const safeCandidates = Math.min(Math.max(Number(candidates) || 1, 1), 4);
 
     const results = [];
     let lastError = null;

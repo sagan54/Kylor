@@ -367,15 +367,16 @@ async function runSingleGeneration({
   strictIdentity,
   userId,
 }) {
-  const hasRefs = refs.length > 0;
-  const aspect_ratio = mapSizeToAspectRatio(size);
-  const viewType = view.key;
+ const hasRefs = refs.length > 0;
+const aspect_ratio = mapSizeToAspectRatio(size);
+const viewType = detectViewType(prompt);
 
 const finalPrompt = buildFinalPrompt({
-  prompt: `${view.prompt}. Same exact person.`,
-  hasRefs: true,
-  viewType: view.key,
-  strictIdentity: true,
+  prompt,
+  hasRefs,
+  viewType,
+  negativePrompt,
+  strictIdentity,
 });
 
   const input = hasRefs

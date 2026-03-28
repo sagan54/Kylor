@@ -1134,7 +1134,7 @@ function getAdaptiveThresholds({
   switch (viewType) {
     case IMAGE_TYPES.FRONT:
       thresholds = {
-        minIdentityScore: 8.0,
+        minIdentityScore: attempt === 0 ? 7.2 : 8.0,
         minShotScore: 7.5,
         minCompositionScore: 6.8,
         minQualityScore: 6.8,
@@ -1240,7 +1240,7 @@ function shouldRejectScore(score, thresholds) {
 function getReferencePriority(viewType) {
   switch (viewType) {
     case IMAGE_TYPES.FRONT:
-      return ["MASTER"];
+      return ["MASTER", IMAGE_TYPES.FRONT];
 
     case IMAGE_TYPES.LEFT:
       return ["MASTER", IMAGE_TYPES.FRONT, IMAGE_TYPES.RIGHT];
@@ -1264,17 +1264,17 @@ function trimReferencesForView(viewType, refs) {
 
   switch (viewType) {
     case IMAGE_TYPES.FRONT:
-      return uniqueRefs.slice(0, 1);
+      return uniqueRefs.slice(0, 2);
 
     case IMAGE_TYPES.LEFT:
     case IMAGE_TYPES.RIGHT:
-      return uniqueRefs.slice(0, 2);
+      return uniqueRefs.slice(0, 3);
 
     case IMAGE_TYPES.BACK:
       return uniqueRefs.slice(0, 3);
 
     case IMAGE_TYPES.CLOSEUP:
-      return uniqueRefs.slice(0, 3);
+      return uniqueRefs.slice(0, 2);
 
     default:
       return uniqueRefs.slice(0, 2);
@@ -1339,26 +1339,42 @@ function buildReferenceCandidates({
   viewType,
   masterImage,
   acceptedViewMap,
+  anchorRefs = [],
 }) {
   const priority = getReferencePriority(viewType);
   const candidates = [];
 
-  for (const refType of priority) {
-    if (refType === "MASTER" && masterImage) {
-      candidates.push({
-        type: "MASTER",
-        url: masterImage,
-        finalScore: 10,
-        identityScore: 10,
-        shotScore: 10,
-        compositionScore: 10,
-        qualityScore: 10,
-        failureType: "none",
-        isMaster: true,
-      });
-      continue;
-    }
+  if (masterImage) {
+    candidates.push({
+      type: "MASTER",
+      url: masterImage,
+      finalScore: 10,
+      identityScore: 10,
+      shotScore: 10,
+      compositionScore: 10,
+      qualityScore: 10,
+      failureType: "none",
+      isMaster: true,
+    });
+  }
 
+  for (const anchorUrl of anchorRefs) {
+    if (!anchorUrl || anchorUrl === masterImage) continue;
+
+    candidates.push({
+      type: "ANCHOR",
+      url: anchorUrl,
+      finalScore: 9,
+      identityScore: 9,
+      shotScore: 8,
+      compositionScore: 8,
+      qualityScore: 8,
+      failureType: "none",
+      isMaster: false,
+    });
+  }
+
+  for (const refType of priority) {
     const acceptedRef = acceptedViewMap[refType];
     if (acceptedRef?.url) {
       candidates.push({
@@ -1406,11 +1422,13 @@ function buildReferenceSet({
   viewType,
   masterImage,
   acceptedViewMap,
+  anchorRefs = [],
 }) {
   const candidates = buildReferenceCandidates({
     viewType,
     masterImage,
     acceptedViewMap,
+    anchorRefs,
   });
 
   const rankedCandidates = rankReferenceCandidates({
@@ -1464,6 +1482,89 @@ function buildAnchorViewSummary(finalResults = []) {
   }));
 }
 
+async function loadCharacterMemory(characterId, userId) {
+  const { data, error } = await supabase
+    .from("characters")
+    .select(`
+      id,
+      user_id,
+      name,
+      description,
+      master_image,
+      locked_traits,
+      dna_profile,
+      dna_confidence,
+      anchor_views,
+      metadata
+    `)
+    .eq("id", characterId)
+    .eq("user_id", userId)
+    .single();
+
+  if (error || !data) {
+    throw new Error(error?.message || "Character memory not found");
+  }
+
+  return data;
+}
+
+function buildLockedTraitsBlock(lockedTraits = {}) {
+  if (!lockedTraits || typeof lockedTraits !== "object") return "";
+
+  const parts = [
+    lockedTraits.gender ? `Gender presentation must remain ${lockedTraits.gender}.` : null,
+    lockedTraits.age || lockedTraits.ageRange
+      ? `Age range must remain ${lockedTraits.age || lockedTraits.ageRange}.`
+      : null,
+    lockedTraits.ethnicity ? `Ethnicity must remain ${lockedTraits.ethnicity}.` : null,
+    lockedTraits.hair_style ? `Hair style must remain ${lockedTraits.hair_style}.` : null,
+    lockedTraits.hair_color ? `Hair color must remain ${lockedTraits.hair_color}.` : null,
+    lockedTraits.eye_color ? `Eye color must remain ${lockedTraits.eye_color}.` : null,
+    lockedTraits.build ? `Body build must remain ${lockedTraits.build}.` : null,
+  ].filter(Boolean);
+
+  return parts.join(" ");
+}
+
+function buildDnaIdentityBlock(dnaProfile = {}) {
+  if (!dnaProfile || typeof dnaProfile !== "object") return "";
+
+  const parts = [
+    dnaProfile.identitySummary ? `Identity summary: ${dnaProfile.identitySummary}.` : null,
+    dnaProfile.faceShape ? `Face shape: ${dnaProfile.faceShape}.` : null,
+    dnaProfile.jawline ? `Jawline: ${dnaProfile.jawline}.` : null,
+    dnaProfile.cheekStructure ? `Cheek structure: ${dnaProfile.cheekStructure}.` : null,
+    dnaProfile.foreheadShape ? `Forehead shape: ${dnaProfile.foreheadShape}.` : null,
+    dnaProfile.noseProfile ? `Nose profile: ${dnaProfile.noseProfile}.` : null,
+    dnaProfile.eyeShape ? `Eye shape: ${dnaProfile.eyeShape}.` : null,
+    dnaProfile.eyebrowShape ? `Eyebrow shape: ${dnaProfile.eyebrowShape}.` : null,
+    dnaProfile.lipShape ? `Lip shape: ${dnaProfile.lipShape}.` : null,
+    dnaProfile.chinShape ? `Chin shape: ${dnaProfile.chinShape}.` : null,
+    dnaProfile.earShape ? `Ear shape: ${dnaProfile.earShape}.` : null,
+    dnaProfile.skinTone ? `Skin tone: ${dnaProfile.skinTone}.` : null,
+    dnaProfile.hairstyle ? `Hairstyle: ${dnaProfile.hairstyle}.` : null,
+    dnaProfile.hairline ? `Hairline: ${dnaProfile.hairline}.` : null,
+    dnaProfile.hairLength ? `Hair length: ${dnaProfile.hairLength}.` : null,
+    dnaProfile.bodyBuild ? `Body build: ${dnaProfile.bodyBuild}.` : null,
+    dnaProfile.shoulderWidth ? `Shoulder width: ${dnaProfile.shoulderWidth}.` : null,
+    dnaProfile.neckShape ? `Neck shape: ${dnaProfile.neckShape}.` : null,
+    dnaProfile.silhouetteSummary ? `Silhouette: ${dnaProfile.silhouetteSummary}.` : null,
+  ].filter(Boolean);
+
+  return parts.join(" ");
+}
+
+function getAnchorRefs(characterMemory = {}) {
+  const master = normalizeReferenceImage(characterMemory?.master_image);
+  const anchors = Array.isArray(characterMemory?.anchor_views)
+    ? characterMemory.anchor_views
+        .map((item) => normalizeReferenceImage(item?.url))
+        .filter(Boolean)
+    : [];
+
+  return Array.from(new Set([master, ...anchors])).filter(Boolean);
+}
+
 function shouldRepairFromPackCohesion(cohesion) {
   if (!cohesion) return false;
   if (cohesion.identityMismatch) return true;
@@ -1512,6 +1613,59 @@ async function savePermanentImage({
   return publicData?.publicUrl || null;
 }
 
+async function loadCharacterIdentityMemory(characterId, userId) {
+  const { data, error } = await supabase
+    .from("characters")
+    .select(`
+      id,
+      user_id,
+      master_image,
+      dna_profile,
+      dna_confidence,
+      anchor_views,
+      locked_traits
+    `)
+    .eq("id", characterId)
+    .eq("user_id", userId)
+    .single();
+
+  if (error || !data) {
+    throw new Error("Character identity memory not found");
+  }
+
+  return data;
+}
+
+function buildDnaIdentityBlock(character) {
+  const dna = character?.dna_profile || {};
+  const traits = character?.locked_traits || {};
+
+  return [
+    dna.identitySummary ? `Identity summary: ${dna.identitySummary}.` : null,
+    dna.faceShape ? `Face shape: ${dna.faceShape}.` : null,
+    dna.jawline ? `Jawline: ${dna.jawline}.` : null,
+    dna.cheekStructure ? `Cheek structure: ${dna.cheekStructure}.` : null,
+    dna.foreheadShape ? `Forehead shape: ${dna.foreheadShape}.` : null,
+    dna.noseProfile ? `Nose profile: ${dna.noseProfile}.` : null,
+    dna.eyeShape ? `Eye shape: ${dna.eyeShape}.` : null,
+    dna.eyebrowShape ? `Eyebrow shape: ${dna.eyebrowShape}.` : null,
+    dna.lipShape ? `Lip shape: ${dna.lipShape}.` : null,
+    dna.chinShape ? `Chin shape: ${dna.chinShape}.` : null,
+    dna.earShape ? `Ear shape: ${dna.earShape}.` : null,
+    dna.skinTone ? `Skin tone: ${dna.skinTone}.` : null,
+    dna.hairstyle ? `Hairstyle: ${dna.hairstyle}.` : null,
+    dna.hairline ? `Hairline: ${dna.hairline}.` : null,
+    dna.hairLength ? `Hair length: ${dna.hairLength}.` : null,
+    dna.bodyBuild ? `Body build: ${dna.bodyBuild}.` : null,
+    dna.shoulderWidth ? `Shoulder width: ${dna.shoulderWidth}.` : null,
+    dna.neckShape ? `Neck shape: ${dna.neckShape}.` : null,
+    dna.silhouetteSummary ? `Silhouette: ${dna.silhouetteSummary}.` : null,
+    traits.ethnicity ? `Ethnicity must remain ${traits.ethnicity}.` : null,
+    traits.gender ? `Gender presentation should remain ${traits.gender}.` : null,
+    traits.age || traits.ageRange ? `Age range should remain ${traits.age || traits.ageRange}.` : null,
+  ].filter(Boolean).join(" ");
+}
+
 async function runSingleGeneration({
   prompt,
   refs,
@@ -1526,6 +1680,8 @@ async function runSingleGeneration({
   rankedCandidates = [],
   selectedRefs = [],
   acceptedViewMap = {},
+  dnaIdentityBlock = "",
+  lockedTraitsBlock = "",
 }) {
   void strictIdentity;
 
@@ -1543,16 +1699,22 @@ async function runSingleGeneration({
     acceptedViewMap,
   });
 
-  const finalPrompt = buildIntelligentPrompt({
-    prompt,
-    hasRefs,
-    viewType,
-    negativePrompt,
-    attempt,
-    failureType,
-    referenceFusion,
-    packContextBlock,
-  });
+const basePrompt = buildIntelligentPrompt({
+  prompt,
+  hasRefs,
+  viewType,
+  negativePrompt,
+  attempt,
+  failureType,
+  referenceFusion,
+  packContextBlock,
+});
+
+const finalPrompt = [
+  basePrompt,
+  dnaIdentityBlock,
+  lockedTraitsBlock,
+].filter(Boolean).join("\n\n");
 
   const input = hasRefs
     ? {
@@ -2006,15 +2168,19 @@ async function runRepairPassForView({
   userId,
   characterId,
   frontImageUrl,
+  anchorRefs = [],
+  dnaIdentityBlock = "",
+  lockedTraitsBlock = "",
 }) {
   const size =
     failedView.type === IMAGE_TYPES.CLOSEUP ? "1024x1024" : "1024x1536";
 
-  const referenceSelection = buildReferenceSet({
-    viewType: failedView.type,
-    masterImage: normalizedMaster,
-    acceptedViewMap,
-  });
+const referenceSelection = buildReferenceSet({
+  viewType: failedView.type,
+  masterImage: normalizedMaster,
+  acceptedViewMap,
+  anchorRefs,
+});
 
   const currentRefs = referenceSelection.refs;
   const rankedCandidates = referenceSelection.rankedCandidates;
@@ -2026,21 +2192,23 @@ async function runRepairPassForView({
 
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      const generated = await runSingleGeneration({
-        prompt: basePrompt,
-        refs: currentRefs,
-        size,
-        negativePrompt,
-        strictIdentity: true,
-        userId,
-        characterId,
-        viewType: failedView.type,
-        attempt: attempt + 3,
-        failureType: failedView.failureType || lastScore?.failureType || "none",
-        rankedCandidates,
-        selectedRefs: currentRefs,
-        acceptedViewMap,
-      });
+const generated = await runSingleGeneration({
+  prompt: basePrompt,
+  refs: currentRefs,
+  size,
+  negativePrompt,
+  strictIdentity: true,
+  userId,
+  characterId,
+  viewType: failedView.type,
+  attempt: attempt + 3,
+  failureType: failedView.failureType || lastScore?.failureType || "none",
+  rankedCandidates,
+  selectedRefs: currentRefs,
+  acceptedViewMap,
+  dnaIdentityBlock,
+  lockedTraitsBlock,
+});
 
       const validation = validateGeneratedView({
         imageUrl: generated.imageUrl,
@@ -2132,6 +2300,9 @@ async function repairFailedViews({
   userId,
   characterId,
   frontImageUrl,
+  anchorRefs = [],
+  dnaIdentityBlock = "",
+  lockedTraitsBlock = "",
 }) {
   const repairQueue = buildRepairQueue(results);
   if (!repairQueue.length) {
@@ -2145,15 +2316,18 @@ async function repairFailedViews({
   let currentFrontImageUrl = frontImageUrl;
 
   for (const failedView of repairQueue) {
-    const repaired = await runRepairPassForView({
-      failedView,
-      normalizedMaster,
-      acceptedViewMap,
-      negativePrompt,
-      userId,
-      characterId,
-      frontImageUrl: currentFrontImageUrl,
-    });
+const repaired = await runRepairPassForView({
+  failedView,
+  normalizedMaster,
+  acceptedViewMap,
+  negativePrompt,
+  userId,
+  characterId,
+  frontImageUrl: currentFrontImageUrl,
+  anchorRefs,
+  dnaIdentityBlock,
+  lockedTraitsBlock,
+});
 
     const index = repairedResults.findIndex((r) => r.type === failedView.type);
     if (index !== -1) {
@@ -2220,6 +2394,18 @@ export async function POST(req) {
       return Response.json({ error: "Invalid master image" }, { status: 400 });
     }
 
+    const characterMemory = await loadCharacterMemory(characterId, userId);
+const dnaIdentityBlock = buildDnaIdentityBlock(characterMemory?.dna_profile || {});
+const lockedTraitsBlock = buildLockedTraitsBlock(characterMemory?.locked_traits || {});
+const anchorRefs = getAnchorRefs(characterMemory);
+
+console.log("🧠 Loaded character memory", {
+  characterId,
+  hasMasterImage: !!characterMemory?.master_image,
+  dnaConfidence: characterMemory?.dna_confidence ?? null,
+  anchorRefCount: anchorRefs.length,
+});
+
     const results = [];
     const acceptedViewMap = {};
     let frontImageUrl = null;
@@ -2231,11 +2417,12 @@ export async function POST(req) {
       const size =
         view.key === IMAGE_TYPES.CLOSEUP ? "1024x1024" : "1024x1536";
 
-      const referenceSelection = buildReferenceSet({
-        viewType: view.key,
-        masterImage: normalizedMaster,
-        acceptedViewMap,
-      });
+const referenceSelection = buildReferenceSet({
+  viewType: view.key,
+  masterImage: normalizedMaster,
+  acceptedViewMap,
+  anchorRefs,
+});
 
       const currentRefs = referenceSelection.refs;
       const rankedCandidates = referenceSelection.rankedCandidates;
@@ -2251,21 +2438,23 @@ export async function POST(req) {
 
       for (let attempt = 0; attempt < 3; attempt++) {
         try {
-          const generated = await runSingleGeneration({
-            prompt: basePrompt,
-            refs: currentRefs,
-            size,
-            negativePrompt,
-            strictIdentity: true,
-            userId,
-            characterId,
-            viewType: view.key,
-            attempt,
-            failureType: lastScore?.failureType || "none",
-            rankedCandidates,
-            selectedRefs: currentRefs,
-            acceptedViewMap,
-          });
+const generated = await runSingleGeneration({
+  prompt: basePrompt,
+  refs: currentRefs,
+  size,
+  negativePrompt,
+  strictIdentity: true,
+  userId,
+  characterId,
+  viewType: view.key,
+  attempt,
+  failureType: lastScore?.failureType || "none",
+  rankedCandidates,
+  selectedRefs: currentRefs,
+  acceptedViewMap,
+  dnaIdentityBlock,
+  lockedTraitsBlock,
+});
 
           if (!generated?.imageUrl) {
             throw new Error(`No image produced for ${view.key}`);
@@ -2394,15 +2583,18 @@ export async function POST(req) {
     let finalFrontImageUrl = frontImageUrl;
 
     if (collectFailedViews(finalResults).length > 0) {
-      const repaired = await repairFailedViews({
-        results: finalResults,
-        normalizedMaster,
-        acceptedViewMap,
-        negativePrompt,
-        userId,
-        characterId,
-        frontImageUrl: finalFrontImageUrl,
-      });
+const repaired = await repairFailedViews({
+  results: finalResults,
+  normalizedMaster,
+  acceptedViewMap,
+  negativePrompt,
+  userId,
+  characterId,
+  frontImageUrl: finalFrontImageUrl,
+  anchorRefs,
+  dnaIdentityBlock,
+  lockedTraitsBlock,
+});
 
       finalResults = repaired.results;
       finalFrontImageUrl = repaired.frontImageUrl;
@@ -2433,18 +2625,21 @@ export async function POST(req) {
       if (weakView) {
         usedCohesionRepair = true;
 
-        const repairedWeakView = await runRepairPassForView({
-          failedView: {
-            ...weakView,
-            failureType: "identity_drift",
-          },
-          normalizedMaster,
-          acceptedViewMap,
-          negativePrompt,
-          userId,
-          characterId,
-          frontImageUrl: finalFrontImageUrl,
-        });
+const repairedWeakView = await runRepairPassForView({
+  failedView: {
+    ...weakView,
+    failureType: "identity_drift",
+  },
+  normalizedMaster,
+  acceptedViewMap,
+  negativePrompt,
+  userId,
+  characterId,
+  frontImageUrl: finalFrontImageUrl,
+  anchorRefs,
+  dnaIdentityBlock,
+  lockedTraitsBlock,
+});
 
         if (repairedWeakView?.accepted) {
           const cohesionRepairedView = {
@@ -2477,21 +2672,32 @@ export async function POST(req) {
       );
     }
 
-    for (const item of finalResults.filter((r) => r.accepted && r.url)) {
-      const { error: insertError } = await supabase
-        .from("character_images")
-        .insert({
-          character_id: characterId,
-          user_id: userId,
-          image_type: item.type,
-          image_url: item.url,
-          sort_order: item.sort_order,
-        });
+for (const item of finalResults.filter((r) => r.accepted && r.url)) {
+  const { error: insertError } = await supabase
+    .from("character_images")
+    .insert({
+      character_id: characterId,
+      user_id: userId,
+      image_type: "pack",
+      image_url: item.url,
+      pack_view: item.type,
+      source_type: "generated",
+      is_canon: item.finalScore >= 8.5,
+      is_cover: item.type === IMAGE_TYPES.FRONT,
+      sort_order: item.sort_order,
+      metadata: {
+        finalScore: item.finalScore,
+        identityScore: item.identityScore,
+        qualityScore: item.qualityScore,
+        repairedInPass2: !!item.repairedInPass2,
+        repairedFromCohesion: !!item.repairedFromCohesion,
+      },
+    });
 
-      if (insertError) {
-        throw new Error(insertError.message || `Failed to save ${item.type} image`);
-      }
-    }
+  if (insertError) {
+    throw new Error(insertError.message || `Failed to save ${item.type} image`);
+  }
+}
 
     const averageFinalScore =
       finalResults.length > 0
