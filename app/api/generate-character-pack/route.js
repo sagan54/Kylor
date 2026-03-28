@@ -11,7 +11,7 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-const MODEL = "black-forest-labs/flux-1.1-pro-ultra";
+const MODEL = "black-forest-labs/flux-1.1-pro";
 const STORAGE_BUCKET = "character-refs";
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
