@@ -15,7 +15,7 @@ import { IMAGE_TYPES, IMAGE_ORDER, PACK_VIEWS } from "../../lib/character-consta
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { supabase } from "../../lib/supabase";
 
-const CHAR_BUCKET = "characters";
+const CHAR_BUCKET = "character-refs";
 const SESSION_KEY = "kylor_chars_cache_v2";
 
 const C = {
@@ -1188,6 +1188,18 @@ const { data, error } = await supabase
       }
 
       const uploadedRows = await uploadCharacterRefs(data.id, refEntries);
+      if (refEntries.length > 0 && uploadedRows.length === 0) {
+  alert("Reference image upload failed. Check the storage bucket name and policies.");
+  setSaving(false);
+  return;
+}
+
+console.log("SAVE CHARACTER DEBUG", {
+  refEntries,
+  uploadedRows,
+  uploadedCount: uploadedRows.length,
+});
+
       const existingRemoteRefs = refEntries
         .filter(entry => !entry.file && entry.previewUrl)
         .map((entry, i) => ({
@@ -1480,11 +1492,11 @@ await insertMasterIdentityImage(activeChar.id, savedMasterUrl, 0);
 await supabase
   .from("characters")
   .update({
-    reference_image: savedMasterUrl,
-    cover_image: savedMasterUrl,
-    master_image: savedMasterUrl,
+    reference_image: firstRefUrl,
+    cover_image: data.cover_image || firstRefUrl,
+    master_image: firstRefUrl,
   })
-  .eq("id", activeChar.id)
+  .eq("id", data.id)
   .eq("user_id", userId);
 
       const rows = await loadCharacterImages(activeChar.id);
