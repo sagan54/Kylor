@@ -1636,36 +1636,6 @@ async function loadCharacterIdentityMemory(characterId, userId) {
   return data;
 }
 
-function buildDnaIdentityBlock(character) {
-  const dna = character?.dna_profile || {};
-  const traits = character?.locked_traits || {};
-
-  return [
-    dna.identitySummary ? `Identity summary: ${dna.identitySummary}.` : null,
-    dna.faceShape ? `Face shape: ${dna.faceShape}.` : null,
-    dna.jawline ? `Jawline: ${dna.jawline}.` : null,
-    dna.cheekStructure ? `Cheek structure: ${dna.cheekStructure}.` : null,
-    dna.foreheadShape ? `Forehead shape: ${dna.foreheadShape}.` : null,
-    dna.noseProfile ? `Nose profile: ${dna.noseProfile}.` : null,
-    dna.eyeShape ? `Eye shape: ${dna.eyeShape}.` : null,
-    dna.eyebrowShape ? `Eyebrow shape: ${dna.eyebrowShape}.` : null,
-    dna.lipShape ? `Lip shape: ${dna.lipShape}.` : null,
-    dna.chinShape ? `Chin shape: ${dna.chinShape}.` : null,
-    dna.earShape ? `Ear shape: ${dna.earShape}.` : null,
-    dna.skinTone ? `Skin tone: ${dna.skinTone}.` : null,
-    dna.hairstyle ? `Hairstyle: ${dna.hairstyle}.` : null,
-    dna.hairline ? `Hairline: ${dna.hairline}.` : null,
-    dna.hairLength ? `Hair length: ${dna.hairLength}.` : null,
-    dna.bodyBuild ? `Body build: ${dna.bodyBuild}.` : null,
-    dna.shoulderWidth ? `Shoulder width: ${dna.shoulderWidth}.` : null,
-    dna.neckShape ? `Neck shape: ${dna.neckShape}.` : null,
-    dna.silhouetteSummary ? `Silhouette: ${dna.silhouetteSummary}.` : null,
-    traits.ethnicity ? `Ethnicity must remain ${traits.ethnicity}.` : null,
-    traits.gender ? `Gender presentation should remain ${traits.gender}.` : null,
-    traits.age || traits.ageRange ? `Age range should remain ${traits.age || traits.ageRange}.` : null,
-  ].filter(Boolean).join(" ");
-}
-
 async function runSingleGeneration({
   prompt,
   refs,
