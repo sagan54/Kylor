@@ -11,6 +11,7 @@ import {
   List, Folder, Bell, BellOff, ChevronLeft, MoreHorizontal,
   Shuffle, BookOpen, Camera, Sliders, ArrowRight, ExternalLink,
 } from "lucide-react";
+import { IMAGE_TYPES, IMAGE_ORDER, PACK_VIEWS } from "../../lib/character-constants";
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { supabase } from "../../lib/supabase";
 
@@ -171,9 +172,11 @@ function normalizeLockedTraits(row) {
 }
 
 function rowToCharacter(row, imageRows = []) {
+  
   const traits = normalizeLockedTraits(row);
 
   const uploadImages = imageRows
+  
     .filter(img => img.source_type === "upload" || img.source_type === "master_identity")
     .sort((a, b) => {
       const aCanon = a.is_canon ? 1 : 0;
@@ -183,18 +186,29 @@ function rowToCharacter(row, imageRows = []) {
       const aSort = a.sort_order ?? 0;
       const bSort = b.sort_order ?? 0;
       if (aSort !== bSort) return aSort - bSort;
+      
 
       return new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime();
     });
 
   const generatedRows = imageRows
-    .filter(img => img.source_type === "generated")
-    .sort((a, b) => {
-      const aSort = a.sort_order ?? 0;
-      const bSort = b.sort_order ?? 0;
-      if (aSort !== bSort) return aSort - bSort;
-      return new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime();
-    });
+  .filter(
+    (img) =>
+      img.source_type === "generated" ||
+      [
+        IMAGE_TYPES.FRONT,
+        IMAGE_TYPES.LEFT,
+        IMAGE_TYPES.RIGHT,
+        IMAGE_TYPES.BACK,
+        IMAGE_TYPES.CLOSEUP,
+      ].includes(img.image_type)
+  )
+  .sort((a, b) => {
+    const aSort = a.sort_order ?? 0;
+    const bSort = b.sort_order ?? 0;
+    if (aSort !== bSort) return aSort - bSort;
+    return new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime();
+  });
 
   const fallbackGeneratedImages = Array.isArray(row.generated_images) ? row.generated_images : [];
   const generatedImages =
@@ -248,19 +262,21 @@ function rowToCharacter(row, imageRows = []) {
     createdAt: row.created_at,
     refEntries,
     triggerToken: row.trigger_token || "",
-    status: row.status || "draft",
-    loraPath: row.lora_path || null,
-    coverImage: canonRef?.previewUrl || row.cover_image || coverRef?.previewUrl || refEntries[0]?.previewUrl || null,
+status: row.status || "draft",
+loraPath: row.lora_path || null,
+masterImage: row.master_image || canonRef?.previewUrl || null,
+coverImage: canonRef?.previewUrl || row.cover_image || coverRef?.previewUrl || refEntries[0]?.previewUrl || null,
   };
 }
 
 function outputsFromCharacter(char) {
   if (!char) return [];
+
   return (char.generatedImages || []).map((url, i) => ({
-    id: `${char.id}-${CHARACTER_PACK_VIEWS[i]?.key || i}`,
+    id: `${char.id}-${PACK_VIEWS[i]?.key || i}`,
     charId: char.id,
     prompt: "",
-    scene: CHARACTER_PACK_VIEWS[i]?.label || `View ${i + 1}`,
+    scene: PACK_VIEWS[i]?.label || `View ${i + 1}`,
     url,
     createdAt: char.createdAt || new Date().toISOString(),
   }));
@@ -390,6 +406,8 @@ function extractGeneratedUrls(data) {
 
 function getMasterImageForCharacter(char) {
   if (!char) return null;
+
+  if (char.masterImage) return char.masterImage;
 
   const canonRef = (char.refEntries || []).find((entry) => entry?.isCanon && entry?.previewUrl);
   if (canonRef?.previewUrl) return canonRef.previewUrl;
@@ -676,7 +694,7 @@ export default function ConsistencyPage() {
 
   const frontOutput = visibleCharOutputs.find(o => o.scene === "Front Full-Body");
   const otherOutputs = visibleCharOutputs.filter(o => o.scene !== "Front Full-Body");
-  const shouldShowGenerateMorePanel = !!frontOutput && otherOutputs.length < 4;
+  const shouldShowGenerateMorePanel = false;
 
 const updateCharactersCache = useCallback((chars) => {
   try {
@@ -1045,7 +1063,7 @@ useEffect(() => {
 
       const { data, error } = await supabase
         .from("characters")
-        .select("id, name, description, prompt, reference_image, generated_images, cover_image, style, seed, created_at, trigger_token, status, lora_path, base_model, locked_traits, metadata")
+        .select("id, name, description, prompt, reference_image, generated_images, cover_image, master_image, style, seed, created_at, trigger_token, status, lora_path, base_model, locked_traits, metadata")
         .eq("user_id", uid)
         .order("created_at", { ascending: false });
 
@@ -1450,18 +1468,20 @@ await insertMasterIdentityImage(activeChar.id, savedMasterUrl, 0);
 await supabase
   .from("characters")
   .update({
-    cover_image: savedMasterUrl,
-    reference_image: savedMasterUrl,
+     cover_image: savedMasterUrl,
+  reference_image: savedMasterUrl,
+  master_image: savedMasterUrl,
   })
         .eq("id", activeChar.id)
         .eq("user_id", userId);
 
       const rows = await loadCharacterImages(activeChar.id);
       const mapped = rowToCharacter(
-        {
-          ...activeChar,
-          cover_image: savedMasterUrl,
-reference_image: savedMasterUrl,
+  {
+    ...activeChar,
+    cover_image: savedMasterUrl,
+    reference_image: savedMasterUrl,
+    master_image: savedMasterUrl,
           prompt: buildTraitsPayload({
             charDesc: activeChar.desc,
             gender: activeChar.gender,
@@ -1506,7 +1526,81 @@ reference_image: savedMasterUrl,
       setSavingMaster(false);
     }
   }
+async function handleGenerateCharacterPack() {
+  if (!activeChar || generating) return;
 
+  const masterRef = activeChar.masterImage || masterIdentityImage || getMasterImageForCharacter(activeChar);
+
+  if (!masterRef) {
+    alert("Please select a master identity first.");
+    return;
+  }
+
+  generatingRef.current = true;
+  setGenerating(true);
+
+  try {
+    const res = await fetch("/api/generate-character-pack", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        characterId: activeChar.id,
+        masterImage: masterRef,
+        userId,
+        negativePrompt:
+          "different person, identity drift, altered face shape, altered hairstyle, altered skin tone, generic face, beauty filter, CGI, 3D render, multiple people, collage, split screen, text, watermark",
+      }),
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      throw new Error(data?.error || "Failed to generate character pack");
+    }
+
+    const pack = Array.isArray(data?.pack) ? data.pack : [];
+
+    const nextOutputs = pack.map((item) => ({
+      id: `${activeChar.id}-${item.type}`,
+      charId: activeChar.id,
+      prompt: "",
+      scene: PACK_VIEWS.find((v) => v.key === item.type)?.label || item.type,
+      url: item.url,
+      createdAt: new Date().toISOString(),
+    }));
+
+    setOutputs((prev) => [
+      ...prev.filter((o) => o.charId !== activeChar.id),
+      ...nextOutputs,
+    ]);
+
+    const rows = await loadCharacterImages(activeChar.id);
+
+    const mapped = rowToCharacter(
+      {
+        ...activeChar,
+        master_image: masterRef,
+      },
+      rows
+    );
+
+    setCharacters((prev) => {
+      const updated = prev.map((c) => (c.id === activeChar.id ? mapped : c));
+      updateCharactersCache(updated);
+      return updated;
+    });
+
+    setCharacterImages(rows.filter((r) => r.character_id === activeChar.id));
+  } catch (err) {
+    console.error("Character pack generation failed:", err);
+    alert(err?.message || "Failed to generate character pack.");
+  } finally {
+    generatingRef.current = false;
+    setGenerating(false);
+  }
+}
   async function generateOtherProfiles() {
     if (!activeChar || generatingMore) return;
 
@@ -2142,7 +2236,7 @@ cover_image: savedUrl,
             {formSection === "generate" && activeChar && (
               <div style={{ padding: "12px 16px", borderTop: `1px solid ${C.border}`, flexShrink: 0 }}>
                 <motion.button whileHover={canGenerate ? { boxShadow: "0 18px 40px rgba(124,58,237,0.42)" } : {}} whileTap={canGenerate ? { scale: 0.98 } : {}}
-                  onClick={handleGenerate} disabled={!canGenerate}
+  onClick={handleGenerateCharacterPack} disabled={!canGenerate}
                   style={{ height: 48, width: "100%", borderRadius: radius.md, border: "none",
                     background: canGenerate ? "linear-gradient(135deg,#4f46e5,#7c3aed)" : "rgba(255,255,255,0.06)",
                     color: canGenerate ? "white" : C.textMuted, cursor: canGenerate ? "pointer" : "default",
@@ -2279,7 +2373,7 @@ cover_image: savedUrl,
                         onOpen={openLightboxForItem}
                       />
                       <motion.button whileHover={!generating ? { borderColor: C.accentBorder, color: "#c4b5fd" } : {}} whileTap={!generating ? { scale: 0.97 } : {}}
-                        onClick={handleGenerate} disabled={generating}
+                        onClick={handleGenerateCharacterPack} disabled={generating}
                         style={{ height: 36, borderRadius: radius.sm, border: `1px solid ${C.border}`, background: C.surface, color: C.textMuted, cursor: generating ? "default" : "pointer", fontSize: 12, fontWeight: 600, fontFamily: "inherit", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, transition: "all 0.15s ease" }}>
                         {generating
                           ? <><motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: "linear" }}><Zap size={13} /></motion.div>Regenerating…</>
@@ -2292,7 +2386,7 @@ cover_image: savedUrl,
                         Happy with it? Generate the remaining 4 profiles: left profile, right profile, back view, and upper-body close-up.
                       </div>
                       <motion.button whileHover={!generatingMore ? { boxShadow: "0 18px 40px rgba(124,58,237,0.32)" } : {}} whileTap={!generatingMore ? { scale: 0.98 } : {}}
-                        onClick={generateOtherProfiles} disabled={generatingMore}
+                        onClick={handleGenerateCharacterPack} disabled={generatingMore}
                         style={{ height: 46, padding: "0 18px", borderRadius: radius.md, border: "none", background: !generatingMore ? "linear-gradient(135deg,#4f46e5,#7c3aed)" : "rgba(255,255,255,0.06)", color: !generatingMore ? "white" : C.textMuted, cursor: !generatingMore ? "pointer" : "default", fontSize: 14, fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 8, width: "fit-content", fontFamily: "inherit" }}>
                         {generatingMore
                           ? <><motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: "linear" }}><Zap size={15} /></motion.div>Generating Other 4 Profiles...</>

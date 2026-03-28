@@ -1,4 +1,5 @@
 import Replicate from "replicate";
+import { IMAGE_TYPES, IMAGE_ORDER, PACK_VIEWS } from "../../lib/character-constants";
 import { createClient } from "@supabase/supabase-js";
 
 const replicate = new Replicate({
@@ -368,15 +369,14 @@ async function runSingleGeneration({
 }) {
   const hasRefs = refs.length > 0;
   const aspect_ratio = mapSizeToAspectRatio(size);
-  const viewType = detectViewType(prompt);
+  const viewType = view.key;
 
-  const finalPrompt = buildFinalPrompt({
-    prompt,
-    hasRefs,
-    viewType,
-    negativePrompt,
-    strictIdentity,
-  });
+const finalPrompt = buildFinalPrompt({
+  prompt: `${view.prompt}. Same exact person.`,
+  hasRefs: true,
+  viewType: view.key,
+  strictIdentity: true,
+});
 
   const input = hasRefs
     ? {
