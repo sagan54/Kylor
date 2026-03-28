@@ -794,10 +794,20 @@ const hydrateCachedCharacters = useCallback((cached) => {
           .from(CHAR_BUCKET)
           .upload(storagePath, entry.file, { contentType: entry.file.type, upsert: false });
 
-        if (uploadError) {
-          console.error("Ref upload failed:", uploadError);
-          continue;
-        }
+if (uploadError) {
+  console.error("Ref upload failed:", {
+    message: uploadError.message,
+    details: uploadError.details,
+    hint: uploadError.hint,
+    name: uploadError.name,
+    raw: uploadError,
+    bucket: CHAR_BUCKET,
+    storagePath,
+    userId,
+    characterId,
+  });
+  throw new Error(uploadError.message || "Reference upload failed");
+}
 
         const { data: publicUrlData } = supabase.storage.from(CHAR_BUCKET).getPublicUrl(storagePath);
         const imageUrl = publicUrlData?.publicUrl || null;
@@ -816,10 +826,16 @@ const hydrateCachedCharacters = useCallback((cached) => {
           .select()
           .single();
 
-        if (rowError) {
-          console.error("character_images insert error:", rowError);
-          continue;
-        }
+if (rowError) {
+  console.error("character_images insert error:", {
+    message: rowError.message,
+    details: rowError.details,
+    hint: rowError.hint,
+    code: rowError.code,
+    raw: rowError,
+  });
+  throw new Error(rowError.message || "character_images insert failed");
+}
 
         rows.push(row);
       } catch (err) {
