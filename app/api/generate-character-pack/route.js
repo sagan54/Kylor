@@ -2252,6 +2252,17 @@ const generated = await runSingleGeneration({
     } catch (err) {
       lastError = err;
       lastScore = lastScore || failedView;
+
+      const message = String(err?.message || "");
+      if (
+        message.includes("Insufficient credit") ||
+        message.includes("Payment Required") ||
+        message.includes("Too Many Requests") ||
+        message.includes("429") ||
+        message.includes("402")
+      ) {
+        break;
+      }
     }
   }
 
@@ -2519,6 +2530,17 @@ const generated = await runSingleGeneration({
         } catch (err) {
           lastError = err;
           console.error(`Attempt ${attempt + 1} failed for ${view.key}:`, err);
+
+          const message = String(err?.message || "");
+          if (
+            message.includes("Insufficient credit") ||
+            message.includes("Payment Required") ||
+            message.includes("Too Many Requests") ||
+            message.includes("429") ||
+            message.includes("402")
+          ) {
+            break;
+          }
         }
       }
 
@@ -2590,14 +2612,42 @@ const repaired = await repairFailedViews({
       finalFrontImageUrl = repaired.frontImageUrl;
     }
 
-    const acceptedResults = finalResults.filter((r) => r.accepted && r.url);
+    const acceptedCount = finalResults.filter((r) => r.accepted).length;
 
-    if (acceptedResults.length < PACK_VIEWS.length) {
-      const failedTypes = finalResults.filter((r) => !r.accepted).map((r) => r.type);
-      throw new Error(
-        `Pack incomplete after repair pass: only ${acceptedResults.length} of ${PACK_VIEWS.length} views were accepted. Failed: ${failedTypes.join(", ")}`
-      );
-    }
+if (acceptedCount !== views.length) {
+  const failedViews = finalResults
+    .filter((r) => !r.accepted)
+    .map((r) => r.view);
+
+  // ✅ ADD THIS BLOCK HERE
+  const failedReasons = finalResults
+    .filter((r) => !r.accepted)
+    .map((r) => String(r.scoreReason || r.repairError || ""))
+    .join(" | ");
+
+  if (
+    failedReasons.includes("Insufficient credit") ||
+    failedReasons.includes("Payment Required")
+  ) {
+    throw new Error(
+      "Replicate credit is insufficient. Add billing credit, wait a few minutes, and try again."
+    );
+  }
+
+  if (
+    failedReasons.includes("Too Many Requests") ||
+    failedReasons.includes("429")
+  ) {
+    throw new Error(
+      "Replicate rate limit hit. Wait about 10 seconds and try again."
+    );
+  }
+
+  // ❗ KEEP your original error BELOW
+  throw new Error(
+    `Pack incomplete after repair pass: only ${acceptedCount} of ${views.length} views were accepted. Failed: ${failedViews.join(", ")}`
+  );
+}
 
     let packCohesion = null;
     let usedCohesionRepair = false;
