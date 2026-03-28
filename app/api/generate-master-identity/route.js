@@ -1,10 +1,17 @@
 import Replicate from "replicate";
+import { createClient } from "@supabase/supabase-js";
 
 const replicate = new Replicate({
   auth: process.env.REPLICATE_API_TOKEN,
 });
 
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY
+);
+
 const MODEL = "black-forest-labs/flux-2-pro";
+const STORAGE_BUCKET = "character-refs";
 
 function normalizeReferenceImage(image) {
   if (!image || typeof image !== "string") return null;
@@ -103,11 +110,57 @@ function buildMasterIdentityPrompt({
     .join("\n\n");
 }
 
+function getExtensionFromContentType(contentType = "") {
+  const type = String(contentType).toLowerCase();
+
+  if (type.includes("png")) return "png";
+  if (type.includes("jpeg") || type.includes("jpg")) return "jpg";
+  if (type.includes("webp")) return "webp";
+
+  return "png";
+}
+
+async function savePermanentImage({ imageUrl, userId = "anonymous", folder = "master" }) {
+  if (!imageUrl) return null;
+
+  const response = await fetch(imageUrl);
+  if (!response.ok) {
+    throw new Error(`Failed to download Replicate image: ${response.status}`);
+  }
+
+  const contentType = response.headers.get("content-type") || "image/png";
+  const arrayBuffer = await response.arrayBuffer();
+  const buffer = Buffer.from(arrayBuffer);
+  const ext = getExtensionFromContentType(contentType);
+
+  const filePath = `${userId}/${folder}/${Date.now()}-${Math.random()
+    .toString(36)
+    .slice(2)}.${ext}`;
+
+  const { error: uploadError } = await supabase.storage
+    .from(STORAGE_BUCKET)
+    .upload(filePath, buffer, {
+      contentType,
+      upsert: false,
+    });
+
+  if (uploadError) {
+    throw new Error(uploadError.message || "Failed to upload image to Supabase");
+  }
+
+  const { data: publicData } = supabase.storage
+    .from(STORAGE_BUCKET)
+    .getPublicUrl(filePath);
+
+  return publicData?.publicUrl || null;
+}
+
 async function runSingleCandidate({
   refs,
   prompt,
   negativePrompt,
   strictIdentity,
+  userId,
 }) {
   const finalPrompt = buildMasterIdentityPrompt({
     prompt,
@@ -131,10 +184,21 @@ async function runSingleCandidate({
         };
 
   const output = await replicate.run(MODEL, { input });
-  const imageUrl = await fileOutputToUrl(output);
+  const tempUrl = await fileOutputToUrl(output);
+
+  if (!tempUrl) {
+    throw new Error("No image URL returned from Replicate");
+  }
+
+  const permanentUrl = await savePermanentImage({
+    imageUrl: tempUrl,
+    userId,
+    folder: "master",
+  });
 
   return {
-    imageUrl,
+    imageUrl: permanentUrl,
+    tempUrl,
     finalPrompt,
   };
 }
@@ -147,6 +211,7 @@ export async function POST(req) {
       negativePrompt = "",
       strictIdentity = true,
       candidates = 4,
+      userId = "anonymous",
     } = await req.json();
 
     const refs = Array.isArray(referenceImages)
@@ -173,6 +238,7 @@ export async function POST(req) {
           prompt,
           negativePrompt,
           strictIdentity,
+          userId,
         });
 
         debugPrompt = candidate.finalPrompt;

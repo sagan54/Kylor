@@ -535,13 +535,7 @@ function RefUpload({ entries, onEntries, label, hint, max = 5 }) {
           {entries.map((entry, i) => (
             <motion.div key={`${entry.previewUrl}-${i}`} initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }}
               style={{ position: "relative", width: 52, height: 52, borderRadius: 9, overflow: "hidden", border: `1.5px solid ${C.accentBorder}`, flexShrink: 0 }}>
-              <img
-                src={entry.previewUrl}
-                alt=""
-                crossOrigin={entry.previewUrl && !entry.previewUrl.startsWith("blob:") ? "anonymous" : undefined}
-                onError={e => { e.currentTarget.style.display = "none"; }}
-                style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
-              />
+              <img src={entry.previewUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
               <button onClick={e => { e.stopPropagation(); removeEntry(i); }}
                 style={{ position: "absolute", top: 2, right: 2, width: 16, height: 16, borderRadius: 999, background: "rgba(0,0,0,0.8)", border: "none", color: "white", display: "grid", placeItems: "center", cursor: "pointer" }}>
                 <X size={9} />
@@ -554,7 +548,6 @@ function RefUpload({ entries, onEntries, label, hint, max = 5 }) {
   );
 }
 
-// FIX: Added imgError state + crossOrigin + onError to handle CORB and broken images
 function CharacterCard({ char, isActive, onClick, onDelete }) {
   const [hovered, setHovered] = useState(false);
   return (
@@ -565,13 +558,7 @@ function CharacterCard({ char, isActive, onClick, onDelete }) {
       <div style={{ height: 80, background: CARD_GRADIENTS[getIdNumber(char.id) % CARD_GRADIENTS.length], position: "relative", overflow: "hidden" }}>
         <div style={{ position: "absolute", inset: 0, background: "linear-gradient(135deg,rgba(255,255,255,0.05),transparent)" }} />
         {char.refEntries.length > 0
-          ? <img
-              src={char.refEntries[0].previewUrl}
-              alt=""
-              crossOrigin="anonymous"
-              onError={e => { e.currentTarget.style.display = "none"; }}
-              style={{ width: "100%", height: "100%", objectFit: "cover", opacity: 0.85 }}
-            />
+          ? <img src={char.refEntries[0].previewUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", opacity: 0.85 }} />
           : <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center" }}><User size={28} color="rgba(255,255,255,0.25)" /></div>}
         {isActive && <div style={{ position: "absolute", top: 8, right: 8, width: 20, height: 20, borderRadius: 999, background: C.accent, display: "grid", placeItems: "center" }}><Check size={10} color="white" /></div>}
       </div>
@@ -590,30 +577,19 @@ function CharacterCard({ char, isActive, onClick, onDelete }) {
   );
 }
 
-// FIX: Added imgError state + useEffect to reset on url change + crossOrigin + onError
 function OutputCard({ item, onDelete, onOpen }) {
   const [hovered, setHovered] = useState(false);
-  const [imgError, setImgError] = useState(false);
-
-  useEffect(() => {
-    setImgError(false);
-  }, [item.url]);
-
-  const isClickable = item.url && item.url !== "__FAILED__" && !imgError;
-
   return (
     <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
       onHoverStart={() => setHovered(true)} onHoverEnd={() => setHovered(false)}
-      onClick={() => isClickable && onOpen?.(item)}
+      onClick={() => item.url && item.url !== "__FAILED__" && onOpen?.(item)}
       style={{ borderRadius: radius.lg, border: `1px solid ${hovered ? C.borderHover : C.border}`,
-        overflow: "hidden", cursor: isClickable ? "zoom-in" : "default", position: "relative",
+        overflow: "hidden", cursor: item.url && item.url !== "__FAILED__" ? "zoom-in" : "default", position: "relative",
         background: CARD_GRADIENTS[getIdNumber(item.id) % CARD_GRADIENTS.length], aspectRatio: "2/3", transition: "border-color 0.16s ease" }}>
-      {item.url && item.url !== "__FAILED__" && !imgError ? (
+      {item.url && item.url !== "__FAILED__" ? (
         <img
           src={item.url}
           alt={item.scene}
-          crossOrigin="anonymous"
-          onError={() => setImgError(true)}
           style={{
             width: "100%",
             height: "100%",
@@ -622,12 +598,9 @@ function OutputCard({ item, onDelete, onOpen }) {
             inset: 0,
           }}
         />
-      ) : item.url === "__FAILED__" || imgError ? (
+      ) : item.url === "__FAILED__" ? (
         <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", padding: 16, textAlign: "center" }}>
-          <div>
-            <div style={{ fontSize: 13, fontWeight: 700, color: "white", marginBottom: 6 }}>Failed</div>
-            <div style={{ fontSize: 11.5, color: C.textMuted }}>{item.scene}</div>
-          </div>
+          <div><div style={{ fontSize: 13, fontWeight: 700, color: "white", marginBottom: 6 }}>Failed</div><div style={{ fontSize: 11.5, color: C.textMuted }}>{item.scene}</div></div>
         </div>
       ) : (
         <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center" }}>
@@ -637,7 +610,7 @@ function OutputCard({ item, onDelete, onOpen }) {
       )}
       <div style={{ position: "absolute", inset: 0, background: "linear-gradient(135deg,rgba(255,255,255,0.04),transparent 50%)", pointerEvents: "none" }} />
       <AnimatePresence>
-        {hovered && isClickable && (
+        {hovered && item.url && item.url !== "__FAILED__" && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             style={{ position: "absolute", inset: 0, background: "linear-gradient(to top,rgba(0,0,0,0.75),transparent 55%)", display: "flex", flexDirection: "column", justifyContent: "space-between", padding: 10 }}>
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 5 }}>
@@ -1427,20 +1400,21 @@ useEffect(() => {
       const res = await fetch("/api/generate-master-identity", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          prompt: [
-            activeChar.desc || "",
-            extraPrompt || "",
-            "close-up master identity portrait, neutral expression, plain light studio background, same exact person",
-          ]
-            .filter(Boolean)
-            .join(". "),
-          referenceImages: uploadedRefs,
-          negativePrompt:
-            "different person, identity drift, generic face, altered hairstyle, altered skin tone, beauty filter, cgi, 3d render, text, watermark",
-          strictIdentity: true,
-          candidates: 4,
-        }),
+body: JSON.stringify({
+  prompt: [
+    activeChar.desc || "",
+    extraPrompt || "",
+    "close-up master identity portrait, neutral expression, plain light studio background, same exact person",
+  ]
+    .filter(Boolean)
+    .join(". "),
+  referenceImages: uploadedRefs,
+  negativePrompt:
+    "different person, identity drift, generic face, altered hairstyle, altered skin tone, beauty filter, cgi, 3d render, text, watermark",
+  strictIdentity: true,
+  candidates: 4,
+  userId,
+}),
       });
 
       const data = await res.json();
@@ -1465,11 +1439,7 @@ useEffect(() => {
     setSavingMaster(true);
 
     try {
-      const savedMasterUrl = await persistGeneratedImage(
-  candidate.url,
-  activeChar.id,
-  "master"
-);
+      const savedMasterUrl = candidate.url;
 
 if (!savedMasterUrl) {
   throw new Error("Failed to persist master identity image.");
@@ -1619,24 +1589,21 @@ reference_image: savedMasterUrl,
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            prompt: finalPrompt,
-            size: view.size,
-            referenceImages: sharedReferenceImages,
-            negativePrompt:
-              "different person, identity drift, altered face shape, altered hairline, altered hairstyle, altered skin tone, changed beard, generic face, beauty filter, CGI, 3D render, multiple people, collage, split screen, text, watermark",
-            strictIdentity: true,
-            attempts: 3,
-          }),
+  prompt: finalPrompt,
+  size: view.size,
+  referenceImages: sharedReferenceImages,
+  negativePrompt:
+    "different person, identity drift, altered face shape, altered hairline, altered hairstyle, altered skin tone, changed beard, generic face, beauty filter, CGI, 3D render, multiple people, collage, split screen, text, watermark",
+  strictIdentity: true,
+  attempts: 3,
+  userId,
+}),
         });
 
         const data = await res.json();
         console.log("PROFILE RESPONSE:", data);
 
-const rawUrl = extractGeneratedUrl(data);
-const savedUrl = rawUrl
-  ? await persistGeneratedImage(rawUrl, activeCharId, "generated")
-  : null;
-
+const savedUrl = extractGeneratedUrl(data);
 setOutputs(prev =>
   prev.map(o =>
     o.id === placeholder.id ? { ...o, url: savedUrl || "__FAILED__" } : o
@@ -1727,15 +1694,16 @@ const hasRefs = finalRefs.length > 0;
           method: "POST",
           headers: { "Content-Type": "application/json" },
           signal: controller.signal,
-          body: JSON.stringify({
-            prompt: finalPrompt,
-            size: frontView.size,
-            referenceImages: finalRefs,
-            negativePrompt:
-              "different person, identity drift, generic face, altered hairstyle, altered skin tone, beauty filter, CGI, 3D render, duplicate person, collage, split screen, text, watermark",
-            strictIdentity: true,
-            attempts: 3,
-          }),
+        body: JSON.stringify({
+  prompt: finalPrompt,
+  size: frontView.size,
+  referenceImages: finalRefs,
+  negativePrompt:
+    "different person, identity drift, generic face, altered hairstyle, altered skin tone, beauty filter, CGI, 3D render, duplicate person, collage, split screen, text, watermark",
+  strictIdentity: true,
+  attempts: 3,
+  userId,
+}),
         });
 
         data = await res.json();
@@ -1745,10 +1713,7 @@ const hasRefs = finalRefs.length > 0;
 
       console.log("GEN RESPONSE:", data);
 
-const rawUrl = extractGeneratedUrl(data);
-const savedUrl = rawUrl
-  ? await persistGeneratedImage(rawUrl, activeCharId, "generated")
-  : null;
+const savedUrl = extractGeneratedUrl(data);
 
 setOutputs(prev =>
   prev.map(o =>
@@ -2046,15 +2011,7 @@ cover_image: savedUrl,
                   </div>
                   <div style={{ padding: "10px 12px", borderRadius: radius.sm, border: `1px solid ${C.border}`, background: "rgba(255,255,255,0.02)", display: "flex", alignItems: "center", gap: 10 }}>
                     <div style={{ width: 32, height: 32, borderRadius: 9, overflow: "hidden", flexShrink: 0, background: CARD_GRADIENTS[getIdNumber(activeChar.id) % CARD_GRADIENTS.length], display: "grid", placeItems: "center" }}>
-                      {activeChar.refEntries.length > 0
-                        ? <img
-                            src={activeChar.refEntries[0].previewUrl}
-                            alt=""
-                            crossOrigin="anonymous"
-                            onError={e => { e.currentTarget.style.display = "none"; }}
-                            style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                          />
-                        : <User size={14} color="rgba(255,255,255,0.4)" />}
+                      {activeChar.refEntries.length > 0 ? <img src={activeChar.refEntries[0].previewUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <User size={14} color="rgba(255,255,255,0.4)" />}
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 12.5, fontWeight: 700, color: C.text }}>{activeChar.name}</div>
@@ -2077,12 +2034,9 @@ cover_image: savedUrl,
                     {masterIdentityImage ? (
                       <div style={{ display: "grid", gap: 10 }}>
                         <div style={{ width: "100%", aspectRatio: "1/1", borderRadius: radius.md, overflow: "hidden", border: `1px solid ${C.accentBorder}`, background: "rgba(255,255,255,0.03)" }}>
-                          {/* FIX: Added crossOrigin + onError to master identity img */}
                           <img
                             src={masterIdentityImage}
                             alt="Master identity"
-                            crossOrigin="anonymous"
-                            onError={e => { e.currentTarget.style.display = "none"; }}
                             style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
                           />
                         </div>
@@ -2148,12 +2102,9 @@ cover_image: savedUrl,
                               }}
                             >
                               <div style={{ width: "100%", aspectRatio: "1/1", overflow: "hidden" }}>
-                                {/* FIX: Added crossOrigin + onError to master candidate imgs */}
                                 <img
                                   src={candidate.url}
                                   alt={`Master candidate ${i + 1}`}
-                                  crossOrigin="anonymous"
-                                  onError={e => { e.currentTarget.style.display = "none"; }}
                                   style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
                                 />
                               </div>
@@ -2290,15 +2241,7 @@ cover_image: savedUrl,
                             onClick={() => item.url && item.url !== "__FAILED__" && openLightboxForItem(item)}
                             style={{ display: "flex", alignItems: "center", gap: 14, padding: "10px 14px", borderRadius: radius.md, border: `1px solid ${C.border}`, background: C.surface, cursor: item.url && item.url !== "__FAILED__" ? "zoom-in" : "default" }}>
                             <div style={{ width: 52, height: 52, borderRadius: radius.sm, flexShrink: 0, overflow: "hidden", border: `1px solid ${C.border}`, background: CARD_GRADIENTS[getIdNumber(item.id) % CARD_GRADIENTS.length] }}>
-                              {item.url && item.url !== "__FAILED__" && (
-                                <img
-                                  src={item.url}
-                                  alt=""
-                                  crossOrigin="anonymous"
-                                  onError={e => { e.currentTarget.style.display = "none"; }}
-                                  style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                                />
-                              )}
+                              {item.url && item.url !== "__FAILED__" && <img src={item.url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />}
                             </div>
                             <div style={{ flex: 1, minWidth: 0 }}>
                               <div style={{ fontSize: 13, fontWeight: 600, color: C.text, marginBottom: 2 }}>{item.scene || "Portrait"}</div>
@@ -2442,11 +2385,9 @@ cover_image: savedUrl,
                 boxShadow: "0 40px 100px rgba(0,0,0,0.7)",
               }}
             >
-              {/* FIX: Added crossOrigin to lightbox img */}
               <img
                 src={lightboxItem.url}
                 alt={lightboxItem.scene}
-                crossOrigin="anonymous"
                 style={{
                   display: "block",
                   maxWidth: "90vw",
