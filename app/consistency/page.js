@@ -264,7 +264,7 @@ function rowToCharacter(row, imageRows = []) {
     triggerToken: row.trigger_token || "",
 status: row.status || "draft",
 loraPath: row.lora_path || null,
-masterImage: row.master_image || canonRef?.previewUrl || null,
+masterImage: canonRef?.previewUrl || row.master_image || coverRef?.previewUrl || refEntries[0]?.previewUrl || null,
 coverImage: canonRef?.previewUrl || row.cover_image || coverRef?.previewUrl || refEntries[0]?.previewUrl || null,
   };
 }
@@ -1473,12 +1473,12 @@ await insertMasterIdentityImage(activeChar.id, savedMasterUrl, 0);
 await supabase
   .from("characters")
   .update({
-     cover_image: savedMasterUrl,
-  reference_image: savedMasterUrl,
-  master_image: savedMasterUrl,
+    reference_image: firstRefUrl,
+    cover_image: data.cover_image || firstRefUrl,
+    master_image: firstRefUrl,
   })
-        .eq("id", activeChar.id)
-        .eq("user_id", userId);
+  .eq("id", data.id)
+  .eq("user_id", userId);
 
       const rows = await loadCharacterImages(activeChar.id);
       const mapped = rowToCharacter(
