@@ -2513,28 +2513,71 @@ export async function POST(req) {
         ? finalResults.filter((r) => r.repairedInPass2).length
         : 0;
 
-    const finalPackMap = buildPackMap(finalResults);
+    console.log("🔥 Starting DNA extraction...", {
+  characterId,
+  userId,
+  hasMasterImage: !!normalizedMaster,
+  finalResultCount: finalResults.length,
+});
 
-    const characterDNA = await extractCharacterDNA({
-      masterImage: normalizedMaster,
-      packMap: finalPackMap,
-    });
+const finalPackMap = buildPackMap(finalResults);
 
-    const anchorViews = buildAnchorViewSummary(finalResults);
+const characterDNA = await extractCharacterDNA({
+  masterImage: normalizedMaster,
+  packMap: finalPackMap,
+});
 
-    const { error: dnaUpdateError } = await supabase
-      .from("characters")
-      .update({
-        dna_profile: characterDNA,
-        dna_confidence: characterDNA.dnaConfidence,
-        anchor_views: anchorViews,
-      })
-      .eq("id", characterId)
-      .eq("user_id", userId);
+console.log("✅ DNA extracted:", {
+  dnaConfidence: characterDNA?.dnaConfidence,
+  bestAnchorViewTypes: characterDNA?.bestAnchorViewTypes,
+  identitySummary: characterDNA?.identitySummary,
+});
 
-    if (dnaUpdateError) {
-      throw new Error(dnaUpdateError.message || "Failed to save character DNA");
-    }
+const anchorViews = buildAnchorViewSummary(finalResults);
+
+console.log("💾 Saving DNA to DB...", {
+  characterId,
+  userId,
+  dnaConfidence: characterDNA?.dnaConfidence,
+  anchorViewCount: anchorViews.length,
+});
+
+const { data: existingCharacter, error: existingCharacterError } = await supabase
+  .from("characters")
+  .select("id, user_id, name")
+  .eq("id", characterId)
+  .eq("user_id", userId)
+  .maybeSingle();
+
+console.log("🔎 Character row before DNA save:", {
+  existingCharacter,
+  existingCharacterError,
+  characterId,
+  userId,
+});
+
+const { data: updatedCharacterRows, error: dnaUpdateError } = await supabase
+  .from("characters")
+  .update({
+    dna_profile: characterDNA,
+    dna_confidence: characterDNA.dnaConfidence,
+    anchor_views: anchorViews,
+  })
+  .eq("id", characterId)
+  .eq("user_id", userId)
+  .select("id, user_id, dna_confidence, dna_profile, anchor_views");
+
+if (dnaUpdateError) {
+  throw new Error(dnaUpdateError.message || "Failed to save character DNA");
+}
+
+if (!updatedCharacterRows || updatedCharacterRows.length === 0) {
+  throw new Error(
+    `DNA save matched 0 characters. Check characterId/userId. characterId=${characterId}, userId=${userId}`
+  );
+}
+
+console.log("✅ DNA saved successfully:", updatedCharacterRows[0]);
 
     return Response.json({
       success: true,
