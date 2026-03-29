@@ -2599,7 +2599,7 @@ if (shouldStopPackEarly(err)) {
           url: null,
           sort_order: IMAGE_ORDER[view.key],
           accepted: false,
-          attemptsUsed: 3,
+          attemptsUsed: maxAttempts,
           scoreReason: lastError?.message || `Failed to generate acceptable ${view.key}`,
           failureType: lastScore?.failureType || "unknown",
           thresholds: lastScore?.thresholds || null,
@@ -2673,6 +2673,25 @@ if (acceptedCount !== totalViews) {
     .map((r) => String(r.scoreReason || r.repairError || ""))
     .join(" | ");
 
+  console.log("FINAL RESULTS DEBUG:", JSON.stringify(finalResults, null, 2));
+
+  const failedDebug = finalResults
+    .filter((r) => !r.accepted)
+    .map((r) => ({
+      type: r.type,
+      scoreReason: r.scoreReason,
+      repairError: r.repairError,
+      failureType: r.failureType,
+      thresholdFailureReasons: r.thresholdFailureReasons,
+      identityScore: r.identityScore,
+      shotScore: r.shotScore,
+      compositionScore: r.compositionScore,
+      qualityScore: r.qualityScore,
+      finalScore: r.finalScore,
+    }));
+
+  console.log("FAILED VIEW DEBUG:", JSON.stringify(failedDebug, null, 2));
+
   if (
     failedReasons.includes("Insufficient credit") ||
     failedReasons.includes("Payment Required")
@@ -2694,24 +2713,6 @@ if (acceptedCount !== totalViews) {
   throw new Error(
     `Pack incomplete after repair pass: only ${acceptedCount} of ${totalViews} views were accepted. Failed: ${failedViews.join(", ")}`
   );
-console.log("FINAL RESULTS DEBUG:", JSON.stringify(finalResults, null, 2));
-
-const failedDebug = finalResults
-  .filter((r) => !r.accepted)
-  .map((r) => ({
-    type: r.type,
-    scoreReason: r.scoreReason,
-    repairError: r.repairError,
-    failureType: r.failureType,
-    thresholdFailureReasons: r.thresholdFailureReasons,
-    identityScore: r.identityScore,
-    shotScore: r.shotScore,
-    compositionScore: r.compositionScore,
-    qualityScore: r.qualityScore,
-    finalScore: r.finalScore,
-  }));
-
-console.log("FAILED VIEW DEBUG:", JSON.stringify(failedDebug, null, 2));
 }
 
     let packCohesion = null;
