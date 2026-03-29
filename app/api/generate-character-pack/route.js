@@ -2217,107 +2217,106 @@ const referenceSelection = buildReferenceSet({
   const rankedCandidates = referenceSelection.rankedCandidates;
 
   let repairedResult = null;
-  let lastError = null;
-  let lastScore = null;
-  const basePrompt = getViewPrompt(failedView.type);
+let lastError = null;
+let lastScore = null;
+const basePrompt = getViewPrompt(failedView.type);
 
-  const maxAttempts = view.key === IMAGE_TYPES.FRONT ? 2 : 1;
+const maxAttempts = failedView.type === IMAGE_TYPES.FRONT ? 2 : 1;
 
 for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    try {
-const generated = await runSingleGeneration({
-  prompt: basePrompt,
-  refs: currentRefs,
-  size,
-  negativePrompt,
-  strictIdentity: true,
-  userId,
-  characterId,
-  viewType: failedView.type,
-  attempt: attempt + 3,
-  failureType: failedView.failureType || lastScore?.failureType || "none",
-  rankedCandidates,
-  selectedRefs: currentRefs,
-  acceptedViewMap,
-  dnaIdentityBlock,
-  lockedTraitsBlock,
-});
+  try {
+    const generated = await runSingleGeneration({
+      prompt: basePrompt,
+      refs: currentRefs,
+      size,
+      negativePrompt,
+      strictIdentity: true,
+      userId,
+      characterId,
+      viewType: failedView.type,
+      attempt: attempt + 3,
+      failureType: failedView.failureType || lastScore?.failureType || "none",
+      rankedCandidates,
+      selectedRefs: currentRefs,
+      acceptedViewMap,
+      dnaIdentityBlock,
+      lockedTraitsBlock,
+    });
 
-      const validation = validateGeneratedView({
-        imageUrl: generated.imageUrl,
-        viewType: failedView.type,
-      });
+    const validation = validateGeneratedView({
+      imageUrl: generated.imageUrl,
+      viewType: failedView.type,
+    });
 
-      if (!validation.ok) {
-        throw new Error(`Validation failed: ${validation.reason}`);
-      }
+    if (!validation.ok) {
+      throw new Error(`Validation failed: ${validation.reason}`);
+    }
 
-      const score = await scoreGeneratedView({
-        imageUrl: generated.imageUrl,
-        masterImage: normalizedMaster,
-        frontImageUrl,
-        viewType: failedView.type,
-        attempt: attempt + 3,
-        referenceFusion: generated.referenceFusion,
-      });
+    const score = await scoreGeneratedView({
+      imageUrl: generated.imageUrl,
+      masterImage: normalizedMaster,
+      frontImageUrl,
+      viewType: failedView.type,
+      attempt: attempt + 3,
+      referenceFusion: generated.referenceFusion,
+    });
 
-      lastScore = score;
+    lastScore = score;
 
-      if (!score.accepted) {
-        throw new Error(score.reason || `Repair scoring failed for ${failedView.type}`);
-      }
+    if (!score.accepted) {
+      throw new Error(score.reason || `Repair scoring failed for ${failedView.type}`);
+    }
 
-      repairedResult = {
-        type: failedView.type,
-        label: failedView.label,
-        url: generated.imageUrl,
-        sort_order: IMAGE_ORDER[failedView.type],
-        accepted: true,
-        attemptsUsed: (failedView.attemptsUsed || 0) + attempt + 1,
-        validationReason: validation.reason,
-        identityScore: score.identityScore,
-        shotScore: score.shotScore,
-        compositionScore: score.compositionScore,
-        qualityScore: score.qualityScore,
-        finalScore: score.finalScore,
-        multiplePeople: score.multiplePeople,
-        wrongShot: score.wrongShot,
-        faceNotVisible: score.faceNotVisible,
-        identityDrift: score.identityDrift,
-        lowQuality: score.lowQuality,
-        failureType: score.failureType,
-        scoreReason: score.reason,
-        generationAttempt: attempt + 3,
-        referenceCount: generated.referenceCount,
-        referencesUsed: generated.referencesUsed,
-        referenceFusion: generated.referenceFusion,
-        thresholds: score.thresholds,
-        thresholdFailureReasons: score.thresholdFailureReasons,
-        selectedReferenceTypes: rankedCandidates
-          .filter((item) => currentRefs.includes(item.url))
-          .map((item) => item.type),
-        selectedReferenceScores: rankedCandidates
-          .filter((item) => currentRefs.includes(item.url))
-          .map((item) => ({
-            type: item.type,
-            finalScore: item.finalScore,
-            identityScore: item.identityScore,
-            qualityScore: item.qualityScore,
-          })),
-        repairedInPass2: true,
-      };
+    repairedResult = {
+      type: failedView.type,
+      label: failedView.label,
+      url: generated.imageUrl,
+      sort_order: IMAGE_ORDER[failedView.type],
+      accepted: true,
+      attemptsUsed: (failedView.attemptsUsed || 0) + attempt + 1,
+      validationReason: validation.reason,
+      identityScore: score.identityScore,
+      shotScore: score.shotScore,
+      compositionScore: score.compositionScore,
+      qualityScore: score.qualityScore,
+      finalScore: score.finalScore,
+      multiplePeople: score.multiplePeople,
+      wrongShot: score.wrongShot,
+      faceNotVisible: score.faceNotVisible,
+      identityDrift: score.identityDrift,
+      lowQuality: score.lowQuality,
+      failureType: score.failureType,
+      scoreReason: score.reason,
+      generationAttempt: attempt + 3,
+      referenceCount: generated.referenceCount,
+      referencesUsed: generated.referencesUsed,
+      referenceFusion: generated.referenceFusion,
+      thresholds: score.thresholds,
+      thresholdFailureReasons: score.thresholdFailureReasons,
+      selectedReferenceTypes: rankedCandidates
+        .filter((item) => currentRefs.includes(item.url))
+        .map((item) => item.type),
+      selectedReferenceScores: rankedCandidates
+        .filter((item) => currentRefs.includes(item.url))
+        .map((item) => ({
+          type: item.type,
+          finalScore: item.finalScore,
+          identityScore: item.identityScore,
+          qualityScore: item.qualityScore,
+        })),
+      repairedInPass2: true,
+    };
 
-      break;
-    } catch (err) {
-      lastError = err;
-      lastScore = lastScore || failedView;
+    break;
+  } catch (err) {
+    lastError = err;
+    lastScore = lastScore || failedView;
 
-      const message = String(err?.message || "");
-if (shouldStopPackEarly(err)) {
-  throw err;
-}
+    if (shouldStopPackEarly(err)) {
+      throw err;
     }
   }
+}
 
   if (!repairedResult) {
 return {
