@@ -61,6 +61,10 @@ function isReplicateBillingError(err) {
   );
 }
 
+function shouldStopPackEarly(err) {
+  return isReplicateRateLimitError(err) || isReplicateBillingError(err);
+}
+
 async function runReplicateWithBackoff(fn, maxRetries = 2) {
   let lastError;
 
