@@ -117,25 +117,46 @@ function getViewPrompt(viewKey) {
 async function fileOutputToUrl(output) {
   if (!output) return null;
 
+  // direct string
   if (typeof output === "string") return output;
 
+  // array output
   if (Array.isArray(output)) {
-    const first = output[0];
-    if (!first) return null;
-
-    if (typeof first === "string") return first;
-    if (typeof first.url === "function") return await first.url();
-    if (typeof first.url === "string") return first.url;
-
-    const s = typeof first.toString === "function" ? first.toString() : null;
-    return s && s !== "[object Object]" ? s : null;
+    for (const item of output) {
+      const url = await fileOutputToUrl(item);
+      if (url) return url;
+    }
+    return null;
   }
 
-  if (typeof output.url === "function") return await output.url();
-  if (typeof output.url === "string") return output.url;
+  // Replicate FileOutput with url()
+  if (typeof output?.url === "function") {
+    const u = await output.url();
+    return typeof u === "string" ? u : String(u || "");
+  }
 
-  const s = typeof output.toString === "function" ? output.toString() : null;
-  return s && s !== "[object Object]" ? s : null;
+  // plain object with url string
+  if (typeof output?.url === "string") {
+    return output.url;
+  }
+
+  // plain object with href
+  if (typeof output?.href === "string") {
+    return output.href;
+  }
+
+  // nested output field
+  if (output?.output) {
+    return await fileOutputToUrl(output.output);
+  }
+
+  // fallback string conversion
+  const s = String(output || "").trim();
+  if (s.startsWith("http://") || s.startsWith("https://")) {
+    return s;
+  }
+
+  return null;
 }
 
 function buildShotInstruction(viewType) {
@@ -1731,6 +1752,13 @@ console.log("REPLICATE INPUT", JSON.stringify(input, null, 2));
 }, 1);
 const tempUrl = await fileOutputToUrl(output);
 
+console.log("REPLICATE OUTPUT DEBUG", {
+  viewType,
+  outputType: typeof output,
+  tempUrl,
+  tempUrlType: typeof tempUrl,
+});
+
 if (!tempUrl) {
   throw new Error(`No image URL returned for ${viewType}`);
 }
@@ -1758,6 +1786,16 @@ function validateGeneratedView({ imageUrl, viewType }) {
     return {
       ok: false,
       reason: "missing_image_url",
+    };
+  }
+
+  if (
+    !imageUrl.startsWith("http://") &&
+    !imageUrl.startsWith("https://")
+  ) {
+    return {
+      ok: false,
+      reason: "invalid_image_url",
     };
   }
 
