@@ -39,6 +39,55 @@ function mapSizeToAspectRatio(size) {
   }
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isReplicateRateLimitError(err) {
+  const msg = String(err?.message || err || "").toLowerCase();
+  return (
+    msg.includes("rate limit") ||
+    msg.includes("too many requests") ||
+    msg.includes("429")
+  );
+}
+
+function isReplicateBillingError(err) {
+  const msg = String(err?.message || err || "").toLowerCase();
+  return (
+    msg.includes("insufficient credit") ||
+    msg.includes("payment required") ||
+    msg.includes("402")
+  );
+}
+
+async function runReplicateWithBackoff(fn, maxRetries = 2) {
+  let lastError;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      if (attempt > 0) {
+        await sleep(10000); // 10 sec cooldown before retry
+      }
+      return await fn();
+    } catch (err) {
+      lastError = err;
+
+      if (isReplicateBillingError(err)) {
+        throw new Error(
+          "Replicate credit/billing issue. Wait a few minutes after adding credit, then try again."
+        );
+      }
+
+      if (!isReplicateRateLimitError(err) || attempt === maxRetries) {
+        throw err;
+      }
+    }
+  }
+
+  throw lastError;
+}
+
 function getViewPrompt(viewKey) {
   switch (viewKey) {
     case IMAGE_TYPES.FRONT:
@@ -1703,7 +1752,11 @@ const finalPrompt = [
         output_format: "png",
       };
 
-  const output = await replicate.run(MODEL, { input });
+  await sleep(2500);
+
+const output = await runReplicateWithBackoff(async () => {
+  return await replicate.run(MODEL, { input });
+}, 1);
   const tempUrl = await fileOutputToUrl(output);
 
   if (!tempUrl) {
@@ -2164,7 +2217,7 @@ const referenceSelection = buildReferenceSet({
   let lastScore = null;
   const basePrompt = getViewPrompt(failedView.type);
 
-  for (let attempt = 0; attempt < 2; attempt++) {
+  for (let attempt = 0; attempt < 1; attempt++) {
     try {
 const generated = await runSingleGeneration({
   prompt: basePrompt,
@@ -2254,15 +2307,9 @@ const generated = await runSingleGeneration({
       lastScore = lastScore || failedView;
 
       const message = String(err?.message || "");
-      if (
-        message.includes("Insufficient credit") ||
-        message.includes("Payment Required") ||
-        message.includes("Too Many Requests") ||
-        message.includes("429") ||
-        message.includes("402")
-      ) {
-        break;
-      }
+if (shouldStopPackEarly(err)) {
+  throw err;
+}
     }
   }
 
@@ -2437,7 +2484,7 @@ const referenceSelection = buildReferenceSet({
       let lastScore = null;
       const basePrompt = getViewPrompt(view.key);
 
-      for (let attempt = 0; attempt < 2; attempt++) {
+      for (let attempt = 0; attempt < 1; attempt++) {
         try {
 const generated = await runSingleGeneration({
   prompt: basePrompt,
@@ -2532,15 +2579,9 @@ const generated = await runSingleGeneration({
           console.error(`Attempt ${attempt + 1} failed for ${view.key}:`, err);
 
           const message = String(err?.message || "");
-          if (
-            message.includes("Insufficient credit") ||
-            message.includes("Payment Required") ||
-            message.includes("Too Many Requests") ||
-            message.includes("429") ||
-            message.includes("402")
-          ) {
-            break;
-          }
+if (shouldStopPackEarly(err)) {
+  throw err;
+}
         }
       }
 
