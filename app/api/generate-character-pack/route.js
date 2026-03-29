@@ -2613,13 +2613,13 @@ const repaired = await repairFailedViews({
     }
 
     const acceptedCount = finalResults.filter((r) => r.accepted).length;
+const totalViews = finalResults.length;
 
-if (acceptedCount !== views.length) {
+if (acceptedCount !== totalViews) {
   const failedViews = finalResults
     .filter((r) => !r.accepted)
-    .map((r) => r.view);
+    .map((r) => r.type);
 
-  // ✅ ADD THIS BLOCK HERE
   const failedReasons = finalResults
     .filter((r) => !r.accepted)
     .map((r) => String(r.scoreReason || r.repairError || ""))
@@ -2643,9 +2643,8 @@ if (acceptedCount !== views.length) {
     );
   }
 
-  // ❗ KEEP your original error BELOW
   throw new Error(
-    `Pack incomplete after repair pass: only ${acceptedCount} of ${views.length} views were accepted. Failed: ${failedViews.join(", ")}`
+    `Pack incomplete after repair pass: only ${acceptedCount} of ${totalViews} views were accepted. Failed: ${failedViews.join(", ")}`
   );
 }
 
