@@ -2781,11 +2781,22 @@ if (cohesionRepairedView.type === IMAGE_TYPES.FRONT) {
       }
     }
 
-    if (shouldRepairFromPackCohesion(packCohesion)) {
-      throw new Error(
-        `Pack cohesion failed: ${packCohesion.reason || "low cohesion"}`
-      );
-    }
+if (shouldRepairFromPackCohesion(packCohesion)) {
+  console.warn("Pack cohesion warning:", packCohesion);
+
+  // Soft-accept if identity is still strong and mismatch flags are false
+  const softAccept =
+    !packCohesion.identityMismatch &&
+    !packCohesion.silhouetteMismatch &&
+    packCohesion.identityConsistencyScore >= 7.8 &&
+    packCohesion.packCohesionScore >= 7.0;
+
+  if (!softAccept) {
+    throw new Error(
+      `Pack cohesion failed: ${packCohesion.reason || "low cohesion"}`
+    );
+  }
+}
 
 for (const item of finalResults.filter((r) => r.accepted && r.url)) {
   const { error: insertError } = await supabase
