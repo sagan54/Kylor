@@ -11,7 +11,7 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-const MODEL = "black-forest-labs/flux-1-dev";
+const MODEL = "black-forest-labs/flux-2-dev";
 const STORAGE_BUCKET = "character-refs";
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
@@ -2221,7 +2221,9 @@ const referenceSelection = buildReferenceSet({
   let lastScore = null;
   const basePrompt = getViewPrompt(failedView.type);
 
-  for (let attempt = 0; attempt < 1; attempt++) {
+  const maxAttempts = view.key === IMAGE_TYPES.FRONT ? 2 : 1;
+
+for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
 const generated = await runSingleGeneration({
   prompt: basePrompt,
@@ -2488,7 +2490,9 @@ const referenceSelection = buildReferenceSet({
       let lastScore = null;
       const basePrompt = getViewPrompt(view.key);
 
-      for (let attempt = 0; attempt < 1; attempt++) {
+      const maxAttempts = view.key === IMAGE_TYPES.FRONT ? 2 : 1;
+
+for (let attempt = 0; attempt < maxAttempts; attempt++) {
         try {
 const generated = await runSingleGeneration({
   prompt: basePrompt,
@@ -2691,6 +2695,24 @@ if (acceptedCount !== totalViews) {
   throw new Error(
     `Pack incomplete after repair pass: only ${acceptedCount} of ${totalViews} views were accepted. Failed: ${failedViews.join(", ")}`
   );
+console.log("FINAL RESULTS DEBUG:", JSON.stringify(finalResults, null, 2));
+
+const failedDebug = finalResults
+  .filter((r) => !r.accepted)
+  .map((r) => ({
+    type: r.type,
+    scoreReason: r.scoreReason,
+    repairError: r.repairError,
+    failureType: r.failureType,
+    thresholdFailureReasons: r.thresholdFailureReasons,
+    identityScore: r.identityScore,
+    shotScore: r.shotScore,
+    compositionScore: r.compositionScore,
+    qualityScore: r.qualityScore,
+    finalScore: r.finalScore,
+  }));
+
+console.log("FAILED VIEW DEBUG:", JSON.stringify(failedDebug, null, 2));
 }
 
     let packCohesion = null;
