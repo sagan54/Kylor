@@ -11,7 +11,7 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-const MODEL = "black-forest-labs/flux-1.1-pro";
+const MODEL = "black-forest-labs/flux-1-dev";
 const STORAGE_BUCKET = "character-refs";
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
@@ -2437,7 +2437,7 @@ const referenceSelection = buildReferenceSet({
       let lastScore = null;
       const basePrompt = getViewPrompt(view.key);
 
-      for (let attempt = 0; attempt < 3; attempt++) {
+      for (let attempt = 0; attempt < 2; attempt++) {
         try {
 const generated = await runSingleGeneration({
   prompt: basePrompt,
