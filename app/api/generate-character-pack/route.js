@@ -1137,6 +1137,16 @@ function clampScore(value, fallback = 0) {
   return Math.max(0, Math.min(10, n));
 }
 
+function normalizeModelScore(value, fallback = 0) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+
+  // If evaluator returns 0–1 scale, convert to 0–10
+  const scaled = n <= 1 ? n * 10 : n;
+
+  return Math.max(0, Math.min(10, scaled));
+}
+
 function getAdaptiveThresholds({
   viewType,
   attempt = 0,
@@ -1997,11 +2007,11 @@ async function evaluatePackCohesion({
 
   return {
     accepted: !!parsed.accepted,
-    identityConsistencyScore: clampScore(parsed.identityConsistencyScore, 0),
-    silhouetteConsistencyScore: clampScore(parsed.silhouetteConsistencyScore, 0),
-    hairstyleConsistencyScore: clampScore(parsed.hairstyleConsistencyScore, 0),
-    facialConsistencyScore: clampScore(parsed.facialConsistencyScore, 0),
-    packCohesionScore: clampScore(parsed.packCohesionScore, 0),
+    identityConsistencyScore: normalizeModelScore(parsed.identityConsistencyScore, 0),
+silhouetteConsistencyScore: normalizeModelScore(parsed.silhouetteConsistencyScore, 0),
+hairstyleConsistencyScore: normalizeModelScore(parsed.hairstyleConsistencyScore, 0),
+facialConsistencyScore: normalizeModelScore(parsed.facialConsistencyScore, 0),
+packCohesionScore: normalizeModelScore(parsed.packCohesionScore, 0),
     identityMismatch: !!parsed.identityMismatch,
     hairstyleMismatch: !!parsed.hairstyleMismatch,
     silhouetteMismatch: !!parsed.silhouetteMismatch,
@@ -2098,10 +2108,10 @@ async function extractCharacterDNA({
     throw new Error("Character DNA extraction returned invalid JSON");
   }
 
-  return {
-    ...parsed,
-    dnaConfidence: clampScore(parsed.dnaConfidence, 0),
-  };
+return {
+  ...parsed,
+  dnaConfidence: normalizeModelScore(parsed.dnaConfidence, 0),
+};
 }
 
 async function scoreGeneratedView({
@@ -2594,7 +2604,6 @@ acceptedResult = {
           lastError = err;
           console.error(`Attempt ${attempt + 1} failed for ${view.key}:`, err);
 
-          const message = String(err?.message || "");
 if (shouldStopPackEarly(err)) {
   throw err;
 }
