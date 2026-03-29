@@ -1759,6 +1759,17 @@ const finalPrompt = [
   await sleep(2500);
 
 const output = await runReplicateWithBackoff(async () => {
+
+  console.log("REPLICATE DEBUG", {
+  model: MODEL,
+  viewType,
+  refCount: refs.length,
+  refsPreview: refs.slice(0, 3),
+  inputKeys: Object.keys(input),
+});
+
+console.log("REPLICATE INPUT", JSON.stringify(input, null, 2));
+
   return await replicate.run(MODEL, { input });
 }, 1);
   const tempUrl = await fileOutputToUrl(output);
