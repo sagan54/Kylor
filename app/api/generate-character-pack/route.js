@@ -294,6 +294,7 @@ Rules:
 - If face hidden → face_not_visible
 - If blurry/artifacts → low_quality
 - If framing bad → bad_composition
+- For back view, face_not_visible is expected and should NOT be treated as a failure by itself
 
 Return STRICT JSON:
 
@@ -1270,15 +1271,17 @@ function getThresholdFailureReasons(score, thresholds) {
   return reasons;
 }
 
-function shouldRejectScore(score, thresholds) {
+function shouldRejectScore(score, thresholds, viewType) {
   if (!score) return true;
   if (!thresholds) return true;
 
   if (score.multiplePeople) return true;
   if (score.wrongShot) return true;
-  if (score.faceNotVisible) return true;
+
+  // Back view should NOT fail just because face is not visible
+  if (viewType !== IMAGE_TYPES.BACK && score.faceNotVisible) return true;
+
   if (score.identityDrift) return true;
-  if (score.lowQuality) return true;
 
   if (score.identityScore < thresholds.minIdentityScore) return true;
   if (score.shotScore < thresholds.minShotScore) return true;
@@ -1776,33 +1779,26 @@ console.log("REPLICATE INPUT", JSON.stringify(input, null, 2));
 
   return await replicate.run(MODEL, { input });
 }, 1);
-  const tempUrl = await fileOutputToUrl(output);
+const tempUrl = await fileOutputToUrl(output);
 
-  if (!tempUrl) {
-    throw new Error(`No image URL returned for ${viewType}`);
-  }
+if (!tempUrl) {
+  throw new Error(`No image URL returned for ${viewType}`);
+}
 
-  const permanentUrl = await savePermanentImage({
-    imageUrl: tempUrl,
-    userId,
-    characterId,
-    viewType,
-  });
-
-  return {
-    imageUrl: permanentUrl,
-    tempUrl,
-    finalPrompt,
-    viewType,
-    hasRefs,
-    aspect_ratio,
-    attempt,
-    failureType,
-referenceCount: cleanedRefs.length,
-referencesUsed: cleanedRefs,
-    referenceFusion,
-    packContextBlock,
-  };
+return {
+  imageUrl: tempUrl, // use temp URL for evaluation first
+  tempUrl,
+  finalPrompt,
+  viewType,
+  hasRefs,
+  aspect_ratio,
+  attempt,
+  failureType,
+  referenceCount: cleanedRefs.length,
+  referencesUsed: cleanedRefs,
+  referenceFusion,
+  packContextBlock,
+};
 }
 
 function validateGeneratedView({ imageUrl, viewType }) {
@@ -2185,7 +2181,7 @@ async function scoreGeneratedView({
 
   const thresholdFailureReasons = getThresholdFailureReasons(normalized, thresholds);
 
-  if (shouldRejectScore(normalized, thresholds)) {
+  if (shouldRejectScore(normalized, thresholds, viewType)) {
     return {
       ...normalized,
       accepted: false,
@@ -2279,14 +2275,21 @@ for (let attempt = 0; attempt < maxAttempts; attempt++) {
     lastScore = score;
 
     if (!score.accepted) {
-      throw new Error(score.reason || `Repair scoring failed for ${failedView.type}`);
-    }
+  throw new Error(score.reason || `Repair scoring failed for ${failedView.type}`);
+}
 
-    repairedResult = {
-      type: failedView.type,
-      label: failedView.label,
-      url: generated.imageUrl,
-      sort_order: IMAGE_ORDER[failedView.type],
+const permanentUrl = await savePermanentImage({
+  imageUrl: generated.tempUrl,
+  userId,
+  characterId,
+  viewType: failedView.type,
+});
+
+repairedResult = {
+  type: failedView.type,
+  label: failedView.label,
+  url: permanentUrl,
+  sort_order: IMAGE_ORDER[failedView.type],
       accepted: true,
       attemptsUsed: (failedView.attemptsUsed || 0) + attempt + 1,
       validationReason: validation.reason,
@@ -2554,46 +2557,53 @@ const generated = await runSingleGeneration({
             throw new Error(score.reason || `Scoring failed for ${view.key}`);
           }
 
-          acceptedResult = {
-            type: view.key,
-            label: view.label,
-            url: generated.imageUrl,
-            sort_order: IMAGE_ORDER[view.key],
-            accepted: true,
-            attemptsUsed: attempt + 1,
-            validationReason: validation.reason,
-            identityScore: score.identityScore,
-            shotScore: score.shotScore,
-            compositionScore: score.compositionScore,
-            qualityScore: score.qualityScore,
-            finalScore: score.finalScore,
-            multiplePeople: score.multiplePeople,
-            wrongShot: score.wrongShot,
-            faceNotVisible: score.faceNotVisible,
-            identityDrift: score.identityDrift,
-            lowQuality: score.lowQuality,
-            failureType: score.failureType,
-            scoreReason: score.reason,
-            generationAttempt: attempt,
-            referenceCount: generated.referenceCount,
-            referencesUsed: generated.referencesUsed,
-            referenceFusion: generated.referenceFusion,
-            thresholds: score.thresholds,
-            thresholdFailureReasons: score.thresholdFailureReasons,
-            selectedReferenceTypes: rankedCandidates
-              .filter((item) => currentRefs.includes(item.url))
-              .map((item) => item.type),
-            selectedReferenceScores: rankedCandidates
-              .filter((item) => currentRefs.includes(item.url))
-              .map((item) => ({
-                type: item.type,
-                finalScore: item.finalScore,
-                identityScore: item.identityScore,
-                qualityScore: item.qualityScore,
-              })),
-            repairedInPass2: false,
-            repairedFromCohesion: false,
-          };
+const permanentUrl = await savePermanentImage({
+  imageUrl: generated.tempUrl,
+  userId,
+  characterId,
+  viewType: view.key,
+});
+
+acceptedResult = {
+  type: view.key,
+  label: view.label,
+  url: permanentUrl,
+  sort_order: IMAGE_ORDER[view.key],
+  accepted: true,
+  attemptsUsed: attempt + 1,
+  validationReason: validation.reason,
+  identityScore: score.identityScore,
+  shotScore: score.shotScore,
+  compositionScore: score.compositionScore,
+  qualityScore: score.qualityScore,
+  finalScore: score.finalScore,
+  multiplePeople: score.multiplePeople,
+  wrongShot: score.wrongShot,
+  faceNotVisible: score.faceNotVisible,
+  identityDrift: score.identityDrift,
+  lowQuality: score.lowQuality,
+  failureType: score.failureType,
+  scoreReason: score.reason,
+  generationAttempt: attempt,
+  referenceCount: generated.referenceCount,
+  referencesUsed: generated.referencesUsed,
+  referenceFusion: generated.referenceFusion,
+  thresholds: score.thresholds,
+  thresholdFailureReasons: score.thresholdFailureReasons,
+  selectedReferenceTypes: rankedCandidates
+    .filter((item) => currentRefs.includes(item.url))
+    .map((item) => item.type),
+  selectedReferenceScores: rankedCandidates
+    .filter((item) => currentRefs.includes(item.url))
+    .map((item) => ({
+      type: item.type,
+      finalScore: item.finalScore,
+      identityScore: item.identityScore,
+      qualityScore: item.qualityScore,
+    })),
+  repairedInPass2: false,
+  repairedFromCohesion: false,
+};
 
           break;
         } catch (err) {
