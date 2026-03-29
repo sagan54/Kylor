@@ -205,60 +205,6 @@ function buildShotInstruction(viewType) {
   }
 }
 
-function buildNegativeBlock(negativePrompt = "", viewType = IMAGE_TYPES.FRONT) {
-  const base = [
-    "different person",
-    "wrong identity",
-    "identity drift",
-    "generic face",
-    "altered face shape",
-    "different jawline",
-    "different cheek structure",
-    "different nose",
-    "different eyes",
-    "different lips",
-    "different eyebrows",
-    "different hairstyle",
-    "different hairline",
-    "different skin tone",
-    "beauty filter",
-    "plastic skin",
-    "waxy skin",
-    "cgi look",
-    "3d render",
-    "stylized face",
-    "anime face",
-    "doll face",
-    "over-retouched skin",
-    "blurry face",
-    "deformed face",
-    "duplicate person",
-    "multiple people",
-    "extra person",
-    "collage",
-    "split screen",
-    "contact sheet",
-    "character sheet",
-    "text",
-    "watermark",
-  ];
-
-  if (
-    viewType === IMAGE_TYPES.FRONT ||
-    viewType === IMAGE_TYPES.LEFT ||
-    viewType === IMAGE_TYPES.RIGHT ||
-    viewType === IMAGE_TYPES.BACK
-  ) {
-    base.push("close-up crop", "head-only crop", "partial body cut-off", "cropped feet", "cropped head");
-  }
-
-  if (negativePrompt && String(negativePrompt).trim()) {
-    base.push(String(negativePrompt).trim());
-  }
-
-  return base.join(", ");
-}
-
 function buildEvaluatorPrompt({ viewType }) {
   return `
 You are evaluating a generated character consistency image.
@@ -1135,7 +1081,6 @@ function buildIntelligentPrompt({
     "No CGI look, no 3D render look, no beauty-filtered skin.",
   ].join(" ");
 
-  const negativeBlock = buildNegativeBlock(negativePrompt, viewType);
 
 return [
   identityBlock,
@@ -1437,15 +1382,16 @@ function buildReferenceCandidates({
     });
   }
 
-  for (const refType of priority) {
-    const acceptedRef = acceptedViewMap[refType];
-    if (acceptedRef?.url) {
-      candidates.push({
-        ...acceptedRef,
-        isMaster: false,
-      });
-    }
+for (const refType of priority) {
+  const acceptedRef = acceptedViewMap[refType];
+  if (acceptedRef?.url || acceptedRef?.evalUrl) {
+    candidates.push({
+      ...acceptedRef,
+      url: acceptedRef.evalUrl || acceptedRef.url,
+      isMaster: false,
+    });
   }
+}
 
   return candidates;
 }
@@ -1525,7 +1471,11 @@ function buildPackMap(results = []) {
   const map = {};
   for (const item of results) {
     if (item?.accepted && item?.type) {
-      map[item.type] = item;
+      map[item.type] = {
+        ...item,
+        evalUrl: item.evalUrl || item.url,
+        url: item.url,
+      };
     }
   }
   return map;
@@ -1948,19 +1898,19 @@ async function evaluatePackCohesion({
     { type: "image_url", image_url: { url: masterImage, detail: "high" } },
 
     { type: "text", text: "FRONT full-body:" },
-    { type: "image_url", image_url: { url: packMap[IMAGE_TYPES.FRONT].url, detail: "high" } },
+    { type: "image_url", image_url: { url: packMap[IMAGE_TYPES.FRONT].evalUrl || packMap[IMAGE_TYPES.FRONT].url, detail: "high" } },
 
     { type: "text", text: "LEFT profile full-body:" },
-    { type: "image_url", image_url: { url: packMap[IMAGE_TYPES.LEFT].url, detail: "high" } },
+    { type: "image_url", image_url: { url: packMap[IMAGE_TYPES.LEFT].evalUrl || packMap[IMAGE_TYPES.LEFT].url, detail: "high" } },
 
     { type: "text", text: "RIGHT profile full-body:" },
-    { type: "image_url", image_url: { url: packMap[IMAGE_TYPES.RIGHT].url, detail: "high" } },
+    { type: "image_url", image_url: { url: packMap[IMAGE_TYPES.RIGHT].evalUrl || packMap[IMAGE_TYPES.RIGHT].url, detail: "high" } },
 
     { type: "text", text: "BACK full-body:" },
-    { type: "image_url", image_url: { url: packMap[IMAGE_TYPES.BACK].url, detail: "high" } },
+    { type: "image_url", image_url: { url: packMap[IMAGE_TYPES.BACK].evalUrl || packMap[IMAGE_TYPES.BACK].url, detail: "high" } },
 
     { type: "text", text: "CLOSEUP portrait:" },
-    { type: "image_url", image_url: { url: packMap[IMAGE_TYPES.CLOSEUP].url, detail: "high" } },
+    { type: "image_url", image_url: { url: packMap[IMAGE_TYPES.CLOSEUP].evalUrl || packMap[IMAGE_TYPES.CLOSEUP].url, detail: "high" } },
   ];
 
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -2051,19 +2001,19 @@ async function extractCharacterDNA({
     { type: "image_url", image_url: { url: masterImage, detail: "high" } },
 
     { type: "text", text: "FRONT full-body:" },
-    { type: "image_url", image_url: { url: packMap[IMAGE_TYPES.FRONT].url, detail: "high" } },
+    { type: "image_url", image_url: { url: packMap[IMAGE_TYPES.FRONT].evalUrl || packMap[IMAGE_TYPES.FRONT].url, detail: "high" } },
 
     { type: "text", text: "LEFT profile:" },
-    { type: "image_url", image_url: { url: packMap[IMAGE_TYPES.LEFT].url, detail: "high" } },
+    { type: "image_url", image_url: { url: packMap[IMAGE_TYPES.LEFT].evalUrl || packMap[IMAGE_TYPES.LEFT].url, detail: "high" } },
 
     { type: "text", text: "RIGHT profile:" },
-    { type: "image_url", image_url: { url: packMap[IMAGE_TYPES.RIGHT].url, detail: "high" } },
+    { type: "image_url", image_url: { url: packMap[IMAGE_TYPES.RIGHT].evalUrl || packMap[IMAGE_TYPES.RIGHT].url, detail: "high" } },
 
     { type: "text", text: "BACK full-body:" },
-    { type: "image_url", image_url: { url: packMap[IMAGE_TYPES.BACK].url, detail: "high" } },
+    { type: "image_url", image_url: { url: packMap[IMAGE_TYPES.BACK].evalUrl || packMap[IMAGE_TYPES.BACK].url, detail: "high" } },
 
     { type: "text", text: "CLOSEUP portrait:" },
-    { type: "image_url", image_url: { url: packMap[IMAGE_TYPES.CLOSEUP].url, detail: "high" } },
+    { type: "image_url", image_url: { url: packMap[IMAGE_TYPES.CLOSEUP].evalUrl || packMap[IMAGE_TYPES.CLOSEUP].url, detail: "high" } },
   ];
 
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -2264,7 +2214,7 @@ for (let attempt = 0; attempt < maxAttempts; attempt++) {
     }
 
     const score = await scoreGeneratedView({
-      imageUrl: generated.imageUrl,
+      imageUrl: generated.tempUrl || generated.imageUrl,
       masterImage: normalizedMaster,
       frontImageUrl,
       viewType: failedView.type,
@@ -2289,6 +2239,7 @@ repairedResult = {
   type: failedView.type,
   label: failedView.label,
   url: permanentUrl,
+  evalUrl: generated.tempUrl,
   sort_order: IMAGE_ORDER[failedView.type],
       accepted: true,
       attemptsUsed: (failedView.attemptsUsed || 0) + attempt + 1,
@@ -2392,9 +2343,9 @@ const repaired = await runRepairPassForView({
     if (repaired.accepted && repaired.url) {
       acceptedViewMap[repaired.type] = repaired;
 
-      if (repaired.type === IMAGE_TYPES.FRONT) {
-        currentFrontImageUrl = repaired.url;
-      }
+if (repaired.type === IMAGE_TYPES.FRONT) {
+  currentFrontImageUrl = repaired.evalUrl || repaired.url;
+}
     }
   }
 
@@ -2410,13 +2361,7 @@ async function deleteExistingPackImages(characterId, userId) {
     .delete()
     .eq("character_id", characterId)
     .eq("user_id", userId)
-    .in("image_type", [
-      IMAGE_TYPES.FRONT,
-      IMAGE_TYPES.LEFT,
-      IMAGE_TYPES.RIGHT,
-      IMAGE_TYPES.BACK,
-      IMAGE_TYPES.CLOSEUP,
-    ]);
+    .eq("image_type", "pack");
 
   if (error) {
     throw new Error(error.message || "Failed to clear previous pack images");
@@ -2568,6 +2513,7 @@ acceptedResult = {
   type: view.key,
   label: view.label,
   url: permanentUrl,
+  evalUrl: generated.tempUrl,
   sort_order: IMAGE_ORDER[view.key],
   accepted: true,
   attemptsUsed: attempt + 1,
@@ -2649,7 +2595,7 @@ if (shouldStopPackEarly(err)) {
       }
 
       if (view.key === IMAGE_TYPES.FRONT) {
-        frontImageUrl = acceptedResult.url;
+        frontImageUrl = acceptedResult.evalUrl || acceptedResult.url;
       }
 
       acceptedViewMap[view.key] = acceptedResult;
@@ -2784,9 +2730,9 @@ const repairedWeakView = await runRepairPassForView({
 
           acceptedViewMap[cohesionRepairedView.type] = cohesionRepairedView;
 
-          if (cohesionRepairedView.type === IMAGE_TYPES.FRONT) {
-            finalFrontImageUrl = cohesionRepairedView.url;
-          }
+if (cohesionRepairedView.type === IMAGE_TYPES.FRONT) {
+  finalFrontImageUrl = cohesionRepairedView.evalUrl || cohesionRepairedView.url;
+}
 
           packMap = buildPackMap(finalResults);
           packCohesion = await evaluatePackCohesion({
@@ -2931,7 +2877,8 @@ console.log("✅ DNA saved successfully:", updatedCharacterRows[0]);
         maxAttemptsUsed,
         repairedCount,
         usedRepairPass: repairedCount > 0 || collectFailedViews(results).length > 0,
-        frontImageUrl: finalFrontImageUrl,
+        frontImageUrl:
+  finalResults.find((r) => r.type === IMAGE_TYPES.FRONT)?.url || null,
         packCohesion,
         usedCohesionRepair,
         characterDNA,
