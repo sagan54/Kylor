@@ -1136,19 +1136,18 @@ function buildIntelligentPrompt({
 
   const negativeBlock = buildNegativeBlock(negativePrompt, viewType);
 
-  return [
-    identityBlock,
-    shotBlock,
-    compositionBlock,
-    repairBlock,
-    fusionBlock,
-    packContextBlock,
-    realismBlock,
-    `Shot request: ${String(prompt || "").trim()}`,
-    `Avoid: ${negativeBlock}`,
-  ]
-    .filter(Boolean)
-    .join("\n\n");
+return [
+  identityBlock,
+  shotBlock,
+  compositionBlock,
+  repairBlock,
+  fusionBlock,
+  packContextBlock,
+  realismBlock,
+  `Shot request: ${String(prompt || "").trim()}`,
+]
+  .filter(Boolean)
+  .join("\n\n");
 }
 
 function normalizeFailureType(value) {
@@ -1743,18 +1742,23 @@ const finalPrompt = [
   lockedTraitsBlock,
 ].filter(Boolean).join("\n\n");
 
-  const input = hasRefs
-    ? {
-        prompt: finalPrompt,
-        aspect_ratio,
-        output_format: "png",
-        reference_images: refs,
-      }
-    : {
-        prompt: finalPrompt,
-        aspect_ratio,
-        output_format: "png",
-      };
+const cleanedRefs = refs
+  .map((r) => normalizeReferenceImage(r))
+  .filter(Boolean)
+  .slice(0, 8);
+
+const input = cleanedRefs.length > 0
+  ? {
+      prompt: finalPrompt,
+      aspect_ratio,
+      output_format: "png",
+      input_images: cleanedRefs,
+    }
+  : {
+      prompt: finalPrompt,
+      aspect_ratio,
+      output_format: "png",
+    };
 
   await sleep(2500);
 
@@ -1763,8 +1767,8 @@ const output = await runReplicateWithBackoff(async () => {
   console.log("REPLICATE DEBUG", {
   model: MODEL,
   viewType,
-  refCount: refs.length,
-  refsPreview: refs.slice(0, 3),
+refCount: cleanedRefs.length,
+refsPreview: cleanedRefs.slice(0, 3),
   inputKeys: Object.keys(input),
 });
 
@@ -1794,8 +1798,8 @@ console.log("REPLICATE INPUT", JSON.stringify(input, null, 2));
     aspect_ratio,
     attempt,
     failureType,
-    referenceCount: refs.length,
-    referencesUsed: refs,
+referenceCount: cleanedRefs.length,
+referencesUsed: cleanedRefs,
     referenceFusion,
     packContextBlock,
   };
