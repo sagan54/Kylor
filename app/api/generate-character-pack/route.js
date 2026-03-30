@@ -2733,6 +2733,23 @@ if (acceptedCount !== totalViews) {
   );
 }
 
+// TEMP TEST RETURN — put this exactly here
+return Response.json({
+  success: true,
+  pack: finalResults,
+  meta: {
+    model: MODEL,
+    evaluatorModel: EVALUATOR_MODEL,
+    referenceCount: maxReferenceCountUsed,
+    usedReferences: true,
+    returnedCount: finalResults.length,
+    acceptedCount: finalResults.filter((r) => r.accepted).length,
+    frontImageUrl:
+      finalResults.find((r) => r.type === IMAGE_TYPES.FRONT)?.url || null,
+    skippedPostProcessing: true,
+  },
+});
+
     let packCohesion = null;
     let usedCohesionRepair = false;
 
