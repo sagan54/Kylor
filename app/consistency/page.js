@@ -647,136 +647,93 @@ function OutputCard({ item, onDelete, onOpen }) {
   );
 }
 
-function OutputGeneratingState({ title = "Generating character pack", subtitle = "Building locked views, preserving identity, and preparing outputs..." }) {
+function OutputGeneratingState({
+  title = "Generating character pack",
+  subtitle = "Creating consistent views for your character...",
+}) {
   return (
     <div
       style={{
-        position: "relative",
         width: "100%",
         minHeight: "calc(100vh - 140px)",
         borderRadius: radius.xl,
-        overflow: "hidden",
         border: `1px solid ${C.border}`,
         background:
-          "radial-gradient(circle at top, rgba(124,58,237,0.16), transparent 26%), linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.008))",
+          "linear-gradient(180deg, rgba(255,255,255,0.015), rgba(255,255,255,0.005))",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 28,
+        boxSizing: "border-box",
       }}
     >
       <motion.div
-        animate={{ opacity: [0.28, 0.62, 0.28], scale: [1, 1.06, 1] }}
-        transition={{ duration: 3.4, repeat: Infinity, ease: "easeInOut" }}
+        initial={{ opacity: 0, y: 14 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
         style={{
-          position: "absolute",
-          inset: "10% 18%",
-          borderRadius: 999,
-          background: "radial-gradient(circle, rgba(124,58,237,0.22), rgba(124,58,237,0.05), transparent 72%)",
-          filter: "blur(54px)",
-          pointerEvents: "none",
-        }}
-      />
-
-      <div
-        style={{
-          position: "absolute",
-          inset: 0,
-          opacity: 0.06,
-          backgroundImage: `
-            linear-gradient(rgba(255,255,255,0.06) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(255,255,255,0.06) 1px, transparent 1px)
-          `,
-          backgroundSize: "30px 30px",
-          maskImage: "linear-gradient(to bottom, rgba(0,0,0,1), rgba(0,0,0,0.25))",
-          WebkitMaskImage: "linear-gradient(to bottom, rgba(0,0,0,1), rgba(0,0,0,0.25))",
-          pointerEvents: "none",
-        }}
-      />
-
-      <motion.div
-        animate={{ y: ["-20%", "120%"] }}
-        transition={{ duration: 3, repeat: Infinity, ease: "linear" }}
-        style={{
-          position: "absolute",
-          left: 0,
-          right: 0,
-          height: 140,
-          background: "linear-gradient(180deg, transparent, rgba(124,58,237,0.11), transparent)",
-          filter: "blur(12px)",
-          pointerEvents: "none",
-        }}
-      />
-
-      <div
-        style={{
-          position: "relative",
-          zIndex: 2,
-          minHeight: "calc(100vh - 140px)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          padding: 28,
+          width: "100%",
+          maxWidth: 480,
+          borderRadius: 28,
+          border: `1px solid ${C.border}`,
+          background: "rgba(255,255,255,0.02)",
+          boxShadow: "0 24px 70px rgba(0,0,0,0.28)",
+          padding: "34px 28px 26px",
         }}
       >
         <div
           style={{
-            width: "100%",
-            maxWidth: 560,
-            textAlign: "center",
-            padding: "30px 24px",
-            borderRadius: 24,
-            border: `1px solid ${C.accentBorder}`,
-            background: "rgba(10,10,16,0.52)",
-            backdropFilter: "blur(18px)",
-            boxShadow: "0 24px 80px rgba(0,0,0,0.38)",
+            display: "flex",
+            justifyContent: "center",
+            marginBottom: 22,
           }}
         >
           <div
             style={{
               position: "relative",
-              width: 88,
-              height: 88,
-              margin: "0 auto 20px",
+              width: 56,
+              height: 56,
+              display: "grid",
+              placeItems: "center",
             }}
           >
             <motion.div
               animate={{ rotate: 360 }}
-              transition={{ duration: 3.2, repeat: Infinity, ease: "linear" }}
+              transition={{ duration: 1.4, repeat: Infinity, ease: "linear" }}
               style={{
-                position: "absolute",
-                inset: 0,
+                width: 56,
+                height: 56,
                 borderRadius: "50%",
-                border: "2px solid rgba(124,58,237,0.14)",
-                borderTop: "2px solid rgba(124,58,237,0.95)",
-                borderRight: "2px solid rgba(168,85,247,0.55)",
-              }}
-            />
-            <motion.div
-              animate={{ rotate: -360 }}
-              transition={{ duration: 4.4, repeat: Infinity, ease: "linear" }}
-              style={{
-                position: "absolute",
-                inset: 10,
-                borderRadius: "50%",
-                border: "1px solid rgba(255,255,255,0.08)",
-                borderBottom: "1px solid rgba(255,255,255,0.32)",
+                border: "2px solid rgba(255,255,255,0.08)",
+                borderTop: "2px solid #8b5cf6",
+                borderRight: "2px solid rgba(139,92,246,0.45)",
               }}
             />
             <div
               style={{
                 position: "absolute",
-                inset: 22,
+                width: 26,
+                height: 26,
                 borderRadius: "50%",
-                background: "radial-gradient(circle, rgba(124,58,237,0.24), rgba(124,58,237,0.06), transparent)",
-                boxShadow: "0 0 28px rgba(124,58,237,0.24)",
+                background: "rgba(124,58,237,0.12)",
               }}
             />
           </div>
+        </div>
 
+        <div
+          style={{
+            textAlign: "center",
+            marginBottom: 22,
+          }}
+        >
           <div
             style={{
-              fontSize: 22,
+              fontSize: 24,
               fontWeight: 800,
+              letterSpacing: "-0.03em",
               color: C.text,
               marginBottom: 8,
-              letterSpacing: "-0.02em",
             }}
           >
             {title}
@@ -787,109 +744,115 @@ function OutputGeneratingState({ title = "Generating character pack", subtitle =
               fontSize: 14,
               lineHeight: 1.7,
               color: C.textMuted,
-              maxWidth: 430,
-              margin: "0 auto 18px",
-            }}
-          >
-            {subtitle}
-          </div>
-
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "center",
-              gap: 8,
-              marginBottom: 22,
-            }}
-          >
-            {[0, 1, 2].map((i) => (
-              <motion.div
-                key={i}
-                animate={{
-                  y: [0, -6, 0],
-                  opacity: [0.35, 1, 0.35],
-                  scale: [0.95, 1.08, 0.95],
-                }}
-                transition={{
-                  duration: 1,
-                  repeat: Infinity,
-                  delay: i * 0.15,
-                  ease: "easeInOut",
-                }}
-                style={{
-                  width: 8,
-                  height: 8,
-                  borderRadius: 999,
-                  background: "#a78bfa",
-                  boxShadow: "0 0 12px rgba(167,139,250,0.45)",
-                }}
-              />
-            ))}
-          </div>
-
-          <div
-            style={{
-              display: "grid",
-              gap: 10,
-              textAlign: "left",
               maxWidth: 360,
               margin: "0 auto",
             }}
           >
-            {[
-              "Locking identity features",
-              "Generating camera-angle variations",
-              "Preparing final output previews",
-            ].map((step, i) => (
-              <motion.div
-                key={step}
-                initial={{ opacity: 0.45 }}
-                animate={{ opacity: [0.45, 1, 0.45] }}
-                transition={{
-                  duration: 1.8,
-                  repeat: Infinity,
-                  delay: i * 0.35,
-                  ease: "easeInOut",
-                }}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
-                  padding: "10px 12px",
-                  borderRadius: 12,
-                  border: "1px solid rgba(255,255,255,0.06)",
-                  background: "rgba(255,255,255,0.025)",
-                }}
-              >
-                <div
-                  style={{
-                    width: 18,
-                    height: 18,
-                    borderRadius: 999,
-                    border: "1px solid rgba(167,139,250,0.4)",
-                    background: "rgba(124,58,237,0.15)",
-                    display: "grid",
-                    placeItems: "center",
-                    flexShrink: 0,
-                  }}
-                >
-                  <motion.div
-                    animate={{ scale: [0.8, 1.2, 0.8], opacity: [0.5, 1, 0.5] }}
-                    transition={{ duration: 1.4, repeat: Infinity, ease: "easeInOut" }}
-                    style={{
-                      width: 6,
-                      height: 6,
-                      borderRadius: 999,
-                      background: "#a78bfa",
-                    }}
-                  />
-                </div>
-                <span style={{ fontSize: 12.5, color: "rgba(255,255,255,0.86)" }}>{step}</span>
-              </motion.div>
-            ))}
+            {subtitle}
           </div>
         </div>
-      </div>
+
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "center",
+            gap: 8,
+            marginBottom: 24,
+          }}
+        >
+          {[0, 1, 2].map((i) => (
+            <motion.div
+              key={i}
+              animate={{
+                opacity: [0.25, 1, 0.25],
+                y: [0, -4, 0],
+              }}
+              transition={{
+                duration: 1,
+                repeat: Infinity,
+                delay: i * 0.16,
+                ease: "easeInOut",
+              }}
+              style={{
+                width: 7,
+                height: 7,
+                borderRadius: 999,
+                background: "#8b5cf6",
+              }}
+            />
+          ))}
+        </div>
+
+        <div style={{ display: "grid", gap: 10 }}>
+          {[
+            "Locking identity features",
+            "Generating camera angles",
+            "Preparing final previews",
+          ].map((step, i) => (
+            <motion.div
+              key={step}
+              animate={{ opacity: [0.55, 1, 0.55] }}
+              transition={{
+                duration: 1.6,
+                repeat: Infinity,
+                delay: i * 0.25,
+                ease: "easeInOut",
+              }}
+              style={{
+                borderRadius: 16,
+                border: `1px solid ${C.border}`,
+                background: "rgba(255,255,255,0.018)",
+                padding: "14px 14px",
+                display: "flex",
+                alignItems: "center",
+                gap: 12,
+              }}
+            >
+              <motion.div
+                animate={{ scale: [1, 1.15, 1], opacity: [0.55, 1, 0.55] }}
+                transition={{ duration: 1.2, repeat: Infinity, ease: "easeInOut" }}
+                style={{
+                  width: 10,
+                  height: 10,
+                  borderRadius: 999,
+                  background: "#8b5cf6",
+                  flexShrink: 0,
+                }}
+              />
+              <div
+                style={{
+                  fontSize: 13.5,
+                  color: "rgba(255,255,255,0.88)",
+                  fontWeight: 500,
+                }}
+              >
+                {step}
+              </div>
+            </motion.div>
+          ))}
+        </div>
+
+        <div
+          style={{
+            marginTop: 20,
+            height: 6,
+            borderRadius: 999,
+            background: "rgba(255,255,255,0.05)",
+            overflow: "hidden",
+          }}
+        >
+          <motion.div
+            animate={{ x: ["-35%", "135%"] }}
+            transition={{ duration: 1.8, repeat: Infinity, ease: "easeInOut" }}
+            style={{
+              width: "38%",
+              height: "100%",
+              borderRadius: 999,
+              background: "linear-gradient(90deg, transparent, rgba(139,92,246,0.95), transparent)",
+            }}
+          />
+        </div>
+      </motion.div>
     </div>
   );
 }
