@@ -831,17 +831,32 @@ function OutputGeneratingState({
             background: "rgba(255,255,255,0.05)",
           }}
         >
-          <motion.div
-            animate={{ x: ["-40%", "140%"] }}
-            transition={{ duration: 1.7, repeat: Infinity, ease: "easeInOut" }}
-            style={{
-              width: "42%",
-              height: "100%",
-              borderRadius: 999,
-              background:
-                "linear-gradient(90deg, transparent, rgba(139,92,246,0.95), transparent)",
-            }}
-          />
+<motion.div
+  animate={{
+    backgroundPosition: ["200% 0%", "-200% 0%"],
+  }}
+  transition={{
+    duration: 2.5,
+    repeat: Infinity,
+    ease: "linear",
+  }}
+  style={{
+    width: "100%",
+    height: "100%",
+    borderRadius: 999,
+    background: `
+      linear-gradient(
+        90deg,
+        transparent,
+        rgba(139,92,246,0.7),
+        rgba(139,92,246,1),
+        rgba(139,92,246,0.7),
+        transparent
+      )
+    `,
+    backgroundSize: "200% 100%",
+  }}
+/>
         </div>
       </motion.div>
     </div>
