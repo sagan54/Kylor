@@ -656,14 +656,10 @@ function OutputGeneratingState({
       style={{
         width: "100%",
         minHeight: "calc(100vh - 140px)",
-        borderRadius: radius.xl,
-        border: `1px solid ${C.border}`,
-        background:
-          "linear-gradient(180deg, rgba(255,255,255,0.015), rgba(255,255,255,0.005))",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        padding: 28,
+        padding: 32,
         boxSizing: "border-box",
       }}
     >
@@ -673,60 +669,48 @@ function OutputGeneratingState({
         transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
         style={{
           width: "100%",
-          maxWidth: 480,
-          borderRadius: 28,
+          maxWidth: 460,
+          borderRadius: 30,
           border: `1px solid ${C.border}`,
           background: "rgba(255,255,255,0.02)",
-          boxShadow: "0 24px 70px rgba(0,0,0,0.28)",
-          padding: "34px 28px 26px",
+          boxShadow: "0 24px 80px rgba(0,0,0,0.32)",
+          padding: "32px 28px 24px",
+          backdropFilter: "blur(10px)",
         }}
       >
         <div
           style={{
             display: "flex",
             justifyContent: "center",
-            marginBottom: 22,
+            marginBottom: 20,
           }}
         >
           <div
             style={{
-              position: "relative",
-              width: 56,
-              height: 56,
+              width: 52,
+              height: 52,
+              borderRadius: 999,
               display: "grid",
               placeItems: "center",
+              background: "rgba(124,58,237,0.08)",
+              border: `1px solid ${C.accentBorder}`,
             }}
           >
             <motion.div
               animate={{ rotate: 360 }}
-              transition={{ duration: 1.4, repeat: Infinity, ease: "linear" }}
+              transition={{ duration: 1.3, repeat: Infinity, ease: "linear" }}
               style={{
-                width: 56,
-                height: 56,
+                width: 24,
+                height: 24,
                 borderRadius: "50%",
-                border: "2px solid rgba(255,255,255,0.08)",
+                border: "2px solid rgba(255,255,255,0.14)",
                 borderTop: "2px solid #8b5cf6",
-                borderRight: "2px solid rgba(139,92,246,0.45)",
-              }}
-            />
-            <div
-              style={{
-                position: "absolute",
-                width: 26,
-                height: 26,
-                borderRadius: "50%",
-                background: "rgba(124,58,237,0.12)",
               }}
             />
           </div>
         </div>
 
-        <div
-          style={{
-            textAlign: "center",
-            marginBottom: 22,
-          }}
-        >
+        <div style={{ textAlign: "center", marginBottom: 22 }}>
           <div
             style={{
               fontSize: 24,
@@ -741,10 +725,10 @@ function OutputGeneratingState({
 
           <div
             style={{
-              fontSize: 14,
+              fontSize: 13.5,
               lineHeight: 1.7,
               color: C.textMuted,
-              maxWidth: 360,
+              maxWidth: 320,
               margin: "0 auto",
             }}
           >
@@ -754,101 +738,108 @@ function OutputGeneratingState({
 
         <div
           style={{
-            display: "flex",
-            justifyContent: "center",
-            gap: 8,
-            marginBottom: 24,
+            display: "grid",
+            gap: 10,
+            marginBottom: 18,
           }}
         >
-          {[0, 1, 2].map((i) => (
-            <motion.div
-              key={i}
-              animate={{
-                opacity: [0.25, 1, 0.25],
-                y: [0, -4, 0],
-              }}
-              transition={{
-                duration: 1,
-                repeat: Infinity,
-                delay: i * 0.16,
-                ease: "easeInOut",
-              }}
-              style={{
-                width: 7,
-                height: 7,
-                borderRadius: 999,
-                background: "#8b5cf6",
-              }}
-            />
-          ))}
-        </div>
-
-        <div style={{ display: "grid", gap: 10 }}>
           {[
-            "Locking identity features",
-            "Generating camera angles",
-            "Preparing final previews",
+            "Locking identity",
+            "Generating angles",
+            "Preparing previews",
           ].map((step, i) => (
             <motion.div
               key={step}
+              initial={{ opacity: 0.7 }}
               animate={{ opacity: [0.55, 1, 0.55] }}
               transition={{
-                duration: 1.6,
+                duration: 1.8,
                 repeat: Infinity,
-                delay: i * 0.25,
+                delay: i * 0.22,
                 ease: "easeInOut",
               }}
               style={{
-                borderRadius: 16,
-                border: `1px solid ${C.border}`,
-                background: "rgba(255,255,255,0.018)",
-                padding: "14px 14px",
                 display: "flex",
                 alignItems: "center",
+                justifyContent: "space-between",
                 gap: 12,
+                padding: "12px 14px",
+                borderRadius: 16,
+                border: `1px solid ${C.border}`,
+                background: "rgba(255,255,255,0.015)",
               }}
             >
-              <motion.div
-                animate={{ scale: [1, 1.15, 1], opacity: [0.55, 1, 0.55] }}
-                transition={{ duration: 1.2, repeat: Infinity, ease: "easeInOut" }}
-                style={{
-                  width: 10,
-                  height: 10,
-                  borderRadius: 999,
-                  background: "#8b5cf6",
-                  flexShrink: 0,
-                }}
-              />
               <div
                 style={{
-                  fontSize: 13.5,
-                  color: "rgba(255,255,255,0.88)",
-                  fontWeight: 500,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  minWidth: 0,
                 }}
               >
-                {step}
+                <motion.div
+                  animate={{
+                    scale: [1, 1.18, 1],
+                    opacity: [0.5, 1, 0.5],
+                  }}
+                  transition={{
+                    duration: 1.2,
+                    repeat: Infinity,
+                    delay: i * 0.18,
+                    ease: "easeInOut",
+                  }}
+                  style={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: 999,
+                    background: "#8b5cf6",
+                    flexShrink: 0,
+                  }}
+                />
+                <span
+                  style={{
+                    fontSize: 13,
+                    fontWeight: 500,
+                    color: "rgba(255,255,255,0.88)",
+                    whiteSpace: "nowrap",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                  }}
+                >
+                  {step}
+                </span>
               </div>
+
+              <span
+                style={{
+                  fontSize: 11.5,
+                  color: C.textDim,
+                  flexShrink: 0,
+                }}
+              >
+                In progress
+              </span>
             </motion.div>
           ))}
         </div>
 
         <div
           style={{
-            marginTop: 20,
-            height: 6,
+            height: 5,
             borderRadius: 999,
-            background: "rgba(255,255,255,0.05)",
             overflow: "hidden",
+            background: "rgba(255,255,255,0.05)",
           }}
         >
           <motion.div
-            animate={{ x: ["-35%", "135%"] }}
-            transition={{ duration: 1.8, repeat: Infinity, ease: "easeInOut" }}
+            animate={{ x: ["-40%", "140%"] }}
+            transition={{ duration: 1.7, repeat: Infinity, ease: "easeInOut" }}
             style={{
-              width: "38%",
+              width: "42%",
               height: "100%",
               borderRadius: 999,
-              background: "linear-gradient(90deg, transparent, rgba(139,92,246,0.95), transparent)",
+              background:
+                "linear-gradient(90deg, transparent, rgba(139,92,246,0.95), transparent)",
             }}
           />
         </div>
@@ -2598,7 +2589,10 @@ cover_image: savedUrl,
               <div ref={canvasRef} style={{ flex: 1, overflowY: "auto", padding: "16px" }}>
             
                 {activeChar && generating && (
-                  <OutputGeneratingState />
+                  <OutputGeneratingState
+  title="Generating character pack"
+  subtitle="Creating clean, consistent views for your character..."
+/>
                 )}           
 
                 {!activeChar && (
