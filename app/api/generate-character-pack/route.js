@@ -172,29 +172,39 @@ function buildShotInstruction(viewType) {
         "Centered composition.",
       ].join(" ");
 
-    case IMAGE_TYPES.LEFT:
-      return [
-        "Single person only.",
-        "Strict left side profile.",
-        "Face turned to the left.",
-        "Full body visible from head to toe.",
-        "Standing straight, neutral pose, relaxed arms.",
-        "Preserve exact facial identity even from the side.",
-        "Preserve exact nose bridge, nose tip, forehead slope, brow line, jawline, chin projection, ear shape, and hairline from the same person.",
-        "Do not turn toward camera.",
-      ].join(" ");
+case IMAGE_TYPES.LEFT:
+  return [
+    "Single person only.",
+    "Strict left side profile.",
+    "Face turned to the LEFT.",
+    "Nose pointing LEFT.",
+    "Body facing LEFT.",
+    "Left shoulder farther from camera, right shoulder closer to camera.",
+    "Full body visible from head to toe.",
+    "Standing straight, neutral pose, relaxed arms.",
+    "Preserve exact facial identity even from the side.",
+    "Preserve exact nose bridge, nose tip, forehead slope, brow line, jawline, chin projection, ear shape, and hairline from the same person.",
+    "Do not turn toward camera.",
+    "Do not mirror the right profile.",
+    "This must be a true LEFT profile only.",
+  ].join(" ");
 
-    case IMAGE_TYPES.RIGHT:
-      return [
-        "Single person only.",
-        "Strict right side profile.",
-        "Face turned to the right.",
-        "Full body visible from head to toe.",
-        "Standing straight, neutral pose, relaxed arms.",
-        "Preserve exact facial identity even from the side.",
-        "Preserve exact nose bridge, nose tip, forehead slope, brow line, jawline, chin projection, ear shape, and hairline from the same person.",
-        "Do not turn toward camera.",
-      ].join(" ");
+case IMAGE_TYPES.RIGHT:
+  return [
+    "Single person only.",
+    "Strict right side profile.",
+    "Face turned to the RIGHT.",
+    "Nose pointing RIGHT.",
+    "Body facing RIGHT.",
+    "Right shoulder farther from camera, left shoulder closer to camera.",
+    "Full body visible from head to toe.",
+    "Standing straight, neutral pose, relaxed arms.",
+    "Preserve exact facial identity even from the side.",
+    "Preserve exact nose bridge, nose tip, forehead slope, brow line, jawline, chin projection, ear shape, and hairline from the same person.",
+    "Do not turn toward camera.",
+    "Do not mirror the left profile.",
+    "This must be a true RIGHT profile only.",
+  ].join(" ");
 
     case IMAGE_TYPES.BACK:
       return [
@@ -654,6 +664,25 @@ function getViewStrategy(viewType) {
   }
 }
 
+function buildGlobalCharacterLockBlock() {
+  return [
+    "Hidden global character lock:",
+    "The outfit must remain a plain white t-shirt and plain black pants in every generated pack view.",
+    "No logos, no graphics, no patterns, no printed shirt, no colored shirt, no shorts, no jeans shorts, no costume.",
+    "Do not copy outfit from uploaded reference images.",
+    "Ignore clothing from source images completely.",
+    "Only preserve the person's identity, body, face, hairstyle, and proportions.",
+    "",
+    "Skin realism lock:",
+    "Skin must be natural, matte, and realistic.",
+    "No shiny skin, no glossy skin, no oily skin, no plastic skin, no waxy skin.",
+    "Keep natural pores and subtle real skin texture.",
+    "Allow very slight facial imperfections and a very small amount of pimples/acne texture.",
+    "Do not over-smooth skin.",
+    "Do not beauty-retouch the face.",
+  ].join(" ");
+}
+
 function buildAdaptiveIdentityBlock({
   hasRefs,
   viewType,
@@ -744,13 +773,21 @@ function buildAdaptiveShotBlock({
     );
   }
 
-  if (viewType === IMAGE_TYPES.LEFT) {
-    lines.push("Subject must face left in a strict side profile.");
-  }
+if (viewType === IMAGE_TYPES.LEFT) {
+  lines.push(
+    "Subject must face left in a strict side profile.",
+    "Left profile must face LEFT direction only.",
+    "Do not mirror or duplicate the right-side angle."
+  );
+}
 
-  if (viewType === IMAGE_TYPES.RIGHT) {
-    lines.push("Subject must face right in a strict side profile.");
-  }
+if (viewType === IMAGE_TYPES.RIGHT) {
+  lines.push(
+    "Subject must face right in a strict side profile.",
+    "Right profile must face RIGHT direction only.",
+    "Do not mirror or duplicate the left-side angle."
+  );
+}
 
   if (viewType === IMAGE_TYPES.BACK) {
     lines.push("Subject must fully face away from camera.");
@@ -1102,8 +1139,11 @@ function buildIntelligentPrompt({
     "No CGI look, no 3D render look, no beauty-filtered skin.",
   ].join(" ");
 
+  const globalCharacterLockBlock = buildGlobalCharacterLockBlock();
+
 
 return [
+  globalCharacterLockBlock,
   identityBlock,
   shotBlock,
   compositionBlock,
@@ -1726,6 +1766,31 @@ const finalPrompt = [
   lockedTraitsBlock,
 ].filter(Boolean).join("\n\n");
 
+const enforcedNegativePrompt = [
+  negativePrompt,
+  "glossy skin",
+  "shiny skin",
+  "oily skin",
+  "plastic skin",
+  "waxy skin",
+  "airbrushed skin",
+  "over-smoothed skin",
+  "beauty retouching",
+  "beauty filter",
+  "skin smoothing",
+  "logo shirt",
+  "graphic t-shirt",
+  "printed shirt",
+  "colored shirt",
+  "blue shirt",
+  "green shirt",
+  "red shirt",
+  "sports jersey",
+  "shorts",
+  "patterned clothes",
+  "fashion styling",
+].filter(Boolean).join(", ");
+
 const cleanedRefs = refs
   .map((r) => normalizeReferenceImage(r))
   .filter(Boolean)
@@ -1734,12 +1799,14 @@ const cleanedRefs = refs
 const input = cleanedRefs.length > 0
   ? {
       prompt: finalPrompt,
+      negative_prompt: enforcedNegativePrompt,
       aspect_ratio,
       output_format: "png",
       input_images: cleanedRefs,
     }
   : {
       prompt: finalPrompt,
+      negative_prompt: enforcedNegativePrompt,
       aspect_ratio,
       output_format: "png",
     };
@@ -2733,97 +2800,6 @@ if (acceptedCount !== totalViews) {
   );
 }
 
-// TEMP TEST RETURN — put this exactly here
-return Response.json({
-  success: true,
-  pack: finalResults,
-  meta: {
-    model: MODEL,
-    evaluatorModel: EVALUATOR_MODEL,
-    referenceCount: maxReferenceCountUsed,
-    usedReferences: true,
-    returnedCount: finalResults.length,
-    acceptedCount: finalResults.filter((r) => r.accepted).length,
-    frontImageUrl:
-      finalResults.find((r) => r.type === IMAGE_TYPES.FRONT)?.url || null,
-    skippedPostProcessing: true,
-  },
-});
-
-    let packCohesion = null;
-    let usedCohesionRepair = false;
-
-    let packMap = buildPackMap(finalResults);
-
-    packCohesion = await evaluatePackCohesion({
-      masterImage: normalizedMaster,
-      packMap,
-    });
-
-    if (shouldRepairFromPackCohesion(packCohesion) && packCohesion.weakViewType !== "none") {
-      const weakView = finalResults.find((r) => r.type === packCohesion.weakViewType);
-
-      if (weakView) {
-        usedCohesionRepair = true;
-
-const repairedWeakView = await runRepairPassForView({
-  failedView: {
-    ...weakView,
-    failureType: "identity_drift",
-  },
-  normalizedMaster,
-  acceptedViewMap,
-  negativePrompt,
-  userId,
-  characterId,
-  frontImageUrl: finalFrontImageUrl,
-  anchorRefs: baseAnchorRefs,
-  dnaIdentityBlock,
-  lockedTraitsBlock,
-});
-
-        if (repairedWeakView?.accepted) {
-          const cohesionRepairedView = {
-            ...repairedWeakView,
-            repairedFromCohesion: true,
-          };
-
-          finalResults = finalResults.map((r) =>
-            r.type === cohesionRepairedView.type ? cohesionRepairedView : r
-          );
-
-          acceptedViewMap[cohesionRepairedView.type] = cohesionRepairedView;
-
-if (cohesionRepairedView.type === IMAGE_TYPES.FRONT) {
-  finalFrontImageUrl = cohesionRepairedView.evalUrl || cohesionRepairedView.url;
-}
-
-          packMap = buildPackMap(finalResults);
-          packCohesion = await evaluatePackCohesion({
-            masterImage: normalizedMaster,
-            packMap,
-          });
-        }
-      }
-    }
-
-if (shouldRepairFromPackCohesion(packCohesion)) {
-  console.warn("Pack cohesion warning:", packCohesion);
-
-  // Soft-accept if identity is still strong and mismatch flags are false
-  const softAccept =
-    !packCohesion.identityMismatch &&
-    !packCohesion.silhouetteMismatch &&
-    packCohesion.identityConsistencyScore >= 7.8 &&
-    packCohesion.packCohesionScore >= 7.0;
-
-  if (!softAccept) {
-    throw new Error(
-      `Pack cohesion failed: ${packCohesion.reason || "low cohesion"}`
-    );
-  }
-}
-
 for (const item of finalResults.filter((r) => r.accepted && r.url)) {
   const { error: insertError } = await supabase
     .from("character_images")
@@ -2842,7 +2818,6 @@ for (const item of finalResults.filter((r) => r.accepted && r.url)) {
         identityScore: item.identityScore,
         qualityScore: item.qualityScore,
         repairedInPass2: !!item.repairedInPass2,
-        repairedFromCohesion: !!item.repairedFromCohesion,
       },
     });
 
@@ -2851,115 +2826,66 @@ for (const item of finalResults.filter((r) => r.accepted && r.url)) {
   }
 }
 
-    const averageFinalScore =
-      finalResults.length > 0
-        ? finalResults.reduce((sum, r) => sum + (r.finalScore || 0), 0) / finalResults.length
-        : 0;
+const averageFinalScore =
+  finalResults.length > 0
+    ? finalResults.reduce((sum, r) => sum + (r.finalScore || 0), 0) / finalResults.length
+    : 0;
 
-    const minimumFinalScore =
-      finalResults.length > 0
-        ? Math.min(...finalResults.map((r) => r.finalScore || 0))
-        : 0;
+const minimumFinalScore =
+  finalResults.length > 0
+    ? Math.min(...finalResults.map((r) => r.finalScore || 0))
+    : 0;
 
-    const maxAttemptsUsed =
-      finalResults.length > 0
-        ? Math.max(...finalResults.map((r) => r.attemptsUsed || 0))
-        : 0;
+const maxAttemptsUsed =
+  finalResults.length > 0
+    ? Math.max(...finalResults.map((r) => r.attemptsUsed || 0))
+    : 0;
 
-    const repairedCount =
-      finalResults.length > 0
-        ? finalResults.filter((r) => r.repairedInPass2).length
-        : 0;
-
-    console.log("🔥 Starting DNA extraction...", {
-  characterId,
-  userId,
-  hasMasterImage: !!normalizedMaster,
-  finalResultCount: finalResults.length,
-});
-
-const finalPackMap = buildPackMap(finalResults);
-
-const characterDNA = await extractCharacterDNA({
-  masterImage: normalizedMaster,
-  packMap: finalPackMap,
-});
-
-console.log("✅ DNA extracted:", {
-  dnaConfidence: characterDNA?.dnaConfidence,
-  bestAnchorViewTypes: characterDNA?.bestAnchorViewTypes,
-  identitySummary: characterDNA?.identitySummary,
-});
+const repairedCount =
+  finalResults.length > 0
+    ? finalResults.filter((r) => r.repairedInPass2).length
+    : 0;
 
 const anchorViews = buildAnchorViewSummary(finalResults);
 
-console.log("💾 Saving DNA to DB...", {
-  characterId,
-  userId,
-  dnaConfidence: characterDNA?.dnaConfidence,
-  anchorViewCount: anchorViews.length,
-});
-
-const { data: existingCharacter, error: existingCharacterError } = await supabase
-  .from("characters")
-  .select("id, user_id, name")
-  .eq("id", characterId)
-  .eq("user_id", userId)
-  .maybeSingle();
-
-console.log("🔎 Character row before DNA save:", {
-  existingCharacter,
-  existingCharacterError,
-  characterId,
-  userId,
-});
-
-const { data: updatedCharacterRows, error: dnaUpdateError } = await supabase
+const { error: characterUpdateError } = await supabase
   .from("characters")
   .update({
-    dna_profile: characterDNA,
-    dna_confidence: characterDNA.dnaConfidence,
     anchor_views: anchorViews,
+    processing_status: "generated",
+    dna_status: "pending",
+    cohesion_status: "pending",
+    processing_error: null,
   })
   .eq("id", characterId)
-  .eq("user_id", userId)
-  .select("id, user_id, dna_confidence, dna_profile, anchor_views");
+  .eq("user_id", userId);
 
-if (dnaUpdateError) {
-  throw new Error(dnaUpdateError.message || "Failed to save character DNA");
+if (characterUpdateError) {
+  throw new Error(characterUpdateError.message || "Failed to update character status");
 }
 
-if (!updatedCharacterRows || updatedCharacterRows.length === 0) {
-  throw new Error(
-    `DNA save matched 0 characters. Check characterId/userId. characterId=${characterId}, userId=${userId}`
-  );
-}
-
-console.log("✅ DNA saved successfully:", updatedCharacterRows[0]);
-
-    return Response.json({
-      success: true,
-      pack: finalResults,
-      meta: {
-        model: MODEL,
-        evaluatorModel: EVALUATOR_MODEL,
-        referenceCount: maxReferenceCountUsed,
-        usedReferences: true,
-        returnedCount: finalResults.length,
-        acceptedCount: finalResults.filter((r) => r.accepted).length,
-        averageFinalScore,
-        minimumFinalScore,
-        maxAttemptsUsed,
-        repairedCount,
-        usedRepairPass: repairedCount > 0 || collectFailedViews(results).length > 0,
-        frontImageUrl:
-  finalResults.find((r) => r.type === IMAGE_TYPES.FRONT)?.url || null,
-        packCohesion,
-        usedCohesionRepair,
-        characterDNA,
-        anchorViews,
-      },
-    });
+return Response.json({
+  success: true,
+  characterId,
+  pack: finalResults,
+  meta: {
+    model: MODEL,
+    evaluatorModel: EVALUATOR_MODEL,
+    referenceCount: maxReferenceCountUsed,
+    usedReferences: true,
+    returnedCount: finalResults.length,
+    acceptedCount: finalResults.filter((r) => r.accepted).length,
+    averageFinalScore,
+    minimumFinalScore,
+    maxAttemptsUsed,
+    repairedCount,
+    usedRepairPass: repairedCount > 0 || collectFailedViews(results).length > 0,
+    frontImageUrl:
+      finalResults.find((r) => r.type === IMAGE_TYPES.FRONT)?.url || null,
+    postProcessingQueued: true,
+    anchorViews,
+  },
+});
   } catch (error) {
     console.error("PACK ROUTE ERROR:", error);
     return Response.json(

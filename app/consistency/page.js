@@ -1508,11 +1508,11 @@ await insertMasterIdentityImage(activeChar.id, savedMasterUrl, 0);
 await supabase
   .from("characters")
   .update({
-    reference_image: firstRefUrl,
-    cover_image: data.cover_image || firstRefUrl,
-    master_image: firstRefUrl,
+    reference_image: savedMasterUrl,
+    cover_image: savedMasterUrl,
+    master_image: savedMasterUrl,
   })
-  .eq("id", data.id)
+  .eq("id", activeChar.id)
   .eq("user_id", userId);
 
       const rows = await loadCharacterImages(activeChar.id);
@@ -1633,7 +1633,44 @@ try {
 if (!res.ok) {
   throw new Error(data?.error || "Failed to generate character pack");
 }
-    const pack = Array.isArray(data?.pack) ? data.pack : [];
+
+if (!data?.success) {
+  throw new Error(data?.error || "Character pack generation failed");
+}
+
+fetch("/api/process-character-dna", {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({
+    characterId: activeChar.id,
+    userId,
+  }),
+})
+  .then(async (dnaRes) => {
+    const dnaRaw = await dnaRes.text();
+
+    let dnaData = null;
+    try {
+      dnaData = JSON.parse(dnaRaw);
+    } catch {
+      console.error("DNA API NON-JSON RESPONSE:", dnaRaw);
+      return;
+    }
+
+    if (!dnaRes.ok) {
+      console.error("DNA processing failed:", dnaData);
+      return;
+    }
+
+    console.log("DNA processing complete:", dnaData);
+  })
+  .catch((err) => {
+    console.error("Failed to trigger DNA processing:", err);
+  });
+
+const pack = Array.isArray(data?.pack) ? data.pack : [];
 
     const nextOutputs = pack.map((item) => ({
       id: `${activeChar.id}-${item.type}`,
