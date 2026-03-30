@@ -647,6 +647,253 @@ function OutputCard({ item, onDelete, onOpen }) {
   );
 }
 
+function OutputGeneratingState({ title = "Generating character pack", subtitle = "Building locked views, preserving identity, and preparing outputs..." }) {
+  return (
+    <div
+      style={{
+        position: "relative",
+        width: "100%",
+        minHeight: "calc(100vh - 140px)",
+        borderRadius: radius.xl,
+        overflow: "hidden",
+        border: `1px solid ${C.border}`,
+        background:
+          "radial-gradient(circle at top, rgba(124,58,237,0.16), transparent 26%), linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.008))",
+      }}
+    >
+      <motion.div
+        animate={{ opacity: [0.28, 0.62, 0.28], scale: [1, 1.06, 1] }}
+        transition={{ duration: 3.4, repeat: Infinity, ease: "easeInOut" }}
+        style={{
+          position: "absolute",
+          inset: "10% 18%",
+          borderRadius: 999,
+          background: "radial-gradient(circle, rgba(124,58,237,0.22), rgba(124,58,237,0.05), transparent 72%)",
+          filter: "blur(54px)",
+          pointerEvents: "none",
+        }}
+      />
+
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          opacity: 0.06,
+          backgroundImage: `
+            linear-gradient(rgba(255,255,255,0.06) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(255,255,255,0.06) 1px, transparent 1px)
+          `,
+          backgroundSize: "30px 30px",
+          maskImage: "linear-gradient(to bottom, rgba(0,0,0,1), rgba(0,0,0,0.25))",
+          WebkitMaskImage: "linear-gradient(to bottom, rgba(0,0,0,1), rgba(0,0,0,0.25))",
+          pointerEvents: "none",
+        }}
+      />
+
+      <motion.div
+        animate={{ y: ["-20%", "120%"] }}
+        transition={{ duration: 3, repeat: Infinity, ease: "linear" }}
+        style={{
+          position: "absolute",
+          left: 0,
+          right: 0,
+          height: 140,
+          background: "linear-gradient(180deg, transparent, rgba(124,58,237,0.11), transparent)",
+          filter: "blur(12px)",
+          pointerEvents: "none",
+        }}
+      />
+
+      <div
+        style={{
+          position: "relative",
+          zIndex: 2,
+          minHeight: "calc(100vh - 140px)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: 28,
+        }}
+      >
+        <div
+          style={{
+            width: "100%",
+            maxWidth: 560,
+            textAlign: "center",
+            padding: "30px 24px",
+            borderRadius: 24,
+            border: `1px solid ${C.accentBorder}`,
+            background: "rgba(10,10,16,0.52)",
+            backdropFilter: "blur(18px)",
+            boxShadow: "0 24px 80px rgba(0,0,0,0.38)",
+          }}
+        >
+          <div
+            style={{
+              position: "relative",
+              width: 88,
+              height: 88,
+              margin: "0 auto 20px",
+            }}
+          >
+            <motion.div
+              animate={{ rotate: 360 }}
+              transition={{ duration: 3.2, repeat: Infinity, ease: "linear" }}
+              style={{
+                position: "absolute",
+                inset: 0,
+                borderRadius: "50%",
+                border: "2px solid rgba(124,58,237,0.14)",
+                borderTop: "2px solid rgba(124,58,237,0.95)",
+                borderRight: "2px solid rgba(168,85,247,0.55)",
+              }}
+            />
+            <motion.div
+              animate={{ rotate: -360 }}
+              transition={{ duration: 4.4, repeat: Infinity, ease: "linear" }}
+              style={{
+                position: "absolute",
+                inset: 10,
+                borderRadius: "50%",
+                border: "1px solid rgba(255,255,255,0.08)",
+                borderBottom: "1px solid rgba(255,255,255,0.32)",
+              }}
+            />
+            <div
+              style={{
+                position: "absolute",
+                inset: 22,
+                borderRadius: "50%",
+                background: "radial-gradient(circle, rgba(124,58,237,0.24), rgba(124,58,237,0.06), transparent)",
+                boxShadow: "0 0 28px rgba(124,58,237,0.24)",
+              }}
+            />
+          </div>
+
+          <div
+            style={{
+              fontSize: 22,
+              fontWeight: 800,
+              color: C.text,
+              marginBottom: 8,
+              letterSpacing: "-0.02em",
+            }}
+          >
+            {title}
+          </div>
+
+          <div
+            style={{
+              fontSize: 14,
+              lineHeight: 1.7,
+              color: C.textMuted,
+              maxWidth: 430,
+              margin: "0 auto 18px",
+            }}
+          >
+            {subtitle}
+          </div>
+
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "center",
+              gap: 8,
+              marginBottom: 22,
+            }}
+          >
+            {[0, 1, 2].map((i) => (
+              <motion.div
+                key={i}
+                animate={{
+                  y: [0, -6, 0],
+                  opacity: [0.35, 1, 0.35],
+                  scale: [0.95, 1.08, 0.95],
+                }}
+                transition={{
+                  duration: 1,
+                  repeat: Infinity,
+                  delay: i * 0.15,
+                  ease: "easeInOut",
+                }}
+                style={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: 999,
+                  background: "#a78bfa",
+                  boxShadow: "0 0 12px rgba(167,139,250,0.45)",
+                }}
+              />
+            ))}
+          </div>
+
+          <div
+            style={{
+              display: "grid",
+              gap: 10,
+              textAlign: "left",
+              maxWidth: 360,
+              margin: "0 auto",
+            }}
+          >
+            {[
+              "Locking identity features",
+              "Generating camera-angle variations",
+              "Preparing final output previews",
+            ].map((step, i) => (
+              <motion.div
+                key={step}
+                initial={{ opacity: 0.45 }}
+                animate={{ opacity: [0.45, 1, 0.45] }}
+                transition={{
+                  duration: 1.8,
+                  repeat: Infinity,
+                  delay: i * 0.35,
+                  ease: "easeInOut",
+                }}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  padding: "10px 12px",
+                  borderRadius: 12,
+                  border: "1px solid rgba(255,255,255,0.06)",
+                  background: "rgba(255,255,255,0.025)",
+                }}
+              >
+                <div
+                  style={{
+                    width: 18,
+                    height: 18,
+                    borderRadius: 999,
+                    border: "1px solid rgba(167,139,250,0.4)",
+                    background: "rgba(124,58,237,0.15)",
+                    display: "grid",
+                    placeItems: "center",
+                    flexShrink: 0,
+                  }}
+                >
+                  <motion.div
+                    animate={{ scale: [0.8, 1.2, 0.8], opacity: [0.5, 1, 0.5] }}
+                    transition={{ duration: 1.4, repeat: Infinity, ease: "easeInOut" }}
+                    style={{
+                      width: 6,
+                      height: 6,
+                      borderRadius: 999,
+                      background: "#a78bfa",
+                    }}
+                  />
+                </div>
+                <span style={{ fontSize: 12.5, color: "rgba(255,255,255,0.86)" }}>{step}</span>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function ConsistencyPage() {
   const router = useRouter();
   const [activeView,     setActiveView]     = useState("generate");
@@ -2373,7 +2620,7 @@ cover_image: savedUrl,
                   {generating && (
                     <div style={{ display: "flex", alignItems: "center", gap: 5, padding: "2px 9px", borderRadius: radius.full, border: `1px solid ${C.accentBorder}`, background: C.accentSoft, fontSize: 11, color: "#c4b5fd" }}>
                       <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: "linear" }}><Zap size={10} /></motion.div>
-                      Generating…
+                      Generating profiles…
                     </div>
                   )}
                 </div>
@@ -2386,6 +2633,10 @@ cover_image: savedUrl,
               </div>
 
               <div ref={canvasRef} style={{ flex: 1, overflowY: "auto", padding: "16px" }}>
+            
+                {activeChar && generating && (
+                  <OutputGeneratingState />
+                )}           
 
                 {!activeChar && (
                   <div style={{ height: "80%", display: "grid", placeItems: "center" }}>
@@ -2428,7 +2679,7 @@ cover_image: savedUrl,
                   </div>
                 )}
 
-                {activeChar && charOutputs.length > 0 && !shouldShowGenerateMorePanel && (
+                {activeChar && charOutputs.length > 0 && !shouldShowGenerateMorePanel && !generating && (
                   <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
                     <div style={{ display: "grid", gridTemplateColumns: outputView === "grid" ? "repeat(auto-fill,minmax(200px,1fr))" : "1fr", gap: 12 }}>
                       {charOutputs.map((item, i) => (
@@ -2474,7 +2725,7 @@ cover_image: savedUrl,
                   </div>
                 )}
 
-                {activeChar && shouldShowGenerateMorePanel && (
+                {activeChar && shouldShowGenerateMorePanel && !generating && (
                   <div style={{ display: "grid", gridTemplateColumns: "210px 1fr", gap: 16, alignItems: "stretch" }}>
                     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                       <OutputCard
