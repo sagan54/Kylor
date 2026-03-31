@@ -172,21 +172,22 @@ function buildShotInstruction(viewType) {
         "Centered composition.",
       ].join(" ");
 
-case IMAGE_TYPES.LEFT:
+case IMAGE_TYPES.RIGHT:
   return [
     "Single person only.",
-    "Strict left side profile.",
-    "Face turned to the LEFT.",
-    "Nose pointing LEFT.",
-    "Body facing LEFT.",
-    "Left shoulder farther from camera, right shoulder closer to camera.",
+    "Strict right side profile.",
+    "Face turned to the RIGHT.",
+    "Nose pointing RIGHT.",
+    "Body facing RIGHT.",
+    "Right side of face visible, left side hidden.",
+    "Right shoulder slightly closer to camera, left shoulder slightly farther.",
     "Full body visible from head to toe.",
     "Standing straight, neutral pose, relaxed arms.",
     "Preserve exact facial identity even from the side.",
     "Preserve exact nose bridge, nose tip, forehead slope, brow line, jawline, chin projection, ear shape, and hairline from the same person.",
     "Do not turn toward camera.",
-    "Do not mirror the right profile.",
-    "This must be a true LEFT profile only.",
+    "Do not mirror the left profile.",
+    "This must be a true RIGHT profile only.",
   ].join(" ");
 
 case IMAGE_TYPES.RIGHT:
@@ -217,15 +218,21 @@ case IMAGE_TYPES.RIGHT:
         "Identity, body type, hairstyle, hair length, neck, shoulders, silhouette, and outfit remain the same person.",
       ].join(" ");
 
-    case IMAGE_TYPES.CLOSEUP:
-      return [
-        "Single person only.",
-        "Tight close-up portrait.",
-        "Face clearly visible and highly recognizable.",
-        "Preserve exact face shape, skin tone, hairstyle, hairline, eyebrows, eyes, nose, lips, jawline, ears, and facial hair.",
-        "Close-up must look unmistakably like the same person as the master identity and front image.",
-        "Natural realistic photography.",
-      ].join(" ");
+case IMAGE_TYPES.CLOSEUP:
+  return [
+    "Single person only.",
+    "Tight close-up portrait.",
+    "Face clearly visible and highly recognizable.",
+    "Close-up must look unmistakably like the same person as the master identity and front image.",
+    "Preserve exact face shape, cheek structure, jawline, chin, forehead, brow shape, eyebrow thickness, eyelids, eye shape, nose bridge, nose tip, lips, ears, hairline, hairstyle, skin tone, beard or moustache pattern, and natural facial asymmetry.",
+    "Natural real human skin texture.",
+    "Matte skin, not glossy.",
+    "Real pores, subtle natural skin detail, slight real-life imperfections allowed.",
+    "No skin smoothing, no beauty retouching, no airbrushed face, no cosmetic enhancement.",
+    "No glossy skin, no shiny forehead, no waxy skin, no plastic skin, no polished skin, no studio beauty look.",
+    "Realistic passport-photo-like facial rendering.",
+    "Natural realistic photography.",
+  ].join(" ");
 
     default:
       return [
@@ -254,6 +261,7 @@ Also detect:
 - faceNotVisible
 - identityDrift
 - lowQuality
+- fakeSkin
 
 Determine ONE primary failureType:
 - "identity_drift"
@@ -272,6 +280,7 @@ Rules:
 - If blurry/artifacts → low_quality
 - If framing bad → bad_composition
 - For back view, face_not_visible is expected and should NOT be treated as a failure by itself
+- If skin looks plastic, glossy, waxy, over-smoothed, or beauty-filtered → low_quality
 
 Return STRICT JSON:
 
@@ -674,12 +683,14 @@ function buildGlobalCharacterLockBlock() {
     "Only preserve the person's identity, body, face, hairstyle, and proportions.",
     "",
     "Skin realism lock:",
-    "Skin must be natural, matte, and realistic.",
-    "No shiny skin, no glossy skin, no oily skin, no plastic skin, no waxy skin.",
-    "Keep natural pores and subtle real skin texture.",
-    "Allow very slight facial imperfections and a very small amount of pimples/acne texture.",
-    "Do not over-smooth skin.",
-    "Do not beauty-retouch the face.",
+"Skin must be natural, matte, and realistic.",
+"No shiny skin, no glossy skin, no oily skin, no plastic skin, no waxy skin, no polished skin.",
+"Keep natural pores, subtle texture, slight under-eye realism, and normal real-life facial detail.",
+"Allow mild natural imperfections such as tiny blemishes, pores, slight texture variation, and realistic skin unevenness.",
+"Do not over-smooth skin.",
+"Do not beauty-retouch the face.",
+"Do not apply glamour lighting, cosmetic skin cleanup, or commercial skincare-ad style rendering.",
+"Do not make the face look airbrushed, filtered, polished, or hyper-beautified.",
   ].join(" ");
 }
 
@@ -775,17 +786,21 @@ function buildAdaptiveShotBlock({
 
 if (viewType === IMAGE_TYPES.LEFT) {
   lines.push(
-    "Subject must face left in a strict side profile.",
-    "Left profile must face LEFT direction only.",
-    "Do not mirror or duplicate the right-side angle."
+    "Subject must face LEFT in a strict side profile.",
+    "Left side of face must be visible.",
+    "Right side of face must not be visible.",
+    "Nose must point LEFT.",
+    "Do not mirror, duplicate, or approximate the right-side angle."
   );
 }
 
 if (viewType === IMAGE_TYPES.RIGHT) {
   lines.push(
-    "Subject must face right in a strict side profile.",
-    "Right profile must face RIGHT direction only.",
-    "Do not mirror or duplicate the left-side angle."
+    "Subject must face RIGHT in a strict side profile.",
+    "Right side of face must be visible.",
+    "Left side of face must not be visible.",
+    "Nose must point RIGHT.",
+    "Do not mirror, duplicate, or approximate the left-side angle."
   );
 }
 
@@ -1778,6 +1793,30 @@ const enforcedNegativePrompt = [
   "beauty retouching",
   "beauty filter",
   "skin smoothing",
+  "polished face",
+  "cosmetic skin cleanup",
+  "hyper smooth skin",
+  "fake skin texture",
+  "cg skin",
+  "3d skin",
+  "rendered face",
+  "beauty ad face",
+  "fashion editorial face",
+  "makeup campaign lighting",
+  "overexposed forehead shine",
+  "glamour portrait",
+  "retouched portrait",
+  "logo shirt",
+  "graphic t-shirt",
+  "printed shirt",
+  "colored shirt",
+  "blue shirt",
+  "green shirt",
+  "red shirt",
+  "sports jersey",
+  "shorts",
+  "patterned clothes",
+  "fashion styling",
   "logo shirt",
   "graphic t-shirt",
   "printed shirt",
@@ -1791,6 +1830,20 @@ const enforcedNegativePrompt = [
   "fashion styling",
 ].filter(Boolean).join(", ");
 
+const viewSpecificNegativePrompt =
+  viewType === IMAGE_TYPES.LEFT
+    ? "facing right, nose pointing right, right profile, mirrored profile, three-quarter face, front-facing"
+    : viewType === IMAGE_TYPES.RIGHT
+    ? "facing left, nose pointing left, left profile, mirrored profile, three-quarter face, front-facing"
+    : viewType === IMAGE_TYPES.CLOSEUP
+    ? "beauty lighting, glossy forehead, polished skin, studio glamour retouching, makeup-ad skin"
+    : "";
+
+const finalNegativePrompt = [
+  enforcedNegativePrompt,
+  viewSpecificNegativePrompt,
+].filter(Boolean).join(", ");
+
 const cleanedRefs = refs
   .map((r) => normalizeReferenceImage(r))
   .filter(Boolean)
@@ -1799,19 +1852,17 @@ const cleanedRefs = refs
 const input = cleanedRefs.length > 0
   ? {
       prompt: finalPrompt,
-      negative_prompt: enforcedNegativePrompt,
+      negative_prompt: finalNegativePrompt,
       aspect_ratio,
       output_format: "png",
       input_images: cleanedRefs,
     }
   : {
       prompt: finalPrompt,
-      negative_prompt: enforcedNegativePrompt,
+      negative_prompt: finalNegativePrompt,
       aspect_ratio,
       output_format: "png",
     };
-
-  await sleep(2500);
 
 const output = await runReplicateWithBackoff(async () => {
 
@@ -2297,7 +2348,7 @@ let lastError = null;
 let lastScore = null;
 const basePrompt = getViewPrompt(failedView.type);
 
-const maxAttempts = failedView.type === IMAGE_TYPES.FRONT ? 2 : 1;
+const maxAttempts = 1;
 
 for (let attempt = 0; attempt < maxAttempts; attempt++) {
   try {
@@ -2537,7 +2588,6 @@ console.log("🧠 Loaded character memory", {
     let frontImageUrl = null;
     let maxReferenceCountUsed = 0;
 
-    await deleteExistingPackImages(characterId, userId);
 
     for (const view of PACK_VIEWS) {
       const size =
@@ -2567,7 +2617,7 @@ const referenceSelection = buildReferenceSet({
       let lastScore = null;
       const basePrompt = getViewPrompt(view.key);
 
-      const maxAttempts = view.key === IMAGE_TYPES.FRONT ? 2 : 1;
+      const maxAttempts = 1;
 
 for (let attempt = 0; attempt < maxAttempts; attempt++) {
         try {
@@ -2800,30 +2850,34 @@ if (acceptedCount !== totalViews) {
   );
 }
 
-for (const item of finalResults.filter((r) => r.accepted && r.url)) {
-  const { error: insertError } = await supabase
-    .from("character_images")
-    .insert({
-      character_id: characterId,
-      user_id: userId,
-      image_type: "pack",
-      image_url: item.url,
-      pack_view: item.type,
-      source_type: "generated",
-      is_canon: item.finalScore >= 8.5,
-      is_cover: item.type === IMAGE_TYPES.FRONT,
-      sort_order: item.sort_order,
-      metadata: {
-        finalScore: item.finalScore,
-        identityScore: item.identityScore,
-        qualityScore: item.qualityScore,
-        repairedInPass2: !!item.repairedInPass2,
-      },
-    });
+await deleteExistingPackImages(characterId, userId);
 
-  if (insertError) {
-    throw new Error(insertError.message || `Failed to save ${item.type} image`);
-  }
+const acceptedItems = finalResults.filter((r) => r.accepted && r.url);
+
+const insertRows = acceptedItems.map((item) => ({
+  character_id: characterId,
+  user_id: userId,
+  image_type: "pack",
+  image_url: item.url,
+  pack_view: item.type,
+  source_type: "generated",
+  is_canon: item.finalScore >= 8.5,
+  is_cover: item.type === IMAGE_TYPES.FRONT,
+  sort_order: item.sort_order,
+  metadata: {
+    finalScore: item.finalScore,
+    identityScore: item.identityScore,
+    qualityScore: item.qualityScore,
+    repairedInPass2: !!item.repairedInPass2,
+  },
+}));
+
+const { error: insertError } = await supabase
+  .from("character_images")
+  .insert(insertRows);
+
+if (insertError) {
+  throw new Error(insertError.message || "Failed to save pack images");
 }
 
 const averageFinalScore =
@@ -2852,37 +2906,37 @@ const { error: characterUpdateError } = await supabase
   .from("characters")
   .update({
     anchor_views: anchorViews,
-    processing_status: "generated",
-    dna_status: "pending",
-    cohesion_status: "pending",
     processing_error: null,
   })
   .eq("id", characterId)
   .eq("user_id", userId);
 
 if (characterUpdateError) {
-  throw new Error(characterUpdateError.message || "Failed to update character status");
+  console.error("Character update warning:", characterUpdateError);
 }
 
 return Response.json({
   success: true,
   characterId,
-  pack: finalResults,
+  pack: finalResults.map((item) => ({
+    type: item.type,
+    label: item.label,
+    url: item.url,
+    sort_order: item.sort_order,
+    accepted: item.accepted,
+    finalScore: item.finalScore,
+  })),
   meta: {
     model: MODEL,
     evaluatorModel: EVALUATOR_MODEL,
     referenceCount: maxReferenceCountUsed,
-    usedReferences: true,
     returnedCount: finalResults.length,
     acceptedCount: finalResults.filter((r) => r.accepted).length,
     averageFinalScore,
     minimumFinalScore,
-    maxAttemptsUsed,
     repairedCount,
-    usedRepairPass: repairedCount > 0 || collectFailedViews(results).length > 0,
     frontImageUrl:
       finalResults.find((r) => r.type === IMAGE_TYPES.FRONT)?.url || null,
-    postProcessingQueued: true,
     anchorViews,
   },
 });

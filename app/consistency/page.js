@@ -1843,7 +1843,49 @@ try {
   data = JSON.parse(raw);
 } catch {
   console.error("PACK API NON-JSON RESPONSE:", raw);
-  throw new Error("Server returned non-JSON response. Check Vercel function logs.");
+
+  // wait a moment, then reload saved character data because generation
+  // may have completed even though the route failed to return JSON
+  try {
+    const rows = await loadCharacterImages(activeChar.id);
+
+    const mapped = rowToCharacter(
+      {
+        ...activeChar,
+        master_image: masterRef,
+      },
+      rows
+    );
+
+    setCharacters((prev) => {
+      const updated = prev.map((c) => (c.id === activeChar.id ? mapped : c));
+      updateCharactersCache(updated);
+      return updated;
+    });
+
+    setCharacterImages(rows.filter((r) => r.character_id === activeChar.id));
+
+    const refreshedOutputs = (mapped.generatedImages || []).map((url, i) => ({
+      id: `${activeChar.id}-${PACK_VIEWS[i]?.key || i}`,
+      charId: activeChar.id,
+      prompt: "",
+      scene: PACK_VIEWS[i]?.label || `View ${i + 1}`,
+      url,
+      createdAt: new Date().toISOString(),
+    }));
+
+    if (refreshedOutputs.length > 0) {
+      setOutputs((prev) => [
+        ...prev.filter((o) => o.charId !== activeChar.id),
+        ...refreshedOutputs,
+      ]);
+      return;
+    }
+  } catch (refreshErr) {
+    console.error("Post-failure refresh also failed:", refreshErr);
+  }
+
+  throw new Error("Generation may have completed, but the server returned an invalid response. Refreshing may show saved images.");
 }
 
 if (!res.ok) {
