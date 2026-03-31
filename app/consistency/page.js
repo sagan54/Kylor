@@ -1886,11 +1886,41 @@ const refreshedOutputs = (mapped.generatedImages || []).map((url, i) => ({
   return;
 }
 
-if (!res.ok) {
-  throw new Error(data?.error || "Failed to generate character pack");
-}
+if (!res.ok || !data?.success) {
+  console.error("PACK GENERATION ERROR RESPONSE:", data);
 
-if (!data?.success) {
+  try {
+    const rows = await loadCharacterImages(activeChar.id);
+
+    const mapped = rowToCharacter(
+      {
+        ...activeChar,
+        master_image: masterRef,
+      },
+      rows
+    );
+
+    setCharacters((prev) => {
+      const updated = prev.map((c) => (c.id === activeChar.id ? mapped : c));
+      updateCharactersCache(updated);
+      return updated;
+    });
+
+    setCharacterImages(rows.filter((r) => r.character_id === activeChar.id));
+
+    const refreshedOutputs = outputsFromCharacter(mapped);
+
+    if (refreshedOutputs.length > 0) {
+      setOutputs((prev) => [
+        ...prev.filter((o) => o.charId !== activeChar.id),
+        ...refreshedOutputs,
+      ]);
+      return;
+    }
+  } catch (refreshErr) {
+    console.error("Refresh after failed pack response also failed:", refreshErr);
+  }
+
   throw new Error(data?.error || "Character pack generation failed");
 }
 

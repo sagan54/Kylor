@@ -2880,30 +2880,26 @@ if (shouldStopPackEarly(err)) {
     let finalResults = results;
     let finalFrontImageUrl = frontImageUrl;
 
-    const failedAfterFirstPass = collectFailedViews(finalResults);
-    const criticalFailures = failedAfterFirstPass.filter(
-      (r) =>
-        r.type === IMAGE_TYPES.FRONT ||
-        r.type === IMAGE_TYPES.CLOSEUP
-    );
+const failedAfterFirstPass = collectFailedViews(finalResults);
+const repairableFailures = failedAfterFirstPass.filter(shouldRepairFailedView);
 
-    if (criticalFailures.length > 0) {
-      const repaired = await repairFailedViews({
-        results: finalResults,
-        normalizedMaster,
-        acceptedViewMap,
-        negativePrompt,
-        userId,
-        characterId,
-        frontImageUrl: finalFrontImageUrl,
-        anchorRefs: baseAnchorRefs,
-        dnaIdentityBlock,
-        lockedTraitsBlock,
-      });
+if (repairableFailures.length > 0) {
+  const repaired = await repairFailedViews({
+    results: finalResults,
+    normalizedMaster,
+    acceptedViewMap,
+    negativePrompt,
+    userId,
+    characterId,
+    frontImageUrl: finalFrontImageUrl,
+    anchorRefs: baseAnchorRefs,
+    dnaIdentityBlock,
+    lockedTraitsBlock,
+  });
 
-      finalResults = repaired.results;
-      finalFrontImageUrl = repaired.frontImageUrl;
-    }
+  finalResults = repaired.results;
+  finalFrontImageUrl = repaired.frontImageUrl;
+}
 
     const acceptedCount = finalResults.filter((r) => r.accepted).length;
 const totalViews = finalResults.length;
@@ -2913,7 +2909,7 @@ const hasFront = acceptedTypes.includes(IMAGE_TYPES.FRONT);
 const hasCloseup = acceptedTypes.includes(IMAGE_TYPES.CLOSEUP);
 const hasBack = acceptedTypes.includes(IMAGE_TYPES.BACK);
 
-if (!hasFront || !hasCloseup || !hasBack || acceptedCount < 4) {
+if (!hasFront || !hasCloseup || acceptedCount < 4) {
   const failedViews = finalResults
     .filter((r) => !r.accepted)
     .map((r) => r.type);
@@ -2924,6 +2920,15 @@ if (!hasFront || !hasCloseup || !hasBack || acceptedCount < 4) {
     .join(" | ");
 
   console.log("FINAL RESULTS DEBUG:", JSON.stringify(finalResults, null, 2));
+
+console.log("PACK FAILURE SUMMARY", {
+  acceptedCount,
+  totalViews,
+  hasFront,
+  hasCloseup,
+  hasBack,
+  failedViews,
+});
 
   const failedDebug = finalResults
     .filter((r) => !r.accepted)
