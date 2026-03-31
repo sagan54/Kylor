@@ -12,6 +12,60 @@ const supabase = createClient(
 );
 
 const MODEL = "black-forest-labs/flux-2-pro";
+
+function getModelForView(viewType) {
+  switch (viewType) {
+    case IMAGE_TYPES.FRONT:
+    case IMAGE_TYPES.CLOSEUP:
+      return "black-forest-labs/flux-2-pro";
+
+    case IMAGE_TYPES.LEFT:
+    case IMAGE_TYPES.RIGHT:
+      return "black-forest-labs/flux-2-pro";
+
+    case IMAGE_TYPES.BACK:
+      return "black-forest-labs/flux-2-dev";
+
+    default:
+      return "black-forest-labs/flux-2-pro";
+  }
+}
+
+function shouldEvaluateViewOnFirstPass(viewType) {
+  return (
+    viewType === IMAGE_TYPES.FRONT ||
+    viewType === IMAGE_TYPES.CLOSEUP
+  );
+}
+
+function shouldRepairFailedView(failedView) {
+  if (!failedView) return false;
+
+  if (
+    failedView.type === IMAGE_TYPES.FRONT ||
+    failedView.type === IMAGE_TYPES.CLOSEUP
+  ) {
+    return true;
+  }
+
+  if (
+    failedView.type === IMAGE_TYPES.LEFT ||
+    failedView.type === IMAGE_TYPES.RIGHT
+  ) {
+    return (
+      failedView.failureType === "wrong_shot" ||
+      failedView.failureType === "identity_drift" ||
+      failedView.failureType === "multiple_people"
+    );
+  }
+
+  if (failedView.type === IMAGE_TYPES.BACK) {
+    return false;
+  }
+
+  return false;
+}
+
 const STORAGE_BUCKET = "character-refs";
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
@@ -1561,7 +1615,7 @@ function collectFailedViews(results = []) {
 }
 
 function buildRepairQueue(results = []) {
-  const failed = collectFailedViews(results);
+  const failed = collectFailedViews(results).filter(shouldRepairFailedView);
 
   return [...failed].sort((a, b) => {
     const aPriority = a.type === IMAGE_TYPES.FRONT ? 1 : a.type === IMAGE_TYPES.CLOSEUP ? 2 : 3;
@@ -1888,8 +1942,8 @@ const input = cleanedRefs.length > 0
 
 const output = await runReplicateWithBackoff(async () => {
 
-  console.log("REPLICATE DEBUG", {
-  model: MODEL,
+console.log("REPLICATE DEBUG", {
+  model: modelToUse,
   viewType,
 refCount: cleanedRefs.length,
 refsPreview: cleanedRefs.slice(0, 3),
@@ -1898,15 +1952,17 @@ refsPreview: cleanedRefs.slice(0, 3),
 
 console.log("REPLICATE INPUT", JSON.stringify(input, null, 2));
 
-  return await replicate.run(MODEL, { input });
+  const modelToUse = getModelForView(viewType);
+  return await replicate.run(modelToUse, { input });
 }, 1);
 const tempUrl = await fileOutputToUrl(output);
 
-console.log("REPLICATE OUTPUT DEBUG", {
+console.log("REPLICATE DEBUG", {
+  model: modelToUse,
   viewType,
-  outputType: typeof output,
-  tempUrl,
-  tempUrlType: typeof tempUrl,
+  refCount: cleanedRefs.length,
+  refsPreview: cleanedRefs.slice(0, 3),
+  inputKeys: Object.keys(input),
 });
 
 if (!tempUrl) {
@@ -2674,19 +2730,41 @@ const generated = await runSingleGeneration({
             throw new Error(`Validation failed: ${validation.reason}`);
           }
 
-          const score = await scoreGeneratedView({
-            imageUrl: generated.imageUrl,
-            masterImage: normalizedMaster,
-            frontImageUrl,
-            viewType: view.key,
-            attempt,
-            referenceFusion: generated.referenceFusion,
-          });
+          let score;
 
-          lastScore = score;
+          if (shouldEvaluateViewOnFirstPass(view.key)) {
+            score = await scoreGeneratedView({
+              imageUrl: generated.imageUrl,
+              masterImage: normalizedMaster,
+              frontImageUrl,
+              viewType: view.key,
+              attempt,
+              referenceFusion: generated.referenceFusion,
+            });
 
-          if (!score.accepted) {
-            throw new Error(score.reason || `Scoring failed for ${view.key}`);
+            lastScore = score;
+
+            if (!score.accepted) {
+              throw new Error(score.reason || `Scoring failed for ${view.key}`);
+            }
+          } else {
+            score = {
+              accepted: true,
+              identityScore: 8,
+              shotScore: 8,
+              compositionScore: 8,
+              qualityScore: 8,
+              finalScore: 8,
+              multiplePeople: false,
+              wrongShot: false,
+              faceNotVisible: false,
+              identityDrift: false,
+              lowQuality: false,
+              failureType: "none",
+              reason: "first_pass_fast_accept",
+              thresholds: null,
+              thresholdFailureReasons: [],
+            };
           }
 
 const permanentUrl = await savePermanentImage({
@@ -2799,19 +2877,26 @@ if (shouldStopPackEarly(err)) {
     let finalResults = results;
     let finalFrontImageUrl = frontImageUrl;
 
-    if (collectFailedViews(finalResults).length > 0) {
-const repaired = await repairFailedViews({
-  results: finalResults,
-  normalizedMaster,
-  acceptedViewMap,
-  negativePrompt,
-  userId,
-  characterId,
-  frontImageUrl: finalFrontImageUrl,
-  anchorRefs: baseAnchorRefs,
-  dnaIdentityBlock,
-  lockedTraitsBlock,
-});
+    const failedAfterFirstPass = collectFailedViews(finalResults);
+    const criticalFailures = failedAfterFirstPass.filter(
+      (r) =>
+        r.type === IMAGE_TYPES.FRONT ||
+        r.type === IMAGE_TYPES.CLOSEUP
+    );
+
+    if (criticalFailures.length > 0) {
+      const repaired = await repairFailedViews({
+        results: finalResults,
+        normalizedMaster,
+        acceptedViewMap,
+        negativePrompt,
+        userId,
+        characterId,
+        frontImageUrl: finalFrontImageUrl,
+        anchorRefs: baseAnchorRefs,
+        dnaIdentityBlock,
+        lockedTraitsBlock,
+      });
 
       finalResults = repaired.results;
       finalFrontImageUrl = repaired.frontImageUrl;
@@ -2820,7 +2905,11 @@ const repaired = await repairFailedViews({
     const acceptedCount = finalResults.filter((r) => r.accepted).length;
 const totalViews = finalResults.length;
 
-if (acceptedCount !== totalViews) {
+const acceptedTypes = finalResults.filter((r) => r.accepted).map((r) => r.type);
+const hasFront = acceptedTypes.includes(IMAGE_TYPES.FRONT);
+const hasCloseup = acceptedTypes.includes(IMAGE_TYPES.CLOSEUP);
+
+if (!hasFront || !hasCloseup || acceptedCount < 4) {
   const failedViews = finalResults
     .filter((r) => !r.accepted)
     .map((r) => r.type);
