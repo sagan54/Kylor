@@ -1844,8 +1844,6 @@ try {
 } catch {
   console.error("PACK API NON-JSON RESPONSE:", raw);
 
-  // wait a moment, then reload saved character data because generation
-  // may have completed even though the route failed to return JSON
   try {
     const rows = await loadCharacterImages(activeChar.id);
 
@@ -1865,14 +1863,14 @@ try {
 
     setCharacterImages(rows.filter((r) => r.character_id === activeChar.id));
 
-    const refreshedOutputs = (mapped.generatedImages || []).map((url, i) => ({
-      id: `${activeChar.id}-${PACK_VIEWS[i]?.key || i}`,
-      charId: activeChar.id,
-      prompt: "",
-      scene: PACK_VIEWS[i]?.label || `View ${i + 1}`,
-      url,
-      createdAt: new Date().toISOString(),
-    }));
+const refreshedOutputs = (mapped.generatedImages || []).map((url, i) => ({
+  id: `${activeChar.id}-${CHARACTER_PACK_VIEWS[i]?.key || i}`,
+  charId: activeChar.id,
+  prompt: "",
+  scene: CHARACTER_PACK_VIEWS[i]?.label || `View ${i + 1}`,
+  url,
+  createdAt: new Date().toISOString(),
+}));
 
     if (refreshedOutputs.length > 0) {
       setOutputs((prev) => [
@@ -1885,7 +1883,7 @@ try {
     console.error("Post-failure refresh also failed:", refreshErr);
   }
 
-  throw new Error("Generation may have completed, but the server returned an invalid response. Refreshing may show saved images.");
+  return;
 }
 
 if (!res.ok) {
@@ -2839,42 +2837,49 @@ cover_image: savedUrl,
               padding: 24,
             }}
           >
-            <motion.div
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
-              onClick={(e) => e.stopPropagation()}
-              style={{
-                position: "relative",
-                maxWidth: "90vw",
-                maxHeight: "90vh",
-                borderRadius: radius.xl,
-                overflow: "hidden",
-                boxShadow: "0 40px 100px rgba(0,0,0,0.7)",
-              }}
-            >
-              <img
-                src={lightboxItem.url}
-                alt={lightboxItem.scene}
-                style={{
-                  display: "block",
-                  maxWidth: "90vw",
-                  maxHeight: "88vh",
-                  objectFit: "contain",
-                }}
-              />
+<motion.div
+  initial={{ scale: 0.9, opacity: 0 }}
+  animate={{ scale: 1, opacity: 1 }}
+  exit={{ scale: 0.9, opacity: 0 }}
+  transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
+  onClick={(e) => e.stopPropagation()}
+  style={{
+    position: "relative",
+    width: "90vw",
+    height: "88vh",
+    maxWidth: "90vw",
+    maxHeight: "88vh",
+    borderRadius: radius.xl,
+    overflow: "hidden",
+    boxShadow: "0 40px 100px rgba(0,0,0,0.7)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    background: "rgba(255,255,255,0.02)",
+  }}
+>
+  <img
+    src={lightboxItem.url}
+    alt={lightboxItem.scene}
+    style={{
+      width: "100%",
+      height: "100%",
+      objectFit: "contain",
+      display: "block",
+    }}
+  />
 
               {orderedVisibleOutputs.length > 1 && (
                 <>
                   <motion.button
                     whileTap={{ scale: 0.92 }}
                     onClick={goPrevLightbox}
-                    style={{
-                      position: "absolute",
-                      left: 18,
-                      top: "50%",
-                      transform: "translateY(-50%)",
+style={{
+  position: "absolute",
+  left: 20,
+  top: "50%",
+  transform: "translateY(-50%)",
+  zIndex: 5,
                       width: 44,
                       height: 44,
                       borderRadius: 14,
@@ -2893,11 +2898,12 @@ cover_image: savedUrl,
                   <motion.button
                     whileTap={{ scale: 0.92 }}
                     onClick={goNextLightbox}
-                    style={{
-                      position: "absolute",
-                      right: 18,
-                      top: "50%",
-                      transform: "translateY(-50%)",
+style={{
+  position: "absolute",
+  right: 20,
+  top: "50%",
+  transform: "translateY(-50%)",
+  zIndex: 5,
                       width: 44,
                       height: 44,
                       borderRadius: 14,
@@ -2931,9 +2937,10 @@ cover_image: savedUrl,
                       }
                       if (i === 1) setLightboxItem(null);
                     }}
-                    style={{
-                      width: 40,
-                      height: 40,
+style={{
+  width: 40,
+  height: 40,
+  zIndex: 5,
                       borderRadius: 12,
                       border: "1px solid rgba(255,255,255,0.12)",
                       background: "rgba(0,0,0,0.6)",

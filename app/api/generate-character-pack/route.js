@@ -59,9 +59,9 @@ function shouldRepairFailedView(failedView) {
     );
   }
 
-  if (failedView.type === IMAGE_TYPES.BACK) {
-    return false;
-  }
+if (failedView.type === IMAGE_TYPES.BACK) {
+  return true;
+}
 
   return false;
 }
@@ -757,7 +757,8 @@ function buildGlobalCharacterLockBlock() {
     "Skin must be natural, matte, and realistic.",
     "No shiny skin, no glossy skin, no oily skin, no plastic skin, no waxy skin, no polished skin.",
     "Keep natural pores, subtle texture, slight under-eye realism, and normal real-life facial detail.",
-    "Allow mild natural imperfections such as tiny blemishes, pores, slight texture variation, and realistic skin unevenness.",
+    "Keep natural pores and subtle real skin texture only.",
+    "Do not invent acne, pimples, moles, spots, scars, blemishes, or new facial marks that are not clearly visible in the reference.",
     "Do not over-smooth skin.",
     "Do not beauty-retouch the face.",
     "Do not apply glamour lighting, cosmetic skin cleanup, or commercial skincare-ad style rendering.",
@@ -1287,15 +1288,15 @@ function getAdaptiveThresholds({
   };
 
   switch (viewType) {
-    case IMAGE_TYPES.FRONT:
-      thresholds = {
-        minIdentityScore: attempt === 0 ? 7.2 : 8.0,
-        minShotScore: 7.5,
-        minCompositionScore: 6.8,
-        minQualityScore: 6.8,
-        minFinalScore: 7.5,
-      };
-      break;
+case IMAGE_TYPES.FRONT:
+  thresholds = {
+    minIdentityScore: attempt === 0 ? 7.4 : 8.0,
+    minShotScore: 7.4,
+    minCompositionScore: 6.7,
+    minQualityScore: 6.7,
+    minFinalScore: 7.4,
+  };
+  break;
 
     case IMAGE_TYPES.LEFT:
     case IMAGE_TYPES.RIGHT:
@@ -1318,15 +1319,15 @@ function getAdaptiveThresholds({
       };
       break;
 
-    case IMAGE_TYPES.CLOSEUP:
-      thresholds = {
-        minIdentityScore: 8.5,
-        minShotScore: 7.0,
-        minCompositionScore: 7.0,
-        minQualityScore: 7.5,
-        minFinalScore: 8.0,
-      };
-      break;
+case IMAGE_TYPES.CLOSEUP:
+  thresholds = {
+    minIdentityScore: 8.2,
+    minShotScore: 7.0,
+    minCompositionScore: 6.8,
+    minQualityScore: 7.1,
+    minFinalScore: 7.7,
+  };
+  break;
   }
 
   if (referenceFusion?.strongestIdentityScore >= 8.5) {
@@ -2910,8 +2911,9 @@ const totalViews = finalResults.length;
 const acceptedTypes = finalResults.filter((r) => r.accepted).map((r) => r.type);
 const hasFront = acceptedTypes.includes(IMAGE_TYPES.FRONT);
 const hasCloseup = acceptedTypes.includes(IMAGE_TYPES.CLOSEUP);
+const hasBack = acceptedTypes.includes(IMAGE_TYPES.BACK);
 
-if (!hasFront || !hasCloseup || acceptedCount < 4) {
+if (!hasFront || !hasCloseup || !hasBack || acceptedCount < 4) {
   const failedViews = finalResults
     .filter((r) => !r.accepted)
     .map((r) => r.type);
