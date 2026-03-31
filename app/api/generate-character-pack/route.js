@@ -676,21 +676,38 @@ function getViewStrategy(viewType) {
 function buildGlobalCharacterLockBlock() {
   return [
     "Hidden global character lock:",
+
+    // 👇 OUTFIT LOCK
     "The outfit must remain a plain white t-shirt and plain black pants in every generated pack view.",
     "No logos, no graphics, no patterns, no printed shirt, no colored shirt, no shorts, no jeans shorts, no costume.",
     "Do not copy outfit from uploaded reference images.",
     "Ignore clothing from source images completely.",
     "Only preserve the person's identity, body, face, hairstyle, and proportions.",
+
     "",
+
+    // 👇 BACKGROUND LOCK (NEW 🔥)
+    "Background must be a clean, neutral studio background.",
+    "Use a light grey or soft grey background only.",
+    "Do not use pure white background.",
+    "Do not use dark background.",
+    "Do not use colored background.",
+    "Background must be consistent across all views.",
+    "Keep background simple, flat, and non-distracting.",
+    "Ensure clear contrast between subject and background.",
+
+    "",
+
+    // 👇 SKIN REALISM LOCK
     "Skin realism lock:",
-"Skin must be natural, matte, and realistic.",
-"No shiny skin, no glossy skin, no oily skin, no plastic skin, no waxy skin, no polished skin.",
-"Keep natural pores, subtle texture, slight under-eye realism, and normal real-life facial detail.",
-"Allow mild natural imperfections such as tiny blemishes, pores, slight texture variation, and realistic skin unevenness.",
-"Do not over-smooth skin.",
-"Do not beauty-retouch the face.",
-"Do not apply glamour lighting, cosmetic skin cleanup, or commercial skincare-ad style rendering.",
-"Do not make the face look airbrushed, filtered, polished, or hyper-beautified.",
+    "Skin must be natural, matte, and realistic.",
+    "No shiny skin, no glossy skin, no oily skin, no plastic skin, no waxy skin, no polished skin.",
+    "Keep natural pores, subtle texture, slight under-eye realism, and normal real-life facial detail.",
+    "Allow mild natural imperfections such as tiny blemishes, pores, slight texture variation, and realistic skin unevenness.",
+    "Do not over-smooth skin.",
+    "Do not beauty-retouch the face.",
+    "Do not apply glamour lighting, cosmetic skin cleanup, or commercial skincare-ad style rendering.",
+    "Do not make the face look airbrushed, filtered, polished, or hyper-beautified.",
   ].join(" ");
 }
 
@@ -1828,6 +1845,11 @@ const enforcedNegativePrompt = [
   "shorts",
   "patterned clothes",
   "fashion styling",
+  "pure white background",
+"white studio background",
+"overexposed background",
+"washed out background",
+"high key background",
 ].filter(Boolean).join(", ");
 
 const viewSpecificNegativePrompt =
