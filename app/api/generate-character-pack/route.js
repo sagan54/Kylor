@@ -34,6 +34,9 @@ function getModelForView(viewType) {
 function shouldEvaluateViewOnFirstPass(viewType) {
   return (
     viewType === IMAGE_TYPES.FRONT ||
+    viewType === IMAGE_TYPES.LEFT ||
+    viewType === IMAGE_TYPES.RIGHT ||
+    viewType === IMAGE_TYPES.BACK ||
     viewType === IMAGE_TYPES.CLOSEUP
   );
 }
@@ -287,6 +290,9 @@ case IMAGE_TYPES.CLOSEUP:
     "No glossy skin, no shiny forehead, no waxy skin, no plastic skin, no polished skin, no studio beauty look.",
     "Realistic passport-photo-like facial rendering.",
     "Natural realistic photography.",
+    "Skin must appear clean and healthy.",
+"No acne, no pimples, no facial blemishes.",
+"Preserve real texture but without added imperfections.",
   ].join(" ");
 
     default:
@@ -754,13 +760,14 @@ function buildGlobalCharacterLockBlock() {
 
     // 👇 SKIN REALISM LOCK
     "Skin realism lock:",
-    "Skin must be natural, matte, and realistic.",
-    "No shiny skin, no glossy skin, no oily skin, no plastic skin, no waxy skin, no polished skin.",
-    "Keep natural pores, subtle texture, slight under-eye realism, and normal real-life facial detail.",
-    "Keep natural pores and subtle real skin texture only.",
-    "Do not invent acne, pimples, moles, spots, scars, blemishes, or new facial marks that are not clearly visible in the reference.",
-    "Do not over-smooth skin.",
-    "Do not beauty-retouch the face.",
+"Skin must be natural, matte, and realistic.",
+"Preserve natural pores and subtle real skin texture.",
+"Keep skin clean and healthy looking.",
+"Do not add acne, pimples, skin spots, or new blemishes.",
+"Do not introduce new facial marks that are not visible in the reference image.",
+"Maintain realistic skin variation without artificial imperfections.",
+"Do not over-smooth skin.",
+"Do not beauty-retouch the face.",
     "Do not apply glamour lighting, cosmetic skin cleanup, or commercial skincare-ad style rendering.",
     "Do not make the face look airbrushed, filtered, polished, or hyper-beautified.",
   ].join(" ");
@@ -1905,6 +1912,14 @@ const enforcedNegativePrompt = [
 "overexposed background",
 "washed out background",
 "high key background",
+"acne",
+"pimples",
+"skin blemishes",
+"skin spots",
+"face spots",
+"facial acne",
+"breakouts",
+"skin imperfections dots",
 ].filter(Boolean).join(", ");
 
 const viewSpecificNegativePrompt =

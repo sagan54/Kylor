@@ -465,6 +465,18 @@ async function extractCharacterDNA({ masterImage, packMap }) {
   };
 }
 
+function getMissingRequiredViews(packMap = {}) {
+  const requiredViews = [
+    IMAGE_TYPES.FRONT,
+    IMAGE_TYPES.LEFT,
+    IMAGE_TYPES.RIGHT,
+    IMAGE_TYPES.BACK,
+    IMAGE_TYPES.CLOSEUP,
+  ];
+
+  return requiredViews.filter((view) => !packMap?.[view]?.url);
+}
+
 export async function POST(req) {
   let characterId = null;
   let userId = null;
@@ -529,6 +541,37 @@ export async function POST(req) {
     }));
 
     const packMap = buildPackMap(finalResults);
+
+const missingViews = getMissingRequiredViews(packMap);
+
+console.log("DNA ROUTE PACK CHECK", {
+  characterId,
+  packTypes: Object.keys(packMap || {}),
+  missingViews,
+  packRowCount: finalResults.length,
+  masterImage: character.master_image,
+});
+
+if (missingViews.length > 0) {
+  await supabase
+    .from("characters")
+    .update({
+      processing_status: "partial",
+      dna_status: "skipped",
+      cohesion_status: "skipped",
+      processing_error: `Pack incomplete. Missing views: ${missingViews.join(", ")}`,
+    })
+    .eq("id", characterId)
+    .eq("user_id", userId);
+
+  return Response.json({
+    success: false,
+    skipped: true,
+    characterId,
+    reason: "Pack incomplete for DNA/cohesion processing",
+    missingViews,
+  });
+}
 
     const packCohesion = await evaluatePackCohesion({
       masterImage: character.master_image,
