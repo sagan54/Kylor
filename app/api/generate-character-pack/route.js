@@ -226,22 +226,22 @@ function buildShotInstruction(viewType) {
         "Centered composition.",
       ].join(" ");
 
-case IMAGE_TYPES.RIGHT:
+case IMAGE_TYPES.LEFT:
   return [
     "Single person only.",
-    "Strict right side profile.",
-    "Face turned to the RIGHT.",
-    "Nose pointing RIGHT.",
-    "Body facing RIGHT.",
-    "Right side of face visible, left side hidden.",
-    "Right shoulder slightly closer to camera, left shoulder slightly farther.",
+    "Strict left side profile.",
+    "Face turned to the LEFT.",
+    "Nose pointing LEFT.",
+    "Body facing LEFT.",
+    "Left side of face visible, right side hidden.",
+    "Left shoulder slightly closer to camera, right shoulder slightly farther.",
     "Full body visible from head to toe.",
     "Standing straight, neutral pose, relaxed arms.",
     "Preserve exact facial identity even from the side.",
     "Preserve exact nose bridge, nose tip, forehead slope, brow line, jawline, chin projection, ear shape, and hairline from the same person.",
     "Do not turn toward camera.",
-    "Do not mirror the left profile.",
-    "This must be a true RIGHT profile only.",
+    "Do not mirror the right profile.",
+    "This must be a true LEFT profile only.",
   ].join(" ");
 
 case IMAGE_TYPES.RIGHT:
@@ -251,7 +251,8 @@ case IMAGE_TYPES.RIGHT:
     "Face turned to the RIGHT.",
     "Nose pointing RIGHT.",
     "Body facing RIGHT.",
-    "Right shoulder farther from camera, left shoulder closer to camera.",
+    "Right side of face visible, left side hidden.",
+    "Right shoulder slightly closer to camera, left shoulder slightly farther.",
     "Full body visible from head to toe.",
     "Standing straight, neutral pose, relaxed arms.",
     "Preserve exact facial identity even from the side.",
@@ -315,7 +316,6 @@ Also detect:
 - faceNotVisible
 - identityDrift
 - lowQuality
-- fakeSkin
 
 Determine ONE primary failureType:
 - "identity_drift"
@@ -1940,26 +1940,28 @@ const input = cleanedRefs.length > 0
       output_format: "png",
     };
 
+const modelToUse = getModelForView(viewType);
+
 const output = await runReplicateWithBackoff(async () => {
+  console.log("REPLICATE DEBUG", {
+    model: modelToUse,
+    viewType,
+    refCount: cleanedRefs.length,
+    refsPreview: cleanedRefs.slice(0, 3),
+    inputKeys: Object.keys(input),
+  });
 
-console.log("REPLICATE DEBUG", {
-  model: modelToUse,
-  viewType,
-refCount: cleanedRefs.length,
-refsPreview: cleanedRefs.slice(0, 3),
-  inputKeys: Object.keys(input),
-});
+  console.log("REPLICATE INPUT", JSON.stringify(input, null, 2));
 
-console.log("REPLICATE INPUT", JSON.stringify(input, null, 2));
-
-  const modelToUse = getModelForView(viewType);
   return await replicate.run(modelToUse, { input });
 }, 1);
+
 const tempUrl = await fileOutputToUrl(output);
 
-console.log("REPLICATE DEBUG", {
+console.log("REPLICATE OUTPUT DEBUG", {
   model: modelToUse,
   viewType,
+  tempUrl,
   refCount: cleanedRefs.length,
   refsPreview: cleanedRefs.slice(0, 3),
   inputKeys: Object.keys(input),
@@ -3038,7 +3040,13 @@ return Response.json({
     finalScore: item.finalScore,
   })),
   meta: {
-    model: MODEL,
+    model: {
+  front: getModelForView(IMAGE_TYPES.FRONT),
+  left: getModelForView(IMAGE_TYPES.LEFT),
+  right: getModelForView(IMAGE_TYPES.RIGHT),
+  back: getModelForView(IMAGE_TYPES.BACK),
+  closeup: getModelForView(IMAGE_TYPES.CLOSEUP),
+},
     evaluatorModel: EVALUATOR_MODEL,
     referenceCount: maxReferenceCountUsed,
     returnedCount: finalResults.length,
