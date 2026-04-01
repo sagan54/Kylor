@@ -236,37 +236,45 @@ function buildShotInstruction(viewType) {
 case IMAGE_TYPES.LEFT:
   return [
     "Single person only.",
-    "Strict left side profile.",
-    "Face turned to the LEFT.",
-    "Nose pointing LEFT.",
-    "Body facing LEFT.",
-    "Left side of face visible, right side hidden.",
-    "Left shoulder slightly closer to camera, right shoulder slightly farther.",
+    "Strict LEFT side profile only.",
+    "The subject must face LEFT.",
+    "The nose must point to the LEFT edge of the frame.",
+    "The chest, hips, knees, and feet must also face LEFT.",
+    "Only the LEFT side of the face is visible.",
+    "The RIGHT side of the face must not be visible.",
+    "This must be a true 90-degree side profile.",
+    "No three-quarter angle.",
+    "No front angle.",
+    "No almost-side angle.",
+    "No mirrored right profile.",
+    "Do not turn toward camera.",
+    "Preserve exact identity from the same person.",
+    "Preserve exact forehead slope, nose bridge, nose tip, lips, chin projection, jaw contour, ear shape, hairline, hairstyle, and sideburn shape.",
     "Full body visible from head to toe.",
     "Standing straight, neutral pose, relaxed arms.",
-    "Preserve exact facial identity even from the side.",
-    "Preserve exact nose bridge, nose tip, forehead slope, brow line, jawline, chin projection, ear shape, and hairline from the same person.",
-    "Do not turn toward camera.",
-    "Do not mirror the right profile.",
-    "This must be a true LEFT profile only.",
+    "Centered composition.",
   ].join(" ");
 
 case IMAGE_TYPES.RIGHT:
   return [
     "Single person only.",
-    "Strict right side profile.",
-    "Face turned to the RIGHT.",
-    "Nose pointing RIGHT.",
-    "Body facing RIGHT.",
-    "Right side of face visible, left side hidden.",
-    "Right shoulder slightly closer to camera, left shoulder slightly farther.",
+    "Strict RIGHT side profile only.",
+    "The subject must face RIGHT.",
+    "The nose must point to the RIGHT edge of the frame.",
+    "The chest, hips, knees, and feet must also face RIGHT.",
+    "Only the RIGHT side of the face is visible.",
+    "The LEFT side of the face must not be visible.",
+    "This must be a true 90-degree side profile.",
+    "No three-quarter angle.",
+    "No front angle.",
+    "No almost-side angle.",
+    "No mirrored left profile.",
+    "Do not turn toward camera.",
+    "Preserve exact identity from the same person.",
+    "Preserve exact forehead slope, nose bridge, nose tip, lips, chin projection, jaw contour, ear shape, hairline, hairstyle, and sideburn shape.",
     "Full body visible from head to toe.",
     "Standing straight, neutral pose, relaxed arms.",
-    "Preserve exact facial identity even from the side.",
-    "Preserve exact nose bridge, nose tip, forehead slope, brow line, jawline, chin projection, ear shape, and hairline from the same person.",
-    "Do not turn toward camera.",
-    "Do not mirror the left profile.",
-    "This must be a true RIGHT profile only.",
+    "Centered composition.",
   ].join(" ");
 
     case IMAGE_TYPES.BACK:
@@ -354,6 +362,10 @@ Rules:
 - For RIGHT view, facingDirection must be "right"
 - For FRONT view, facingDirection must be "front"
 - For BACK view, facingDirection must be "back"
+- LEFT and RIGHT profiles must be opposite directions, not duplicates
+- If LEFT and RIGHT both appear to face the same direction, mark wrongShot = true
+- If a LEFT view looks like a RIGHT view, failureType must be "wrong_shot"
+- If a RIGHT view looks like a LEFT view, failureType must be "wrong_shot"
 - For back view, face_not_visible is expected and should NOT be treated as a failure by itself
 - If skin looks plastic, glossy, waxy, over-smoothed, or beauty-filtered → low_quality
 Return STRICT JSON:
@@ -807,6 +819,14 @@ function buildGlobalCharacterLockBlock() {
 "Do not beauty-retouch the face.",
     "Do not apply glamour lighting, cosmetic skin cleanup, or commercial skincare-ad style rendering.",
     "Do not make the face look airbrushed, filtered, polished, or hyper-beautified.",
+    
+    "",
+"Side-profile direction lock:",
+"LEFT profile and RIGHT profile must be true opposite directions.",
+"LEFT profile must face left only.",
+"RIGHT profile must face right only.",
+"Do not duplicate the same side for both images.",
+"Do not mirror one side profile into the other.",
   ].join(" ");
 }
 
@@ -902,21 +922,27 @@ function buildAdaptiveShotBlock({
 
 if (viewType === IMAGE_TYPES.LEFT) {
   lines.push(
-    "Subject must face LEFT in a strict side profile.",
-    "Left side of face must be visible.",
-    "Right side of face must not be visible.",
+    "Mandatory direction rule: the person must face LEFT.",
     "Nose must point LEFT.",
-    "Do not mirror, duplicate, or approximate the right-side angle."
+    "Torso must face LEFT.",
+    "Feet must face LEFT.",
+    "Only the left facial contour may be visible.",
+    "This must be a true left profile, not an approximate side angle.",
+    "Do not mirror the right profile.",
+    "If the pose resembles a right profile, it is incorrect."
   );
 }
 
 if (viewType === IMAGE_TYPES.RIGHT) {
   lines.push(
-    "Subject must face RIGHT in a strict side profile.",
-    "Right side of face must be visible.",
-    "Left side of face must not be visible.",
+    "Mandatory direction rule: the person must face RIGHT.",
     "Nose must point RIGHT.",
-    "Do not mirror, duplicate, or approximate the left-side angle."
+    "Torso must face RIGHT.",
+    "Feet must face RIGHT.",
+    "Only the right facial contour may be visible.",
+    "This must be a true right profile, not an approximate side angle.",
+    "Do not mirror the left profile.",
+    "If the pose resembles a left profile, it is incorrect."
   );
 }
 
@@ -1433,6 +1459,14 @@ function shouldRejectScore(score, thresholds, viewType) {
 
   if (viewType === IMAGE_TYPES.LEFT && score.facingDirection !== "left") return true;
   if (viewType === IMAGE_TYPES.RIGHT && score.facingDirection !== "right") return true;
+
+  if (
+  (viewType === IMAGE_TYPES.LEFT || viewType === IMAGE_TYPES.RIGHT) &&
+  score.wrongShot
+) {
+  return true;
+}
+
   if (viewType === IMAGE_TYPES.FRONT && score.facingDirection !== "front") return true;
   if (viewType === IMAGE_TYPES.BACK && score.facingDirection !== "back") return true;
 
@@ -1456,10 +1490,10 @@ function getReferencePriority(viewType) {
       return ["MASTER", IMAGE_TYPES.FRONT];
 
     case IMAGE_TYPES.LEFT:
-      return ["MASTER", IMAGE_TYPES.FRONT, IMAGE_TYPES.RIGHT];
+  return ["MASTER", IMAGE_TYPES.FRONT, IMAGE_TYPES.LEFT];
 
-    case IMAGE_TYPES.RIGHT:
-      return ["MASTER", IMAGE_TYPES.FRONT, IMAGE_TYPES.LEFT];
+case IMAGE_TYPES.RIGHT:
+  return ["MASTER", IMAGE_TYPES.FRONT, IMAGE_TYPES.RIGHT];
 
     case IMAGE_TYPES.BACK:
       return ["MASTER", IMAGE_TYPES.FRONT, IMAGE_TYPES.LEFT, IMAGE_TYPES.RIGHT];
@@ -1976,9 +2010,31 @@ const enforcedNegativePrompt = [
 
 const viewSpecificNegativePrompt =
   viewType === IMAGE_TYPES.LEFT
-    ? "facing right, nose pointing right, right profile, mirrored profile, three-quarter face, front-facing"
+    ? [
+        "facing right",
+        "nose pointing right",
+        "right profile",
+        "mirrored right profile",
+        "wrong side profile",
+        "three-quarter face",
+        "front-facing",
+        "semi-front angle",
+        "partial front view",
+        "camera-facing head",
+      ].join(", ")
     : viewType === IMAGE_TYPES.RIGHT
-    ? "facing left, nose pointing left, left profile, mirrored profile, three-quarter face, front-facing"
+    ? [
+        "facing left",
+        "nose pointing left",
+        "left profile",
+        "mirrored left profile",
+        "wrong side profile",
+        "three-quarter face",
+        "front-facing",
+        "semi-front angle",
+        "partial front view",
+        "camera-facing head",
+      ].join(", ")
     : viewType === IMAGE_TYPES.CLOSEUP
     ? "beauty lighting, glossy forehead, polished skin, studio glamour retouching, makeup-ad skin"
     : "";
