@@ -100,6 +100,10 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function nowMs() {
+  return Date.now();
+}
+
 function isReplicateRateLimitError(err) {
   const msg = String(err?.message || err || "").toLowerCase();
   return (
@@ -1967,7 +1971,14 @@ const output = await runReplicateWithBackoff(async () => {
     inputKeys: Object.keys(input),
   });
 
-  console.log("REPLICATE INPUT", JSON.stringify(input, null, 2));
+  console.log("REPLICATE INPUT SUMMARY", {
+  viewType,
+  model: modelToUse,
+  refCount: cleanedRefs.length,
+  aspect_ratio,
+  hasNegativePrompt: !!finalNegativePrompt,
+  promptLength: finalPrompt.length,
+});
 
   return await replicate.run(modelToUse, { input });
 }, 1);
@@ -2490,17 +2501,10 @@ for (let attempt = 0; attempt < maxAttempts; attempt++) {
   throw new Error(score.reason || `Repair scoring failed for ${failedView.type}`);
 }
 
-const permanentUrl = await savePermanentImage({
-  imageUrl: generated.tempUrl,
-  userId,
-  characterId,
-  viewType: failedView.type,
-});
-
 repairedResult = {
   type: failedView.type,
   label: failedView.label,
-  url: permanentUrl,
+  url: generated.tempUrl,      // temporary for now
   evalUrl: generated.tempUrl,
   sort_order: IMAGE_ORDER[failedView.type],
       accepted: true,
@@ -2656,7 +2660,10 @@ export async function POST(req) {
       return Response.json({ error: "Invalid master image" }, { status: 400 });
     }
 
-    const characterMemory = await loadCharacterMemory(characterId, userId);
+const routeStart = nowMs();
+console.log("PACK START", { characterId, userId });
+
+const characterMemory = await loadCharacterMemory(characterId, userId);
 const uploadedReferenceUrls = await loadUploadedReferenceUrls(characterId, userId);
 
 const dnaIdentityBlock = buildDnaIdentityBlock(characterMemory?.dna_profile || {});
@@ -2688,6 +2695,9 @@ console.log("🧠 Loaded character memory", {
     for (const view of PACK_VIEWS) {
       const size =
         view.key === IMAGE_TYPES.CLOSEUP ? "1024x1024" : "1024x1536";
+
+  const viewStart = nowMs();
+  console.log("VIEW START", { view: view.key });
 
 const referenceSelection = buildReferenceSet({
   viewType: view.key,
@@ -2735,6 +2745,11 @@ const generated = await runSingleGeneration({
   lockedTraitsBlock,
 });
 
+console.log("VIEW GENERATED", {
+  view: view.key,
+  seconds: ((nowMs() - viewStart) / 1000).toFixed(2),
+});
+
           if (!generated?.imageUrl) {
             throw new Error(`No image produced for ${view.key}`);
           }
@@ -2762,6 +2777,13 @@ const generated = await runSingleGeneration({
 
             lastScore = score;
 
+console.log("VIEW SCORED", {
+  view: view.key,
+  seconds: ((nowMs() - viewStart) / 1000).toFixed(2),
+  accepted: score.accepted,
+  finalScore: score.finalScore,
+});
+
             if (!score.accepted) {
               throw new Error(score.reason || `Scoring failed for ${view.key}`);
             }
@@ -2785,18 +2807,11 @@ const generated = await runSingleGeneration({
             };
           }
 
-const permanentUrl = await savePermanentImage({
-  imageUrl: generated.tempUrl,
-  userId,
-  characterId,
-  viewType: view.key,
-});
-
 acceptedResult = {
   type: view.key,
   label: view.label,
-  url: permanentUrl,
-  evalUrl: generated.tempUrl,
+  url: generated.tempUrl,      // temporary for now
+  evalUrl: generated.tempUrl,  // evaluator/source URL
   sort_order: IMAGE_ORDER[view.key],
   accepted: true,
   attemptsUsed: attempt + 1,
@@ -2985,6 +3000,29 @@ console.log("PACK FAILURE SUMMARY", {
   );
 }
 
+console.log("FINAL UPLOAD START", {
+  acceptedCount,
+  elapsedSeconds: ((nowMs() - routeStart) / 1000).toFixed(2),
+});
+
+// Upload final accepted images to permanent storage only after full pack passes
+for (let i = 0; i < finalResults.length; i++) {
+  const item = finalResults[i];
+  if (!item.accepted || !item.url) continue;
+
+  const permanentUrl = await savePermanentImage({
+    imageUrl: item.evalUrl || item.url,
+    userId,
+    characterId,
+    viewType: item.type,
+  });
+
+  finalResults[i] = {
+    ...item,
+    url: permanentUrl,
+  };
+}
+
 await deleteExistingPackImages(characterId, userId);
 
 const acceptedItems = finalResults.filter((r) => r.accepted && r.url);
@@ -3049,6 +3087,11 @@ const { error: characterUpdateError } = await supabase
 if (characterUpdateError) {
   console.error("Character update warning:", characterUpdateError);
 }
+
+console.log("PACK COMPLETE", {
+  elapsedSeconds: ((nowMs() - routeStart) / 1000).toFixed(2),
+  acceptedCount: finalResults.filter((r) => r.accepted).length,
+});
 
 return Response.json({
   success: true,
