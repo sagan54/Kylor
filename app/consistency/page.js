@@ -2104,22 +2104,22 @@ fetch("/api/process-character-dna", {
 
 const pack = Array.isArray(data?.pack) ? data.pack : [];
 
-const nextOutputs = pack.map((item) => ({
-  id: `${activeChar.id}-${item.type}`,
-  charId: activeChar.id,
-  prompt: "",
-  scene: PACK_VIEWS.find((v) => v.key === item.type)?.label || item.type,
-  url: item.url,
-  createdAt: new Date().toISOString(),
-}));
+const nextOutputs = pack
+  .filter((item) => item?.url)
+  .map((item) => ({
+    id: `${activeChar.id}-${item.type}`,
+    charId: activeChar.id,
+    prompt: "",
+    scene: PACK_VIEWS.find((v) => v.key === item.type)?.label || item.type,
+    url: item.url,
+    createdAt: new Date().toISOString(),
+  }));
 
-// Show results immediately from API response
 setOutputs((prev) => [
   ...prev.filter((o) => o.charId !== activeChar.id),
   ...nextOutputs,
 ]);
 
-// Also update local character immediately so UI doesn't depend on refresh
 setCharacters((prev) => {
   const updated = prev.map((c) =>
     c.id === activeChar.id
@@ -2135,7 +2135,6 @@ setCharacters((prev) => {
   return updated;
 });
 
-// Then do a reliable DB refresh with retries
 await refreshCharacterPackState(activeChar, masterRef);
   } catch (err) {
     console.error("Character pack generation failed:", err);
