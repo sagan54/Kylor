@@ -299,19 +299,6 @@ async function filesToDataUrls(files = []) {
   return urls.filter(Boolean);
 }
 
-function getCharacterReferenceImages(character) {
-  if (!character) return [];
-
-  const refs = [
-    character.masterImage,
-    character.coverImage,
-    character.referenceImage,
-    ...(Array.isArray(character.generatedImages) ? character.generatedImages.slice(0, 2) : []),
-  ].filter(Boolean);
-
-  return [...new Set(refs)].slice(0, 5);
-}
-
 async function downloadImage(url, filename = "kylor-output.png") {
   if (!url || typeof url !== "string") return;
   try {
@@ -1441,17 +1428,20 @@ export default function ImagePage() {
     dnaTraits.push(`distinguishing features: ${dna.traits.distinguishingFeatures.join(", ")}`);
   }
 
-  const characterPrompt = [
-    `Exact identity lock for ${selectedCharacter.name}.`,
-    traitParts.length ? `Base traits: ${traitParts.join(", ")}.` : null,
-    selectedCharacter.charDesc ? `Description: ${selectedCharacter.charDesc}.` : null,
-    dnaTraits.length ? `DNA traits: ${dnaTraits.join("; ")}.` : null,
-    "Preserve the same real person.",
-    "Do not beautify, replace, reinterpret, or change identity.",
-    "Preserve facial structure, hairline, hairstyle, beard pattern, skin tone, and recognizable likeness.",
-  ]
-    .filter(Boolean)
-    .join(" ");
+const characterPrompt = [
+  `Exact identity lock for ${selectedCharacter.name}.`,
+  traitParts.length ? `Base traits: ${traitParts.join(", ")}.` : null,
+  selectedCharacter.charDesc ? `Description: ${selectedCharacter.charDesc}.` : null,
+  dnaTraits.length ? `DNA traits: ${dnaTraits.join("; ")}.` : null,
+  "Preserve the same real person.",
+  "Do not beautify, replace, reinterpret, or change identity.",
+  "Preserve facial bone structure, hairline, hairstyle, beard pattern, skin tone, and recognizable likeness.",
+  "Keep eyewear and facial accessories if they appear in the selected character references unless explicitly removed.",
+  "Do not change hairstyle length or overall facial silhouette.",
+  "Do not lengthen hair, add tattoos, or increase beard density unless present in the selected references.",
+]
+  .filter(Boolean)
+  .join(" ");
 
   setPrompt(characterPrompt);
 }, [selectedCharacter]);
@@ -1647,11 +1637,15 @@ export default function ImagePage() {
     });
 
     const uploadedReferenceImages = await filesToDataUrls(refImages);
-    const characterReferenceImages = getCharacterReferenceImages(selectedCharacter);
-    const uniqueReferenceImages = [
-      ...new Set([...characterReferenceImages, ...uploadedReferenceImages].filter(Boolean)),
-    ];
-    const hasCharacterControl = Boolean(characterPrompt) || uniqueReferenceImages.length > 0;
+
+const uniqueReferenceImages = selectedCharacter
+  ? uploadedReferenceImages
+  : [...new Set(uploadedReferenceImages.filter(Boolean))];
+
+const hasCharacterControl =
+  Boolean(selectedCharacter) ||
+  Boolean(characterPrompt) ||
+  uniqueReferenceImages.length > 0;
     const n = Math.min(outputCount, 4);
 
     try {
@@ -1768,9 +1762,16 @@ body: JSON.stringify({
         headers: { "Content-Type": "application/json" },
 body: JSON.stringify({
   userId: effectiveUserId,
+  characterId: selectedCharacter?.id || null,
   prompt: variationPrompt,
+  scenePrompt: variationPrompt,
+  characterPrompt: selectedCharacter ? prompt.trim() : "",
   negativePrompt: group.negativePrompt || "",
   styleLabel: group.style || "",
+  style: selectedStyle,
+  stylePrompt: selectedStyle ? STYLE_PROMPT_MAP[selectedStyle] : "",
+  referenceImages: [],
+  useCharacter: Boolean(selectedCharacter),
   ratio: group.ratio,
   size: getApiSize(group.ratio),
   quality: getApiQuality(group.mode),

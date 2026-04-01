@@ -24,25 +24,90 @@ async function loadCharacterData(characterId) {
   return data;
 }
 
-function buildCharacterReferences(character) {
+async function loadCharacterAnchorImages(characterId) {
+  if (!characterId) return [];
+
+  const { data, error } = await supabaseAdmin
+    .from("character_images")
+    .select("id, image_url, storage_path, source_type, pack_view, is_canon, is_cover, metadata, created_at")
+    .eq("character_id", characterId)
+    .order("created_at", { ascending: false });
+
+  if (error || !Array.isArray(data)) return [];
+
+  return data;
+}
+
+function getCharacterImageUrl(row) {
+  if (!row || typeof row !== "object") return null;
+  return normalizeReferenceImage(
+    row.image_url ||
+    row.url ||
+    row.publicUrl ||
+    row.src ||
+    null
+  );
+}
+
+function pickBestAnchorRows(rows = []) {
+  if (!Array.isArray(rows) || !rows.length) return [];
+
+  const scoreRow = (row) => {
+    let score = 0;
+
+    if (row.is_canon) score += 50;
+    if (row.is_cover) score += 20;
+
+    if (row.source_type === "master_identity") score += 100;
+    if (row.source_type === "upload") score += 40;
+    if (row.source_type === "generated") score += 10;
+
+    if (row.pack_view === "closeup") score += 80;
+    if (row.pack_view === "front") score += 70;
+    if (row.pack_view === "left") score += 20;
+    if (row.pack_view === "right") score += 20;
+    if (row.pack_view === "back") score += 0;
+
+    return score;
+  };
+
+  const sorted = [...rows].sort((a, b) => scoreRow(b) - scoreRow(a));
+
+  const closeup = sorted.find((r) => r.pack_view === "closeup" && getCharacterImageUrl(r));
+  const front = sorted.find((r) => r.pack_view === "front" && getCharacterImageUrl(r));
+  const master = sorted.find((r) => r.source_type === "master_identity" && getCharacterImageUrl(r));
+
+  const chosen = [closeup, front, master].filter(Boolean);
+
+  for (const row of sorted) {
+    if (chosen.length >= 3) break;
+    if (!getCharacterImageUrl(row)) continue;
+    if (chosen.some((picked) => picked.id === row.id)) continue;
+    chosen.push(row);
+  }
+
+  return chosen.slice(0, 3);
+}
+
+function buildCharacterReferences(character, anchorRows = []) {
   if (!character) return [];
 
   const refs = [];
 
-  if (character.master_image) {
-    refs.push(character.master_image);
+  // Highest-confidence direct character refs
+  if (character.reference_image) refs.push(character.reference_image);
+  if (character.master_image) refs.push(character.master_image);
+
+  // Best pack / anchor rows only
+  const bestRows = pickBestAnchorRows(anchorRows);
+  for (const row of bestRows) {
+    const url = getCharacterImageUrl(row);
+    if (url) refs.push(url);
   }
 
-  if (character.reference_image) {
-    refs.push(character.reference_image);
-  }
-
-  if (character.cover_image) {
+  // Cover image only as fallback
+  if (refs.length < 3 && character.cover_image) {
     refs.push(character.cover_image);
-  }
-
-  if (Array.isArray(character.generated_images)) {
-    refs.push(...character.generated_images.slice(0, 2));
   }
 
   return [...new Set(refs)]
@@ -50,7 +115,6 @@ function buildCharacterReferences(character) {
     .filter(Boolean)
     .slice(0, 4);
 }
-
 function buildDnaIdentityText(character) {
   const dna = character?.dna_profile;
   if (!dna || typeof dna !== "object") return "";
@@ -213,8 +277,13 @@ function buildIdentityBlock({
   const lines = [
     "Identity lock:",
     "Use the exact same real person from the provided character reference set.",
-    "Preserve facial bone structure, jawline, cheek structure, eye shape, eyebrow shape, nose shape, lips, skin tone, hairstyle, hairline, beard pattern, and overall recognizable identity.",
-    "Do not beautify, idealize, replace, reinterpret, or transform the subject into a different person.",
+    "This must remain the same individual, not a reinterpretation.",
+    "Preserve facial bone structure, cheek structure, jawline, eye shape, eyebrow shape, nose shape, lips, skin tone, hairline, hairstyle, beard pattern, and overall recognizable likeness.",
+    "Do not beautify, idealize, glamorize, masculinize, or transform the subject into a different person.",
+    "Do not change facial proportions.",
+    "Do not lengthen hair, add extra hair volume, or redesign the hairstyle unless explicitly requested.",
+    "Do not remove eyewear or facial accessories that are part of the reference identity unless explicitly requested.",
+    "Do not add tattoos, extra facial hair density, bodybuilder proportions, or fantasy styling unless clearly present in the reference.",
     "Keep the same identity even when outfit, pose, environment, camera framing, or action changes.",
   ];
 
@@ -226,9 +295,9 @@ function buildIdentityBlock({
     lines.push(`Character description: ${character.description}`);
   }
 
-  if (characterPrompt) {
-    lines.push(`Character details: ${characterPrompt}`);
-  }
+if (characterPrompt && !character) {
+  lines.push(`Character details: ${characterPrompt}`);
+}
 
   if (dnaText) {
     lines.push(`DNA lock: ${dnaText}`);
@@ -238,12 +307,14 @@ function buildIdentityBlock({
 }
 
 function buildSceneBlock({ prompt, scenePrompt }) {
-  const parts = [];
+  const rawScene = normalizeText(scenePrompt);
+  const rawPrompt = normalizeText(prompt);
 
-  if (scenePrompt) parts.push(scenePrompt);
-  if (prompt && prompt !== scenePrompt) parts.push(prompt);
+  // If frontend already sent a fully built prompt block, prefer the raw scenePrompt
+  // to avoid duplicating Scene/Composition/Character instructions.
+  if (rawScene) return rawScene;
 
-  return parts.join(" ").trim();
+  return rawPrompt;
 }
 
 function buildCompositionBlock({ combinedPrompt, ratio }) {
@@ -332,32 +403,42 @@ function buildNegativeBlock({ negativePrompt, combinedPrompt, useCharacter }) {
   const text = combinedPrompt.toLowerCase();
 
   const baseNegatives = [
-    "anime",
-    "illustration",
-    "painting",
-    "3d render",
-    "cgi",
-    "cartoon",
-    "waxy skin",
-    "plastic skin",
-    "beauty filter",
-    "over-smoothed face",
-    "fake beard",
-    "doll-like face",
-    "unrealistic muscles",
-    "bodybuilder proportions",
-    "exaggerated anatomy",
-    "deformed body",
-    "bad hands",
-    "extra fingers",
-    "extra limbs",
-    "duplicate body parts",
-    "distorted face",
-    "blurry face",
-    "low detail face",
-    "synthetic lighting",
-    "oversharpened skin",
-  ];
+  "anime",
+  "illustration",
+  "painting",
+  "3d render",
+  "cgi",
+  "cartoon",
+  "waxy skin",
+  "plastic skin",
+  "beauty filter",
+  "over-smoothed face",
+  "fake beard",
+  "doll-like face",
+  "unrealistic muscles",
+  "bodybuilder proportions",
+  "exaggerated anatomy",
+  "deformed body",
+  "bad hands",
+  "extra fingers",
+  "extra limbs",
+  "duplicate body parts",
+  "distorted face",
+  "blurry face",
+  "low detail face",
+  "synthetic lighting",
+  "oversharpened skin",
+  "tattoo",
+  "chest tattoo",
+  "neck tattoo",
+  "missing glasses",
+  "removed eyewear",
+  "long flowing hair",
+  "extra beard density",
+  "male model face",
+  "fitness model body",
+  "heroic body proportions",
+];
 
   if (useCharacter) {
     baseNegatives.push(
@@ -454,15 +535,23 @@ const {
 
     const character = characterId ? await loadCharacterData(characterId) : null;
 
+    const anchorRows = characterId ? await loadCharacterAnchorImages(characterId) : [];
+
     const safeN = Math.min(Math.max(Number(n) || 1, 1), 4);
 
 const frontendRefs = Array.isArray(referenceImages)
   ? referenceImages.map(normalizeReferenceImage).filter(Boolean).slice(0, 5)
   : [];
 
-const characterRefs = character ? buildCharacterReferences(character) : [];
+const characterRefs = character
+  ? buildCharacterReferences(character, anchorRows)
+  : [];
 
-const refs = [...new Set([...characterRefs, ...frontendRefs])].slice(0, 5);
+// When a saved character is selected, trust Kylor identity refs first.
+// Only append uploaded refs if you really need them.
+const refs = character
+  ? [...new Set(characterRefs)].slice(0, 4)
+  : [...new Set(frontendRefs)].slice(0, 4);
 
 const hasRefs = refs.length > 0;
     const cleanedPrompt = normalizeText(prompt);
