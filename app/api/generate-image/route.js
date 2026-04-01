@@ -29,11 +29,15 @@ async function loadCharacterAnchorImages(characterId) {
 
   const { data, error } = await supabaseAdmin
     .from("character_images")
-    .select("id, image_url, storage_path, source_type, pack_view, is_canon, is_cover, metadata, created_at")
+    .select("id, image_url, storage_path, source_type, pack_view, is_canon, is_cover, metadata, sort_order, created_at")
     .eq("character_id", characterId)
+    .order("sort_order", { ascending: true, nullsFirst: false })
     .order("created_at", { ascending: false });
 
-  if (error || !Array.isArray(data)) return [];
+  if (error || !Array.isArray(data)) {
+    console.error("loadCharacterAnchorImages failed:", error);
+    return [];
+  }
 
   return data;
 }
@@ -49,72 +53,159 @@ function getCharacterImageUrl(row) {
   );
 }
 
-function pickBestAnchorRows(rows = []) {
-  if (!Array.isArray(rows) || !rows.length) return [];
+function buildCharacterProfilePool(character, anchorRows = []) {
+  const pool = [];
 
-  const scoreRow = (row) => {
+  if (character?.reference_image) {
+    pool.push({
+      key: `reference_image:${character.reference_image}`,
+      url: normalizeReferenceImage(character.reference_image),
+      type: "reference_image",
+      view: "reference",
+      score: 95,
+    });
+  }
+
+  if (character?.master_image) {
+    pool.push({
+      key: `master_image:${character.master_image}`,
+      url: normalizeReferenceImage(character.master_image),
+      type: "master_image",
+      view: "master",
+      score: 100,
+    });
+  }
+
+  if (character?.cover_image) {
+    pool.push({
+      key: `cover_image:${character.cover_image}`,
+      url: normalizeReferenceImage(character.cover_image),
+      type: "cover_image",
+      view: "cover",
+      score: 70,
+    });
+  }
+
+  if (Array.isArray(character?.anchor_views)) {
+    for (const item of character.anchor_views) {
+      const url = extractPossibleImageUrl(item);
+      if (!url) continue;
+
+      const view =
+        (item && typeof item === "object" && (item.pack_view || item.view || item.type)) || "anchor";
+
+      pool.push({
+        key: `anchor_view:${view}:${url}`,
+        url,
+        type: "anchor_view",
+        view,
+        score: 85,
+      });
+    }
+  }
+
+  for (const row of anchorRows) {
+    const url = getCharacterImageUrl(row);
+    if (!url) continue;
+
     let score = 0;
 
-    if (row.is_canon) score += 50;
-    if (row.is_cover) score += 20;
-
     if (row.source_type === "master_identity") score += 100;
-    if (row.source_type === "upload") score += 40;
+    if (row.source_type === "upload") score += 45;
     if (row.source_type === "generated") score += 10;
+    if (row.is_canon) score += 40;
+    if (row.is_cover) score += 15;
 
     if (row.pack_view === "closeup") score += 80;
     if (row.pack_view === "front") score += 70;
-    if (row.pack_view === "left") score += 20;
-    if (row.pack_view === "right") score += 20;
-    if (row.pack_view === "back") score += 0;
+    if (row.pack_view === "left") score += 30;
+    if (row.pack_view === "right") score += 30;
+    if (row.pack_view === "back") score += 5;
 
-    return score;
-  };
-
-  const sorted = [...rows].sort((a, b) => scoreRow(b) - scoreRow(a));
-
-  const closeup = sorted.find((r) => r.pack_view === "closeup" && getCharacterImageUrl(r));
-  const front = sorted.find((r) => r.pack_view === "front" && getCharacterImageUrl(r));
-  const master = sorted.find((r) => r.source_type === "master_identity" && getCharacterImageUrl(r));
-
-  const chosen = [closeup, front, master].filter(Boolean);
-
-  for (const row of sorted) {
-    if (chosen.length >= 3) break;
-    if (!getCharacterImageUrl(row)) continue;
-    if (chosen.some((picked) => picked.id === row.id)) continue;
-    chosen.push(row);
+    pool.push({
+      key: `character_image:${row.id}`,
+      url,
+      type: row.source_type || "character_image",
+      view: row.pack_view || "unknown",
+      score,
+      row,
+    });
   }
 
-  return chosen.slice(0, 3);
+  const deduped = [];
+  const seen = new Set();
+
+  for (const item of pool) {
+    if (!item?.url) continue;
+    if (seen.has(item.url)) continue;
+    seen.add(item.url);
+    deduped.push(item);
+  }
+
+  return deduped;
+}
+
+function extractPossibleImageUrl(item) {
+  if (!item) return null;
+
+  if (typeof item === "string") {
+    return normalizeReferenceImage(item);
+  }
+
+  if (typeof item === "object") {
+    return normalizeReferenceImage(
+      item.url ||
+      item.image_url ||
+      item.publicUrl ||
+      item.src ||
+      item.reference_image ||
+      null
+    );
+  }
+
+  return null;
+}
+
+function buildSmartReferencePack(character, anchorRows = []) {
+  const pool = buildCharacterProfilePool(character, anchorRows);
+
+  if (!pool.length) return [];
+
+  const sorted = [...pool].sort((a, b) => (b.score || 0) - (a.score || 0));
+
+  const byView = (view) => sorted.find((item) => item.view === view);
+  const byType = (type) => sorted.find((item) => item.type === type);
+
+  const selected = [];
+
+  const pushIfPresent = (item) => {
+    if (!item?.url) return;
+    if (selected.some((s) => s.url === item.url)) return;
+    selected.push(item);
+  };
+
+  // Best identity anchors first
+  pushIfPresent(byType("master_image"));
+  pushIfPresent(byType("reference_image"));
+  pushIfPresent(byView("closeup"));
+  pushIfPresent(byView("front"));
+  pushIfPresent(byView("left"));
+  pushIfPresent(byView("right"));
+
+  // Fallbacks if we still have too few
+  for (const item of sorted) {
+    if (selected.length >= 5) break;
+    pushIfPresent(item);
+  }
+
+  return selected.slice(0, 5);
 }
 
 function buildCharacterReferences(character, anchorRows = []) {
-  if (!character) return [];
-
-  const refs = [];
-
-  // Highest-confidence direct character refs
-  if (character.reference_image) refs.push(character.reference_image);
-  if (character.master_image) refs.push(character.master_image);
-
-  // Best pack / anchor rows only
-  const bestRows = pickBestAnchorRows(anchorRows);
-  for (const row of bestRows) {
-    const url = getCharacterImageUrl(row);
-    if (url) refs.push(url);
-  }
-
-  // Cover image only as fallback
-  if (refs.length < 3 && character.cover_image) {
-    refs.push(character.cover_image);
-  }
-
-  return [...new Set(refs)]
-    .map(normalizeReferenceImage)
-    .filter(Boolean)
-    .slice(0, 4);
+  const pack = buildSmartReferencePack(character, anchorRows);
+  return pack.map((item) => item.url).filter(Boolean).slice(0, 5);
 }
+
 function buildDnaIdentityText(character) {
   const dna = character?.dna_profile;
   if (!dna || typeof dna !== "object") return "";
@@ -269,6 +360,7 @@ function buildIdentityBlock({
   hasRefs,
   characterPrompt,
   character,
+  referenceCount = 0,
 }) {
   if (!useCharacter && !hasRefs && !character) return "";
 
@@ -276,14 +368,14 @@ function buildIdentityBlock({
 
   const lines = [
     "Identity lock:",
-    "Use the exact same real person from the provided character reference set.",
+    "Use the exact same real person from the provided saved character profile set.",
+    "All references belong to the same person and must be treated as one identity package.",
     "This must remain the same individual, not a reinterpretation.",
     "Preserve facial bone structure, cheek structure, jawline, eye shape, eyebrow shape, nose shape, lips, skin tone, hairline, hairstyle, beard pattern, and overall recognizable likeness.",
-    "Do not beautify, idealize, glamorize, masculinize, or transform the subject into a different person.",
+    "Do not beautify, idealize, glamorize, masculinize, stylize, or transform the subject into a different person.",
     "Do not change facial proportions.",
-    "Do not lengthen hair, add extra hair volume, or redesign the hairstyle unless explicitly requested.",
-    "Do not remove eyewear or facial accessories that are part of the reference identity unless explicitly requested.",
-    "Do not add tattoos, extra facial hair density, bodybuilder proportions, or fantasy styling unless clearly present in the reference.",
+    "Do not lengthen hair, increase beard density, remove glasses, or add tattoos unless explicitly requested.",
+    "Do not turn the subject into a bodybuilder, hero character, or fashion model unless explicitly requested.",
     "Keep the same identity even when outfit, pose, environment, camera framing, or action changes.",
   ];
 
@@ -295,9 +387,13 @@ function buildIdentityBlock({
     lines.push(`Character description: ${character.description}`);
   }
 
-if (characterPrompt && !character) {
-  lines.push(`Character details: ${characterPrompt}`);
-}
+  if (referenceCount > 0) {
+    lines.push(`Use all provided saved profile references together as one identity lock set. Reference count: ${referenceCount}.`);
+  }
+
+  if (characterPrompt && !character) {
+    lines.push(`Character details: ${characterPrompt}`);
+  }
 
   if (dnaText) {
     lines.push(`DNA lock: ${dnaText}`);
@@ -550,8 +646,8 @@ const characterRefs = character
 // When a saved character is selected, trust Kylor identity refs first.
 // Only append uploaded refs if you really need them.
 const refs = character
-  ? [...new Set(characterRefs)].slice(0, 4)
-  : [...new Set(frontendRefs)].slice(0, 4);
+  ? [...new Set(characterRefs)].slice(0, 5)
+  : [...new Set(frontendRefs)].slice(0, 5);
 
 const hasRefs = refs.length > 0;
     const cleanedPrompt = normalizeText(prompt);
@@ -570,6 +666,7 @@ const identityBlock = buildIdentityBlock({
   hasRefs,
   characterPrompt: cleanedCharacterPrompt,
   character,
+  referenceCount: refs.length,
 });
 
     const compositionBlock = buildCompositionBlock({
@@ -694,18 +791,21 @@ const generationPayload = {
       image: images[0]?.url || null,
       images,
       generation: savedRow,
-      meta: {
-        model,
-        mode: useConsistencyModel ? "consistency" : "standard",
-        quality,
-        realismMode,
-        style,
-        styleLabel,
-        referenceCount: refs.length,
-        usedReferences: useConsistencyModel,
-        usedNegativePrompt: true,
-        storage: "supabase",
-      },
+meta: {
+  model,
+  mode: useConsistencyModel ? "consistency" : "standard",
+  quality,
+  realismMode,
+  style,
+  styleLabel,
+  referenceCount: refs.length,
+  referencePreview: refs,
+  characterLoaded: Boolean(character),
+  characterName: character?.name || null,
+  usedReferences: useConsistencyModel,
+  usedNegativePrompt: true,
+  storage: "supabase",
+},
     });
   } catch (error) {
     console.error("Image generation error:", error);
