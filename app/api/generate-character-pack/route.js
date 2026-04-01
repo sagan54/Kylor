@@ -761,14 +761,20 @@ function buildGlobalCharacterLockBlock() {
     "Hidden global character lock:",
 
     // 👇 OUTFIT LOCK
-    "The outfit must remain a plain white t-shirt and plain black pants in every generated pack view.",
-        "Hair continuity lock:",
-    "Hairstyle, hair length, hair volume, hair density, hairline, sideburns, and overall hair silhouette must remain identical across all pack views.",
-    "Do not lengthen the hair in side views or back view.",
-    "Do not shorten the hair in front view or close-up.",
-    "Do not add extra hair mass, extra layers, mullet shape, ponytail shape, or extended back hair unless clearly present in the approved identity anchor.",
-    "Hair must remain the same person, same cut, same length, same structure in every generated image.",
-    "No logos, no graphics, no patterns, no printed shirt, no colored shirt, no shorts, no jeans shorts, no costume.",
+"The outfit must remain a plain white t-shirt and plain black pants in every generated pack view.",
+"No logos, no graphics, no patterns, no printed shirt, no colored shirt, no shorts, no jeans shorts, no costume.",
+"Do not copy outfit from uploaded reference images.",
+"Ignore clothing from source images completely.",
+"Only preserve the person's identity, body, face, hairstyle, and proportions.",
+
+"",
+
+"Hair continuity lock:",
+"Hairstyle, hair length, hair volume, hair density, hairline, sideburns, and overall hair silhouette must remain identical across all pack views.",
+"Do not lengthen the hair in side views or back view.",
+"Do not shorten the hair in front view or close-up.",
+"Do not add extra hair mass, extra layers, mullet shape, ponytail shape, or extended back hair unless clearly present in the approved identity anchor.",
+"Hair must remain the same person, same cut, same length, same structure in every generated image.",
     "Do not copy outfit from uploaded reference images.",
     "Ignore clothing from source images completely.",
     "Only preserve the person's identity, body, face, hairstyle, and proportions.",
@@ -2977,15 +2983,20 @@ if (repairableFailures.length > 0) {
   finalFrontImageUrl = repaired.frontImageUrl;
 }
 
-    const acceptedCount = finalResults.filter((r) => r.accepted).length;
+const acceptedCount = finalResults.filter((r) => r.accepted).length;
 const totalViews = finalResults.length;
 
-const acceptedTypes = finalResults.filter((r) => r.accepted).map((r) => r.type);
-const hasFront = acceptedTypes.includes(IMAGE_TYPES.FRONT);
-const hasCloseup = acceptedTypes.includes(IMAGE_TYPES.CLOSEUP);
-const hasBack = acceptedTypes.includes(IMAGE_TYPES.BACK);
+const acceptedTypes = finalResults
+  .filter((r) => r.accepted)
+  .map((r) => r.type);
 
-if (!hasFront || !hasCloseup || acceptedCount < 4) {
+const hasFront = acceptedTypes.includes(IMAGE_TYPES.FRONT);
+const hasLeft = acceptedTypes.includes(IMAGE_TYPES.LEFT);
+const hasRight = acceptedTypes.includes(IMAGE_TYPES.RIGHT);
+const hasCloseup = acceptedTypes.includes(IMAGE_TYPES.CLOSEUP);
+const hasBack = acceptedTypes.includes(IMAGE_TYPES.BACK); // optional only
+
+if (!hasFront || !hasLeft || !hasRight || !hasCloseup) {
   const failedViews = finalResults
     .filter((r) => !r.accepted)
     .map((r) => r.type);
@@ -3001,6 +3012,8 @@ console.log("PACK FAILURE SUMMARY", {
   acceptedCount,
   totalViews,
   hasFront,
+  hasLeft,
+  hasRight,
   hasCloseup,
   hasBack,
   failedViews,
@@ -3041,9 +3054,9 @@ console.log("PACK FAILURE SUMMARY", {
     );
   }
 
-  throw new Error(
-    `Pack incomplete after repair pass: only ${acceptedCount} of ${totalViews} views were accepted. Failed: ${failedViews.join(", ")}`
-  );
+throw new Error(
+  `Pack incomplete after repair pass. Required views missing. Accepted: ${acceptedTypes.join(", ")}. Failed: ${failedViews.join(", ")}`
+);
 }
 
 console.log("FINAL UPLOAD START", {
