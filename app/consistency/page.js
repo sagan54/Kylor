@@ -991,7 +991,7 @@ const hydrateCachedCharacters = useCallback((cached) => {
     return data || [];
   }
 
-  function sleep(ms) {
+function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
@@ -999,37 +999,86 @@ async function refreshCharacterPackState(character, masterRefOverride = null) {
   if (!character?.id) return null;
 
   let rows = [];
-  for (let attempt = 0; attempt < 4; attempt++) {
+
+  for (let attempt = 0; attempt < 6; attempt++) {
     rows = await loadCharacterImages(character.id);
 
-    const hasGenerated = (rows || []).some(
-      (r) =>
-        r.character_id === character.id &&
-        (r.source_type === "generated" ||
-          [IMAGE_TYPES.FRONT, IMAGE_TYPES.LEFT, IMAGE_TYPES.RIGHT, IMAGE_TYPES.BACK, IMAGE_TYPES.CLOSEUP].includes(r.image_type))
+    const filteredRows = (rows || []).filter(
+      (r) => r.character_id === character.id
     );
 
-    if (hasGenerated) break;
-    await sleep(700);
+    const hasGenerated = filteredRows.some(
+      (r) =>
+        r.source_type === "generated" &&
+        [
+          IMAGE_TYPES.FRONT,
+          IMAGE_TYPES.LEFT,
+          IMAGE_TYPES.RIGHT,
+          IMAGE_TYPES.BACK,
+          IMAGE_TYPES.CLOSEUP,
+        ].includes(r.pack_view)
+    );
+
+    if (hasGenerated) {
+      const mapped = rowToCharacter(
+        {
+          ...character,
+          master_image:
+            masterRefOverride ||
+            character.masterImage ||
+            character.coverImage ||
+            null,
+        },
+        filteredRows
+      );
+
+      setCharacters((prev) => {
+        const updated = prev.map((c) =>
+          c.id === character.id ? mapped : c
+        );
+        updateCharactersCache(updated);
+        return updated;
+      });
+
+      setCharacterImages(filteredRows);
+
+      setOutputs((prev) => [
+        ...prev.filter((o) => o.charId !== character.id),
+        ...outputsFromCharacter(mapped),
+      ]);
+
+      return mapped;
+    }
+
+    await sleep(1000);
   }
 
-  const filteredRows = (rows || []).filter((r) => r.character_id === character.id);
+  const filteredRows = (rows || []).filter(
+    (r) => r.character_id === character.id
+  );
 
   const mapped = rowToCharacter(
     {
       ...character,
-      master_image: masterRefOverride || character.masterImage || character.coverImage || null,
+      master_image:
+        masterRefOverride ||
+        character.masterImage ||
+        character.coverImage ||
+        null,
     },
     filteredRows
   );
 
   setCharacters((prev) => {
-    const updated = prev.map((c) => (c.id === character.id ? mapped : c));
+    const updated = prev.map((c) =>
+      c.id === character.id ? mapped : c
+    );
     updateCharactersCache(updated);
     return updated;
   });
 
   setCharacterImages(filteredRows);
+
   setOutputs((prev) => [
     ...prev.filter((o) => o.charId !== character.id),
     ...outputsFromCharacter(mapped),
