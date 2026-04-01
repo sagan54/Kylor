@@ -10,6 +10,9 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+const IDENTITY_EVALUATOR_MODEL = process.env.EVALUATOR_MODEL || "gpt-4.1-mini";
+
 async function loadCharacterData(characterId) {
   if (!characterId) return null;
 
@@ -29,7 +32,9 @@ async function loadCharacterAnchorImages(characterId) {
 
   const { data, error } = await supabaseAdmin
     .from("character_images")
-    .select("id, image_url, storage_path, source_type, pack_view, is_canon, is_cover, metadata, sort_order, created_at")
+    .select(
+      "id, image_url, storage_path, source_type, pack_view, is_canon, is_cover, metadata, sort_order, created_at"
+    )
     .eq("character_id", characterId)
     .order("sort_order", { ascending: true, nullsFirst: false })
     .order("created_at", { ascending: false });
@@ -45,11 +50,7 @@ async function loadCharacterAnchorImages(characterId) {
 function getCharacterImageUrl(row) {
   if (!row || typeof row !== "object") return null;
   return normalizeReferenceImage(
-    row.image_url ||
-    row.url ||
-    row.publicUrl ||
-    row.src ||
-    null
+    row.image_url || row.url || row.publicUrl || row.src || null
   );
 }
 
@@ -92,7 +93,10 @@ function buildCharacterProfilePool(character, anchorRows = []) {
       if (!url) continue;
 
       const view =
-        (item && typeof item === "object" && (item.pack_view || item.view || item.type)) || "anchor";
+        (item &&
+          typeof item === "object" &&
+          (item.pack_view || item.view || item.type)) ||
+        "anchor";
 
       pool.push({
         key: `anchor_view:${view}:${url}`,
@@ -155,11 +159,11 @@ function extractPossibleImageUrl(item) {
   if (typeof item === "object") {
     return normalizeReferenceImage(
       item.url ||
-      item.image_url ||
-      item.publicUrl ||
-      item.src ||
-      item.reference_image ||
-      null
+        item.image_url ||
+        item.publicUrl ||
+        item.src ||
+        item.reference_image ||
+        null
     );
   }
 
@@ -184,7 +188,6 @@ function buildSmartReferencePack(character, anchorRows = []) {
     selected.push(item);
   };
 
-  // Best identity anchors first
   pushIfPresent(byType("master_image"));
   pushIfPresent(byType("reference_image"));
   pushIfPresent(byView("closeup"));
@@ -192,7 +195,6 @@ function buildSmartReferencePack(character, anchorRows = []) {
   pushIfPresent(byView("left"));
   pushIfPresent(byView("right"));
 
-  // Fallbacks if we still have too few
   for (const item of sorted) {
     if (selected.length >= 5) break;
     pushIfPresent(item);
@@ -232,7 +234,8 @@ function buildDnaIdentityText(character) {
     traits.shoulderWidth ? `Shoulder width: ${traits.shoulderWidth}` : "",
     traits.neckShape ? `Neck shape: ${traits.neckShape}` : "",
     traits.silhouetteSummary ? `Silhouette: ${traits.silhouetteSummary}` : "",
-    Array.isArray(traits.distinguishingFeatures) && traits.distinguishingFeatures.length
+    Array.isArray(traits.distinguishingFeatures) &&
+    traits.distinguishingFeatures.length
       ? `Distinguishing features: ${traits.distinguishingFeatures.join(", ")}`
       : "",
   ].filter(Boolean);
@@ -388,7 +391,9 @@ function buildIdentityBlock({
   }
 
   if (referenceCount > 0) {
-    lines.push(`Use all provided saved profile references together as one identity lock set. Reference count: ${referenceCount}.`);
+    lines.push(
+      `Use all provided saved profile references together as one identity lock set. Reference count: ${referenceCount}.`
+    );
   }
 
   if (characterPrompt && !character) {
@@ -406,8 +411,6 @@ function buildSceneBlock({ prompt, scenePrompt }) {
   const rawScene = normalizeText(scenePrompt);
   const rawPrompt = normalizeText(prompt);
 
-  // If frontend already sent a fully built prompt block, prefer the raw scenePrompt
-  // to avoid duplicating Scene/Composition/Character instructions.
   if (rawScene) return rawScene;
 
   return rawPrompt;
@@ -499,42 +502,42 @@ function buildNegativeBlock({ negativePrompt, combinedPrompt, useCharacter }) {
   const text = combinedPrompt.toLowerCase();
 
   const baseNegatives = [
-  "anime",
-  "illustration",
-  "painting",
-  "3d render",
-  "cgi",
-  "cartoon",
-  "waxy skin",
-  "plastic skin",
-  "beauty filter",
-  "over-smoothed face",
-  "fake beard",
-  "doll-like face",
-  "unrealistic muscles",
-  "bodybuilder proportions",
-  "exaggerated anatomy",
-  "deformed body",
-  "bad hands",
-  "extra fingers",
-  "extra limbs",
-  "duplicate body parts",
-  "distorted face",
-  "blurry face",
-  "low detail face",
-  "synthetic lighting",
-  "oversharpened skin",
-  "tattoo",
-  "chest tattoo",
-  "neck tattoo",
-  "missing glasses",
-  "removed eyewear",
-  "long flowing hair",
-  "extra beard density",
-  "male model face",
-  "fitness model body",
-  "heroic body proportions",
-];
+    "anime",
+    "illustration",
+    "painting",
+    "3d render",
+    "cgi",
+    "cartoon",
+    "waxy skin",
+    "plastic skin",
+    "beauty filter",
+    "over-smoothed face",
+    "fake beard",
+    "doll-like face",
+    "unrealistic muscles",
+    "bodybuilder proportions",
+    "exaggerated anatomy",
+    "deformed body",
+    "bad hands",
+    "extra fingers",
+    "extra limbs",
+    "duplicate body parts",
+    "distorted face",
+    "blurry face",
+    "low detail face",
+    "synthetic lighting",
+    "oversharpened skin",
+    "tattoo",
+    "chest tattoo",
+    "neck tattoo",
+    "missing glasses",
+    "removed eyewear",
+    "long flowing hair",
+    "extra beard density",
+    "male model face",
+    "fitness model body",
+    "heroic body proportions",
+  ];
 
   if (useCharacter) {
     baseNegatives.push(
@@ -600,26 +603,471 @@ function shouldEnablePromptUpsampling({
   return String(realismMode || "realistic").toLowerCase() === "standard";
 }
 
+function safeJsonParse(text) {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+function clampScore(value, fallback = 0) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(0, Math.min(10, n));
+}
+
+function isGymOrActionScene(text = "") {
+  const t = String(text || "").toLowerCase();
+  return (
+    t.includes("gym") ||
+    t.includes("workout") ||
+    t.includes("dumbbell") ||
+    t.includes("exercise") ||
+    t.includes("fitness") ||
+    t.includes("running") ||
+    t.includes("action") ||
+    t.includes("fight") ||
+    t.includes("boxing") ||
+    t.includes("training")
+  );
+}
+
+function getFailureTypeFromEvaluation(evaluation) {
+  if (!evaluation) return "weak_resemblance";
+
+  if (evaluation.faceMismatch) return "face_mismatch";
+  if (evaluation.hairstyleDrift) return "hairstyle_drift";
+  if (evaluation.glassesMissing) return "glasses_missing";
+  if (evaluation.bodyExaggeration) return "body_exaggeration";
+  if (evaluation.ageDrift) return "age_drift";
+  if (evaluation.stylizationDrift) return "stylization_drift";
+  if (evaluation.weakResemblance) return "weak_resemblance";
+
+  return "none";
+}
+
+async function scoreGeneratedIdentity({
+  generatedImage,
+  referencePack = [],
+  dnaProfile = null,
+  scenePrompt = "",
+  characterName = "",
+}) {
+  if (!generatedImage || !referencePack.length || !OPENAI_API_KEY) {
+    return {
+      passed: true,
+      identityScore: 7,
+      faceScore: 7,
+      hairScore: 7,
+      bodyProportionScore: 7,
+      sceneScore: 7,
+      qualityScore: 7,
+      glassesPreserved: true,
+      faceMismatch: false,
+      hairstyleDrift: false,
+      glassesMissing: false,
+      bodyExaggeration: false,
+      ageDrift: false,
+      stylizationDrift: false,
+      weakResemblance: false,
+      driftDetected: false,
+      failureType: "none",
+      failureReasons: [],
+      evaluatorSkipped: !OPENAI_API_KEY
+        ? "OPENAI_API_KEY missing"
+        : "No references",
+      evaluatorRaw: null,
+    };
+  }
+
+  const dnaText =
+    dnaProfile && typeof dnaProfile === "object"
+      ? JSON.stringify(dnaProfile)
+      : "None";
+
+  const sceneBias = isGymOrActionScene(scenePrompt)
+    ? "This is a gym/action style scene. Strongly penalize bodybuilder transformation, model-like beautification, heroic stylization, sharper jawline changes, missing glasses, hairstyle changes, and unrealistic physique inflation."
+    : "Strongly penalize any identity drift from the references.";
+
+  const messages = [
+    {
+      role: "system",
+      content:
+        "You are an expert identity consistency evaluator for photorealistic character generation. Judge whether the generated image still shows the same person as the reference images. Return strict JSON only.",
+    },
+    {
+      role: "user",
+      content: [
+        {
+          type: "text",
+          text: `
+Evaluate whether the GENERATED IMAGE matches the SAME PERSON as the REFERENCE IMAGES.
+
+Character name: ${characterName || "Unknown"}
+Scene prompt: ${scenePrompt || "None"}
+DNA profile: ${dnaText}
+
+Rules:
+- The references all belong to the same person and must be treated as one identity package.
+- Focus heavily on face identity, hair, glasses/accessories, facial structure, skin tone, beard pattern, age consistency, and body proportion realism.
+- ${sceneBias}
+- A visually attractive image that becomes a different person must fail.
+- Return JSON only.
+
+Required schema:
+{
+  "passed": boolean,
+  "identityScore": number,
+  "faceScore": number,
+  "hairScore": number,
+  "bodyProportionScore": number,
+  "sceneScore": number,
+  "qualityScore": number,
+  "glassesPreserved": boolean,
+  "faceMismatch": boolean,
+  "hairstyleDrift": boolean,
+  "glassesMissing": boolean,
+  "bodyExaggeration": boolean,
+  "ageDrift": boolean,
+  "stylizationDrift": boolean,
+  "weakResemblance": boolean,
+  "driftDetected": boolean,
+  "failureReasons": string[],
+  "reason": string
+}
+          `.trim(),
+        },
+        ...referencePack.map((url, i) => ({
+          type: "image_url",
+          image_url: { url },
+          name: `reference_${i + 1}`,
+        })),
+        {
+          type: "image_url",
+          image_url: { url: generatedImage },
+          name: "generated_image",
+        },
+      ],
+    },
+  ];
+
+  try {
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${OPENAI_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: IDENTITY_EVALUATOR_MODEL,
+        temperature: 0,
+        response_format: { type: "json_object" },
+        messages,
+      }),
+    });
+
+    const json = await response.json();
+    const text = json?.choices?.[0]?.message?.content || "";
+    const parsed = safeJsonParse(text) || {};
+
+    const result = {
+      passed: Boolean(parsed.passed),
+      identityScore: clampScore(parsed.identityScore, 0),
+      faceScore: clampScore(parsed.faceScore, 0),
+      hairScore: clampScore(parsed.hairScore, 0),
+      bodyProportionScore: clampScore(parsed.bodyProportionScore, 0),
+      sceneScore: clampScore(parsed.sceneScore, 0),
+      qualityScore: clampScore(parsed.qualityScore, 0),
+      glassesPreserved: Boolean(parsed.glassesPreserved),
+      faceMismatch: Boolean(parsed.faceMismatch),
+      hairstyleDrift: Boolean(parsed.hairstyleDrift),
+      glassesMissing: Boolean(parsed.glassesMissing),
+      bodyExaggeration: Boolean(parsed.bodyExaggeration),
+      ageDrift: Boolean(parsed.ageDrift),
+      stylizationDrift: Boolean(parsed.stylizationDrift),
+      weakResemblance: Boolean(parsed.weakResemblance),
+      driftDetected: Boolean(parsed.driftDetected),
+      failureReasons: Array.isArray(parsed.failureReasons)
+        ? parsed.failureReasons.map((x) => String(x))
+        : [],
+      reason: String(parsed.reason || "").trim(),
+      evaluatorRaw: parsed,
+    };
+
+    const failureType = getFailureTypeFromEvaluation(result);
+
+    const gymAction = isGymOrActionScene(scenePrompt);
+    const minimumIdentityScore = gymAction ? 8.5 : 8.0;
+    const minimumFaceScore = gymAction ? 8.5 : 8.0;
+    const minimumBodyScore = gymAction ? 7.5 : 7.0;
+
+    const shouldPass =
+      !result.faceMismatch &&
+      !result.hairstyleDrift &&
+      !result.glassesMissing &&
+      !result.bodyExaggeration &&
+      !result.ageDrift &&
+      !result.stylizationDrift &&
+      !result.weakResemblance &&
+      result.identityScore >= minimumIdentityScore &&
+      result.faceScore >= minimumFaceScore &&
+      result.bodyProportionScore >= minimumBodyScore;
+
+    return {
+      ...result,
+      passed: shouldPass,
+      failureType: shouldPass ? "none" : failureType,
+    };
+  } catch (error) {
+    console.error("scoreGeneratedIdentity failed:", error);
+
+    return {
+      passed: true,
+      identityScore: 7,
+      faceScore: 7,
+      hairScore: 7,
+      bodyProportionScore: 7,
+      sceneScore: 7,
+      qualityScore: 7,
+      glassesPreserved: true,
+      faceMismatch: false,
+      hairstyleDrift: false,
+      glassesMissing: false,
+      bodyExaggeration: false,
+      ageDrift: false,
+      stylizationDrift: false,
+      weakResemblance: false,
+      driftDetected: false,
+      failureType: "none",
+      failureReasons: [],
+      evaluatorSkipped: `Evaluator error: ${error?.message || "unknown"}`,
+      evaluatorRaw: null,
+    };
+  }
+}
+
+function buildIdentityRetryPrompt({
+  basePrompt,
+  failedEvaluation,
+  character,
+  scenePrompt,
+}) {
+  const corrections = [
+    "Identity correction:",
+    "The generated result drifted away from the saved character identity.",
+    "Regenerate the exact same person from the provided reference set.",
+    "Prioritize identity accuracy over cinematic exaggeration or scene intensity.",
+    "Keep the exact same facial identity, skin tone, hairstyle, beard pattern, glasses, and natural body proportions.",
+    "Do not beautify, stylize, glamorize, or transform the subject.",
+    "Do not create a fashion model look, hero look, or bodybuilder physique.",
+  ];
+
+  if (character?.name) {
+    corrections.push(`Keep the exact identity of ${character.name}.`);
+  }
+
+  if (failedEvaluation?.faceMismatch) {
+    corrections.push(
+      "Correct the face identity. Match the same facial structure, cheeks, jawline, eyes, nose, lips, and overall recognizable likeness from the references."
+    );
+  }
+
+  if (failedEvaluation?.hairstyleDrift) {
+    corrections.push(
+      "Correct the hairstyle. Preserve exact hairline, hair length, volume, direction, and texture from the references."
+    );
+  }
+
+  if (failedEvaluation?.glassesMissing) {
+    corrections.push(
+      "The subject must keep the exact same glasses or eyewear visible in the references."
+    );
+  }
+
+  if (failedEvaluation?.bodyExaggeration) {
+    corrections.push(
+      "Correct the body shape. Preserve natural body proportions and realistic physique. Do not increase muscle size, shoulder width, or overall mass."
+    );
+  }
+
+  if (failedEvaluation?.ageDrift) {
+    corrections.push(
+      "Correct age drift. Keep the same apparent age as the references."
+    );
+  }
+
+  if (failedEvaluation?.stylizationDrift) {
+    corrections.push(
+      "Remove stylization. Keep the result grounded, realistic, and true to the real person."
+    );
+  }
+
+  if (failedEvaluation?.weakResemblance) {
+    corrections.push(
+      "Increase resemblance strength significantly. The output must clearly read as the same person at first glance."
+    );
+  }
+
+  if (isGymOrActionScene(scenePrompt)) {
+    corrections.push(
+      "Because this is a gym/action scene, do not let the scene inflate muscles, sharpen the face, beautify the skin, or turn the subject into a fitness model."
+    );
+  }
+
+  if (failedEvaluation?.failureReasons?.length) {
+    corrections.push(
+      `Failure reasons to correct: ${failedEvaluation.failureReasons.join("; ")}`
+    );
+  }
+
+  return [basePrompt, corrections.join(" ")].filter(Boolean).join("\n\n");
+}
+
+function buildRetryNegativeBlock({
+  negativeBlock,
+  failedEvaluation,
+  scenePrompt,
+}) {
+  const extra = [
+    "different person",
+    "identity drift",
+    "face mismatch",
+    "wrong face",
+    "wrong hairstyle",
+    "beautified face",
+    "model face",
+    "hero face",
+    "glamour retouching",
+  ];
+
+  if (failedEvaluation?.glassesMissing) {
+    extra.push("missing glasses", "removed glasses", "no glasses");
+  }
+
+  if (failedEvaluation?.bodyExaggeration || isGymOrActionScene(scenePrompt)) {
+    extra.push(
+      "bodybuilder",
+      "bodybuilder physique",
+      "massive muscles",
+      "fitness model body",
+      "heroic body",
+      "inflated chest",
+      "inflated shoulders",
+      "over-muscular arms"
+    );
+  }
+
+  if (failedEvaluation?.hairstyleDrift) {
+    extra.push("wrong hair", "different haircut", "different hair length");
+  }
+
+  if (failedEvaluation?.stylizationDrift) {
+    extra.push(
+      "stylized face",
+      "cinematic glamour",
+      "posterized realism",
+      "fashion editorial look"
+    );
+  }
+
+  return [...new Set([negativeBlock, ...extra].filter(Boolean))].join(", ");
+}
+
+function getEvaluationWeightedScore(evaluation, scenePrompt = "") {
+  if (!evaluation) return 0;
+
+  const gymAction = isGymOrActionScene(scenePrompt);
+
+  if (gymAction) {
+    return (
+      clampScore(evaluation.faceScore) * 0.4 +
+      clampScore(evaluation.hairScore) * 0.2 +
+      clampScore(evaluation.bodyProportionScore) * 0.2 +
+      clampScore(evaluation.sceneScore) * 0.1 +
+      clampScore(evaluation.qualityScore) * 0.1
+    );
+  }
+
+  return (
+    clampScore(evaluation.identityScore) * 0.45 +
+    clampScore(evaluation.faceScore) * 0.25 +
+    clampScore(evaluation.hairScore) * 0.1 +
+    clampScore(evaluation.bodyProportionScore) * 0.1 +
+    clampScore(evaluation.qualityScore) * 0.1
+  );
+}
+
+async function removeStoredImageIfExists(image) {
+  if (!image?.path) return;
+
+  try {
+    await supabaseAdmin.storage.from("generated-images").remove([image.path]);
+  } catch (error) {
+    console.error("Failed to cleanup image:", error);
+  }
+}
+
+async function generateSingleCandidate({
+  model,
+  prompt,
+  negativePrompt,
+  aspect_ratio,
+  refs,
+  useConsistencyModel,
+  enablePromptUpsampling,
+  userId,
+}) {
+  const input = useConsistencyModel
+    ? {
+        prompt,
+        negative_prompt: negativePrompt,
+        aspect_ratio,
+        output_format: "png",
+        reference_images: refs,
+      }
+    : {
+        prompt,
+        negative_prompt: negativePrompt,
+        aspect_ratio,
+        output_format: "png",
+        prompt_upsampling: enablePromptUpsampling,
+      };
+
+  const output = await replicate.run(model, { input });
+  const tempUrl = await fileOutputToUrl(output);
+
+  if (!tempUrl) return null;
+
+  const storedImage = await persistImageToSupabase({
+    imageUrl: tempUrl,
+    userId: String(userId),
+    bucket: "generated-images",
+  });
+
+  return storedImage;
+}
+
 export async function POST(req) {
   try {
-const {
-  userId,
-  characterId = null,
-  prompt,
-  scenePrompt = "",
-  characterPrompt = "",
-  style = null,
-  styleLabel = "",
-  stylePrompt = "",
-  negativePrompt = "",
-  useCharacter = false,
-  size = "1024x1024",
-  quality = "medium",
-  n = 1,
-  referenceImages = [],
-  ratio = "1:1",
-  realismMode = "realistic",
-} = await req.json();
+    const {
+      userId,
+      characterId = null,
+      prompt,
+      scenePrompt = "",
+      characterPrompt = "",
+      style = null,
+      styleLabel = "",
+      stylePrompt = "",
+      negativePrompt = "",
+      useCharacter = false,
+      size = "1024x1024",
+      quality = "medium",
+      n = 1,
+      referenceImages = [],
+      ratio = "1:1",
+      realismMode = "realistic",
+    } = await req.json();
 
     if (!userId || !String(userId).trim()) {
       return Response.json({ error: "userId is required" }, { status: 400 });
@@ -630,26 +1078,25 @@ const {
     }
 
     const character = characterId ? await loadCharacterData(characterId) : null;
-
-    const anchorRows = characterId ? await loadCharacterAnchorImages(characterId) : [];
+    const anchorRows = characterId
+      ? await loadCharacterAnchorImages(characterId)
+      : [];
 
     const safeN = Math.min(Math.max(Number(n) || 1, 1), 4);
 
-const frontendRefs = Array.isArray(referenceImages)
-  ? referenceImages.map(normalizeReferenceImage).filter(Boolean).slice(0, 5)
-  : [];
+    const frontendRefs = Array.isArray(referenceImages)
+      ? referenceImages.map(normalizeReferenceImage).filter(Boolean).slice(0, 5)
+      : [];
 
-const characterRefs = character
-  ? buildCharacterReferences(character, anchorRows)
-  : [];
+    const characterRefs = character
+      ? buildCharacterReferences(character, anchorRows)
+      : [];
 
-// When a saved character is selected, trust Kylor identity refs first.
-// Only append uploaded refs if you really need them.
-const refs = character
-  ? [...new Set(characterRefs)].slice(0, 5)
-  : [...new Set(frontendRefs)].slice(0, 5);
+    const refs = character
+      ? [...new Set(characterRefs)].slice(0, 5)
+      : [...new Set(frontendRefs)].slice(0, 5);
 
-const hasRefs = refs.length > 0;
+    const hasRefs = refs.length > 0;
     const cleanedPrompt = normalizeText(prompt);
     const cleanedScenePrompt = normalizeText(scenePrompt);
     const cleanedCharacterPrompt = normalizeText(characterPrompt);
@@ -661,13 +1108,13 @@ const hasRefs = refs.length > 0;
       scenePrompt: cleanedScenePrompt,
     });
 
-const identityBlock = buildIdentityBlock({
-  useCharacter: Boolean(useCharacter),
-  hasRefs,
-  characterPrompt: cleanedCharacterPrompt,
-  character,
-  referenceCount: refs.length,
-});
+    const identityBlock = buildIdentityBlock({
+      useCharacter: Boolean(useCharacter),
+      hasRefs,
+      characterPrompt: cleanedCharacterPrompt,
+      character,
+      referenceCount: refs.length,
+    });
 
     const compositionBlock = buildCompositionBlock({
       combinedPrompt: combinedSceneText,
@@ -678,11 +1125,11 @@ const identityBlock = buildIdentityBlock({
       realismMode,
     });
 
-const negativeBlock = buildNegativeBlock({
-  negativePrompt: cleanedNegativePrompt,
-  combinedPrompt: combinedSceneText,
-  useCharacter: Boolean(useCharacter) || hasRefs || Boolean(character),
-});
+    const negativeBlock = buildNegativeBlock({
+      negativePrompt: cleanedNegativePrompt,
+      combinedPrompt: combinedSceneText,
+      useCharacter: Boolean(useCharacter) || hasRefs || Boolean(character),
+    });
 
     const qualityBlock = [
       "Quality:",
@@ -693,7 +1140,7 @@ const negativeBlock = buildNegativeBlock({
       "Do not replace the requested scene with a generic beauty shot.",
     ].join(" ");
 
-    const finalPrompt = [
+    const baseFinalPrompt = [
       identityBlock,
       `Scene: ${combinedSceneText}`,
       compositionBlock,
@@ -705,82 +1152,181 @@ const negativeBlock = buildNegativeBlock({
       .join("\n\n");
 
     const aspect_ratio = mapSizeToAspectRatio(size, ratio);
-    const useConsistencyModel = Boolean(useCharacter) || hasRefs || Boolean(character);
+    const useConsistencyModel =
+      Boolean(useCharacter) || hasRefs || Boolean(character);
 
-const model = chooseModel({
-  useCharacter: Boolean(useCharacter),
-  hasRefs,
-  hasCharacter: Boolean(character),
-  realismMode,
-  quality,
-});
-
-const enablePromptUpsampling = shouldEnablePromptUpsampling({
-  useCharacter: Boolean(useCharacter),
-  hasRefs,
-  hasCharacter: Boolean(character),
-  realismMode,
-});
-
-    const requests = Array.from({ length: safeN }, async () => {
-      let input;
-
-      if (useConsistencyModel) {
-        input = {
-          prompt: finalPrompt,
-          negative_prompt: negativeBlock,
-          aspect_ratio,
-          output_format: "png",
-          reference_images: refs,
-        };
-      } else {
-        input = {
-          prompt: finalPrompt,
-          negative_prompt: negativeBlock,
-          aspect_ratio,
-          output_format: "png",
-          prompt_upsampling: enablePromptUpsampling,
-        };
-      }
-
-      const output = await replicate.run(model, { input });
-      const tempUrl = await fileOutputToUrl(output);
-
-      if (!tempUrl) return null;
-
-      const storedImage = await persistImageToSupabase({
-        imageUrl: tempUrl,
-        userId: String(userId),
-        bucket: "generated-images",
-      });
-
-      return storedImage;
+    const model = chooseModel({
+      useCharacter: Boolean(useCharacter),
+      hasRefs,
+      hasCharacter: Boolean(character),
+      realismMode,
+      quality,
     });
 
-    const images = (await Promise.all(requests)).filter(Boolean);
+    const enablePromptUpsampling = shouldEnablePromptUpsampling({
+      useCharacter: Boolean(useCharacter),
+      hasRefs,
+      hasCharacter: Boolean(character),
+      realismMode,
+    });
 
-    if (!images.length) {
+    const shouldRunIdentityEnforcement =
+      useConsistencyModel && refs.length > 0 && Boolean(character || useCharacter);
+
+    const requests = Array.from({ length: safeN }, async () => {
+      let bestCandidate = null;
+
+      const maxAttempts = shouldRunIdentityEnforcement ? 3 : 1;
+      let currentPrompt = baseFinalPrompt;
+      let currentNegativePrompt = negativeBlock;
+
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        const storedImage = await generateSingleCandidate({
+          model,
+          prompt: currentPrompt,
+          negativePrompt: currentNegativePrompt,
+          aspect_ratio,
+          refs,
+          useConsistencyModel,
+          enablePromptUpsampling,
+          userId,
+        });
+
+        if (!storedImage?.url) continue;
+
+        const evaluation = shouldRunIdentityEnforcement
+          ? await scoreGeneratedIdentity({
+              generatedImage: storedImage.url,
+              referencePack: refs,
+              dnaProfile: character?.dna_profile || null,
+              scenePrompt: combinedSceneText,
+              characterName: character?.name || "",
+            })
+          : {
+              passed: true,
+              identityScore: 7,
+              faceScore: 7,
+              hairScore: 7,
+              bodyProportionScore: 7,
+              sceneScore: 7,
+              qualityScore: 7,
+              glassesPreserved: true,
+              faceMismatch: false,
+              hairstyleDrift: false,
+              glassesMissing: false,
+              bodyExaggeration: false,
+              ageDrift: false,
+              stylizationDrift: false,
+              weakResemblance: false,
+              driftDetected: false,
+              failureType: "none",
+              failureReasons: [],
+            };
+
+        const weightedScore = getEvaluationWeightedScore(
+          evaluation,
+          combinedSceneText
+        );
+
+        const candidate = {
+          image: storedImage,
+          evaluation,
+          weightedScore,
+          attempt,
+          prompt: currentPrompt,
+          negativePrompt: currentNegativePrompt,
+        };
+
+        if (
+          !bestCandidate ||
+          candidate.weightedScore > bestCandidate.weightedScore
+        ) {
+          if (bestCandidate?.image?.path) {
+            await removeStoredImageIfExists(bestCandidate.image);
+          }
+          bestCandidate = candidate;
+        } else {
+          await removeStoredImageIfExists(storedImage);
+        }
+
+        if (evaluation.passed) {
+          break;
+        }
+
+        if (attempt < maxAttempts) {
+          currentPrompt = buildIdentityRetryPrompt({
+            basePrompt: baseFinalPrompt,
+            failedEvaluation: evaluation,
+            character,
+            scenePrompt: combinedSceneText,
+          });
+
+          currentNegativePrompt = buildRetryNegativeBlock({
+            negativeBlock,
+            failedEvaluation: evaluation,
+            scenePrompt: combinedSceneText,
+          });
+        }
+      }
+
+      return bestCandidate;
+    });
+
+    const candidates = (await Promise.all(requests)).filter(Boolean);
+
+    if (!candidates.length) {
       return Response.json(
         { error: "No image returned from Replicate" },
         { status: 500 }
       );
     }
 
-const generationPayload = {
-  user_id: String(userId),
-  character_id: character?.id || null,
-  prompt: finalPrompt,
-  negative_prompt: negativeBlock,
-  ratio,
-  mode: useConsistencyModel ? "consistency" : "standard",
-  style: styleLabel || style || null,
-  images,
-};
+    const sortedCandidates = [...candidates].sort(
+      (a, b) => (b.weightedScore || 0) - (a.weightedScore || 0)
+    );
+
+    const bestOverall = sortedCandidates[0];
+
+    for (let i = 1; i < sortedCandidates.length; i++) {
+      await removeStoredImageIfExists(sortedCandidates[i]?.image);
+    }
+
+    const finalImages = [bestOverall.image];
+
+    const generationPayload = {
+      user_id: String(userId),
+      character_id: character?.id || null,
+      prompt: bestOverall.prompt,
+      negative_prompt: bestOverall.negativePrompt,
+      ratio,
+      mode: useConsistencyModel ? "consistency" : "standard",
+      style: styleLabel || style || null,
+      images: finalImages,
+      evaluation: {
+        identity_score: bestOverall.evaluation?.identityScore || null,
+        face_score: bestOverall.evaluation?.faceScore || null,
+        hair_score: bestOverall.evaluation?.hairScore || null,
+        body_score: bestOverall.evaluation?.bodyProportionScore || null,
+        scene_score: bestOverall.evaluation?.sceneScore || null,
+        quality_score: bestOverall.evaluation?.qualityScore || null,
+        passed: Boolean(bestOverall.evaluation?.passed),
+        failure_type: bestOverall.evaluation?.failureType || "none",
+        failure_reasons: bestOverall.evaluation?.failureReasons || [],
+        drift_detected: Boolean(bestOverall.evaluation?.driftDetected),
+        glasses_preserved: Boolean(bestOverall.evaluation?.glassesPreserved),
+        retry_count: Math.max(0, Number(bestOverall.attempt || 1) - 1),
+        used_reference_count: refs.length,
+        reference_preview: refs,
+        weighted_score: bestOverall.weightedScore,
+      },
+    };
 
     const { data: savedRow, error: saveError } = await supabaseAdmin
       .from("image_generations")
       .insert(generationPayload)
-      .select("id, prompt, negative_prompt, images, created_at, mode, ratio, style")
+      .select(
+        "id, prompt, negative_prompt, images, created_at, mode, ratio, style, evaluation"
+      )
       .single();
 
     if (saveError) {
@@ -788,24 +1334,28 @@ const generationPayload = {
     }
 
     return Response.json({
-      image: images[0]?.url || null,
-      images,
+      image: finalImages[0]?.url || null,
+      images: finalImages,
       generation: savedRow,
-meta: {
-  model,
-  mode: useConsistencyModel ? "consistency" : "standard",
-  quality,
-  realismMode,
-  style,
-  styleLabel,
-  referenceCount: refs.length,
-  referencePreview: refs,
-  characterLoaded: Boolean(character),
-  characterName: character?.name || null,
-  usedReferences: useConsistencyModel,
-  usedNegativePrompt: true,
-  storage: "supabase",
-},
+      meta: {
+        model,
+        mode: useConsistencyModel ? "consistency" : "standard",
+        quality,
+        realismMode,
+        style,
+        styleLabel,
+        referenceCount: refs.length,
+        referencePreview: refs,
+        characterLoaded: Boolean(character),
+        characterName: character?.name || null,
+        usedReferences: useConsistencyModel,
+        usedNegativePrompt: true,
+        storage: "supabase",
+        identityEnforcementEnabled: shouldRunIdentityEnforcement,
+        attemptsUsed: bestOverall.attempt || 1,
+        identityEvaluation: bestOverall.evaluation,
+        weightedScore: bestOverall.weightedScore,
+      },
     });
   } catch (error) {
     console.error("Image generation error:", error);
