@@ -10,6 +10,81 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
+async function loadCharacterData(characterId) {
+  if (!characterId) return null;
+
+  const { data, error } = await supabaseAdmin
+    .from("characters")
+    .select("*")
+    .eq("id", characterId)
+    .single();
+
+  if (error || !data) return null;
+
+  return data;
+}
+
+function buildCharacterReferences(character) {
+  if (!character) return [];
+
+  const refs = [];
+
+  if (character.master_image) {
+    refs.push(character.master_image);
+  }
+
+  if (character.reference_image) {
+    refs.push(character.reference_image);
+  }
+
+  if (character.cover_image) {
+    refs.push(character.cover_image);
+  }
+
+  if (Array.isArray(character.generated_images)) {
+    refs.push(...character.generated_images.slice(0, 2));
+  }
+
+  return [...new Set(refs)]
+    .map(normalizeReferenceImage)
+    .filter(Boolean)
+    .slice(0, 4);
+}
+
+function buildDnaIdentityText(character) {
+  const dna = character?.dna_profile;
+  if (!dna || typeof dna !== "object") return "";
+
+  const traits = dna?.traits && typeof dna.traits === "object" ? dna.traits : {};
+
+  const parts = [
+    dna.identitySummary ? `Identity summary: ${dna.identitySummary}` : "",
+    traits.faceShape ? `Face shape: ${traits.faceShape}` : "",
+    traits.jawline ? `Jawline: ${traits.jawline}` : "",
+    traits.cheekStructure ? `Cheek structure: ${traits.cheekStructure}` : "",
+    traits.foreheadShape ? `Forehead shape: ${traits.foreheadShape}` : "",
+    traits.noseProfile ? `Nose profile: ${traits.noseProfile}` : "",
+    traits.eyeShape ? `Eye shape: ${traits.eyeShape}` : "",
+    traits.eyebrowShape ? `Eyebrow shape: ${traits.eyebrowShape}` : "",
+    traits.lipShape ? `Lip shape: ${traits.lipShape}` : "",
+    traits.chinShape ? `Chin shape: ${traits.chinShape}` : "",
+    traits.earShape ? `Ear shape: ${traits.earShape}` : "",
+    traits.skinTone ? `Skin tone: ${traits.skinTone}` : "",
+    traits.hairstyle ? `Hairstyle: ${traits.hairstyle}` : "",
+    traits.hairline ? `Hairline: ${traits.hairline}` : "",
+    traits.hairLength ? `Hair length: ${traits.hairLength}` : "",
+    traits.bodyBuild ? `Body build: ${traits.bodyBuild}` : "",
+    traits.shoulderWidth ? `Shoulder width: ${traits.shoulderWidth}` : "",
+    traits.neckShape ? `Neck shape: ${traits.neckShape}` : "",
+    traits.silhouetteSummary ? `Silhouette: ${traits.silhouetteSummary}` : "",
+    Array.isArray(traits.distinguishingFeatures) && traits.distinguishingFeatures.length
+      ? `Distinguishing features: ${traits.distinguishingFeatures.join(", ")}`
+      : "",
+  ].filter(Boolean);
+
+  return parts.join(". ");
+}
+
 function normalizeReferenceImage(image) {
   if (!image || typeof image !== "string") return null;
 
@@ -121,124 +196,366 @@ async function persistImageToSupabase({
   };
 }
 
+function normalizeText(value) {
+  return String(value || "").trim();
+}
+
+function buildIdentityBlock({
+  useCharacter,
+  hasRefs,
+  characterPrompt,
+  character,
+}) {
+  if (!useCharacter && !hasRefs && !character) return "";
+
+  const dnaText = buildDnaIdentityText(character);
+
+  const lines = [
+    "Identity lock:",
+    "Use the exact same real person from the provided character reference set.",
+    "Preserve facial bone structure, jawline, cheek structure, eye shape, eyebrow shape, nose shape, lips, skin tone, hairstyle, hairline, beard pattern, and overall recognizable identity.",
+    "Do not beautify, idealize, replace, reinterpret, or transform the subject into a different person.",
+    "Keep the same identity even when outfit, pose, environment, camera framing, or action changes.",
+  ];
+
+  if (character?.name) {
+    lines.push(`Character name: ${character.name}.`);
+  }
+
+  if (character?.description) {
+    lines.push(`Character description: ${character.description}`);
+  }
+
+  if (characterPrompt) {
+    lines.push(`Character details: ${characterPrompt}`);
+  }
+
+  if (dnaText) {
+    lines.push(`DNA lock: ${dnaText}`);
+  }
+
+  return lines.join(" ");
+}
+
+function buildSceneBlock({ prompt, scenePrompt }) {
+  const parts = [];
+
+  if (scenePrompt) parts.push(scenePrompt);
+  if (prompt && prompt !== scenePrompt) parts.push(prompt);
+
+  return parts.join(" ").trim();
+}
+
+function buildCompositionBlock({ combinedPrompt, ratio }) {
+  const text = combinedPrompt.toLowerCase();
+
+  const wantsCloseup =
+    text.includes("close-up") ||
+    text.includes("close up") ||
+    text.includes("portrait") ||
+    text.includes("headshot") ||
+    text.includes("face shot");
+
+  const wantsFullBody =
+    text.includes("full body") ||
+    text.includes("full-body") ||
+    text.includes("head to toe") ||
+    text.includes("head-to-toe");
+
+  const wantsWide =
+    text.includes("wide shot") ||
+    text.includes("wide-angle") ||
+    text.includes("environment visible") ||
+    ratio === "16:9" ||
+    ratio === "21:9";
+
+  if (wantsCloseup) {
+    return [
+      "Composition:",
+      "Use a close-up or portrait framing only because the prompt asks for it.",
+      "Keep the face clearly visible and preserve exact identity.",
+      "Do not crop awkwardly or distort facial proportions.",
+    ].join(" ");
+  }
+
+  if (wantsFullBody || wantsWide) {
+    return [
+      "Composition:",
+      "Follow the requested scene exactly.",
+      "Keep the environment clearly visible.",
+      "Use full-body or wider framing only if requested by the prompt.",
+      "Keep the face visible enough to preserve identity.",
+      "Do not turn this into a face-only portrait unless the prompt explicitly asks for it.",
+    ].join(" ");
+  }
+
+  return [
+    "Composition:",
+    "Follow the requested framing exactly.",
+    "Use natural cinematic framing.",
+    "Keep the subject clearly readable.",
+    "Do not default to an extreme close-up unless explicitly requested.",
+  ].join(" ");
+}
+
+function buildRealismBlock({ realismMode = "realistic" }) {
+  const mode = String(realismMode || "realistic").toLowerCase();
+
+  if (mode === "hyper") {
+    return [
+      "Realism:",
+      "Extremely photorealistic image.",
+      "Natural skin texture with believable pores and facial detail.",
+      "Real-world lighting, realistic anatomy, realistic lens behavior, grounded depth of field.",
+      "Avoid glamour retouching, fantasy skin, or synthetic cinematic exaggeration.",
+    ].join(" ");
+  }
+
+  if (mode === "standard") {
+    return [
+      "Realism:",
+      "Clean realistic image.",
+      "Natural facial detail, believable lighting, and grounded anatomy.",
+      "Keep the result realistic and not stylized.",
+    ].join(" ");
+  }
+
+  return [
+    "Realism:",
+    "Photorealistic image with strong natural detail.",
+    "Believable skin texture, grounded anatomy, realistic lighting, realistic proportions.",
+    "Avoid artificial beauty-filter skin or over-stylized cinematic rendering.",
+  ].join(" ");
+}
+
+function buildNegativeBlock({ negativePrompt, combinedPrompt, useCharacter }) {
+  const text = combinedPrompt.toLowerCase();
+
+  const baseNegatives = [
+    "anime",
+    "illustration",
+    "painting",
+    "3d render",
+    "cgi",
+    "cartoon",
+    "waxy skin",
+    "plastic skin",
+    "beauty filter",
+    "over-smoothed face",
+    "fake beard",
+    "doll-like face",
+    "unrealistic muscles",
+    "bodybuilder proportions",
+    "exaggerated anatomy",
+    "deformed body",
+    "bad hands",
+    "extra fingers",
+    "extra limbs",
+    "duplicate body parts",
+    "distorted face",
+    "blurry face",
+    "low detail face",
+    "synthetic lighting",
+    "oversharpened skin",
+  ];
+
+  if (useCharacter) {
+    baseNegatives.push(
+      "different person",
+      "identity drift",
+      "face change",
+      "different hairstyle",
+      "different beard pattern",
+      "different skin tone"
+    );
+  }
+
+  const wantsWide =
+    text.includes("wide shot") ||
+    text.includes("full body") ||
+    text.includes("full-body") ||
+    text.includes("head to toe") ||
+    text.includes("head-to-toe");
+
+  if (wantsWide) {
+    baseNegatives.push("close-up portrait", "headshot", "face-only crop");
+  }
+
+  return [...baseNegatives, normalizeText(negativePrompt)]
+    .filter(Boolean)
+    .join(", ");
+}
+
+function chooseModel({
+  useCharacter,
+  hasRefs,
+  hasCharacter,
+  realismMode,
+  quality,
+}) {
+  const realism = String(realismMode || "realistic").toLowerCase();
+  const q = String(quality || "medium").toLowerCase();
+  const needsIdentityLock =
+    Boolean(useCharacter) || Boolean(hasRefs) || Boolean(hasCharacter);
+
+  if (needsIdentityLock && (realism === "hyper" || q === "high")) {
+    return "black-forest-labs/flux-1.1-pro-ultra";
+  }
+
+  if (needsIdentityLock) {
+    return "black-forest-labs/flux-1.1-pro";
+  }
+
+  if (realism === "hyper") {
+    return "black-forest-labs/flux-1.1-pro";
+  }
+
+  return "black-forest-labs/flux-1.1-pro";
+}
+
+function shouldEnablePromptUpsampling({
+  useCharacter,
+  hasRefs,
+  hasCharacter,
+  realismMode,
+}) {
+  if (useCharacter || hasRefs || hasCharacter) return false;
+  return String(realismMode || "realistic").toLowerCase() === "standard";
+}
+
 export async function POST(req) {
   try {
-    const {
-      userId,
-      prompt,
-      scenePrompt = "",
-      characterPrompt = "",
-      style = null,
-      styleLabel = "",
-      stylePrompt = "",
-      negativePrompt = "",
-      useCharacter = false,
-      size = "1024x1024",
-      quality = "medium",
-      n = 1,
-      referenceImages = [],
-      ratio = "1:1",
-    } = await req.json();
+const {
+  userId,
+  characterId = null,
+  prompt,
+  scenePrompt = "",
+  characterPrompt = "",
+  style = null,
+  styleLabel = "",
+  stylePrompt = "",
+  negativePrompt = "",
+  useCharacter = false,
+  size = "1024x1024",
+  quality = "medium",
+  n = 1,
+  referenceImages = [],
+  ratio = "1:1",
+  realismMode = "realistic",
+} = await req.json();
 
     if (!userId || !String(userId).trim()) {
       return Response.json({ error: "userId is required" }, { status: 400 });
     }
 
-    if (!prompt || !prompt.trim()) {
+    if (!prompt || !String(prompt).trim()) {
       return Response.json({ error: "Prompt is required" }, { status: 400 });
     }
 
+    const character = characterId ? await loadCharacterData(characterId) : null;
+
     const safeN = Math.min(Math.max(Number(n) || 1, 1), 4);
 
-    const refs = Array.isArray(referenceImages)
-      ? referenceImages.map(normalizeReferenceImage).filter(Boolean).slice(0, 5)
-      : [];
+const frontendRefs = Array.isArray(referenceImages)
+  ? referenceImages.map(normalizeReferenceImage).filter(Boolean).slice(0, 5)
+  : [];
 
-    const hasRefs = refs.length > 0;
-    const cleanedScenePrompt = String(scenePrompt || "").trim();
-    const cleanedCharacterPrompt = String(characterPrompt || "").trim();
-    const cleanedStylePrompt = String(stylePrompt || "").trim();
-    const cleanedNegativePrompt = String(negativePrompt || "").trim();
+const characterRefs = character ? buildCharacterReferences(character) : [];
 
-    const hasCharacterRefs = hasRefs;
-    const shouldUseCharacterPrompt =
-      Boolean(useCharacter) && Boolean(cleanedCharacterPrompt);
+const refs = [...new Set([...characterRefs, ...frontendRefs])].slice(0, 5);
 
-    const referenceInstruction = hasCharacterRefs
-      ? [
-          "Use the provided reference image(s) as the same exact person.",
-          "Preserve identity, facial structure, skin tone, hairstyle, and recognizable features.",
-          "Do not change the person into someone else.",
-          "Change only pose, camera framing, outfit, environment, action, and scene as requested.",
-          "Do not default to a close-up portrait unless explicitly requested.",
-        ].join(" ")
-      : "";
+const hasRefs = refs.length > 0;
+    const cleanedPrompt = normalizeText(prompt);
+    const cleanedScenePrompt = normalizeText(scenePrompt);
+    const cleanedCharacterPrompt = normalizeText(characterPrompt);
+    const cleanedStylePrompt = normalizeText(stylePrompt);
+    const cleanedNegativePrompt = normalizeText(negativePrompt);
 
-    const fallbackQualityInstruction = [
-      "High-quality image generation.",
+    const combinedSceneText = buildSceneBlock({
+      prompt: cleanedPrompt,
+      scenePrompt: cleanedScenePrompt,
+    });
+
+const identityBlock = buildIdentityBlock({
+  useCharacter: Boolean(useCharacter),
+  hasRefs,
+  characterPrompt: cleanedCharacterPrompt,
+  character,
+});
+
+    const compositionBlock = buildCompositionBlock({
+      combinedPrompt: combinedSceneText,
+      ratio,
+    });
+
+    const realismBlock = buildRealismBlock({
+      realismMode,
+    });
+
+const negativeBlock = buildNegativeBlock({
+  negativePrompt: cleanedNegativePrompt,
+  combinedPrompt: combinedSceneText,
+  useCharacter: Boolean(useCharacter) || hasRefs || Boolean(character),
+});
+
+    const qualityBlock = [
+      "Quality:",
       "Strong scene fidelity.",
-      "Accurate composition.",
+      "Accurate anatomy.",
       "Natural detail.",
-      "Do not ignore framing instructions.",
+      "Follow the prompt exactly.",
+      "Do not replace the requested scene with a generic beauty shot.",
     ].join(" ");
 
-    const avoidInstruction = [
-      cleanedNegativePrompt,
-      cleanedScenePrompt.toLowerCase().includes("wide shot") ||
-      cleanedScenePrompt.toLowerCase().includes("full body") ||
-      cleanedScenePrompt.toLowerCase().includes("full-body") ||
-      ratio === "16:9" ||
-      ratio === "21:9"
-        ? "Avoid close-up portrait, extreme facial crop, headshot, face-only framing."
-        : "",
-    ]
-      .filter(Boolean)
-      .join(" ");
-
     const finalPrompt = [
-      cleanedScenePrompt,
-      "Full body visible from head to toe. Subject occupies around 35 to 45 percent of the frame. Face clearly visible and large enough to recognize identity. Environment must remain clearly visible.",
-      "Camera distance medium-wide, not extreme long shot.",
-      "Do not center subject. Use rule of thirds composition. Subject slightly off-center.",
-      "Same exact person as reference. Face must remain identical even in wide shot. Do not change identity.",
-      "Subject must face camera or 3/4 angle. Face clearly visible even in wide shot. Do not turn back to camera.",
-      prompt?.trim() || "",
-      hasCharacterRefs ? `Reference lock: ${referenceInstruction}` : null,
-      !hasCharacterRefs && shouldUseCharacterPrompt
-        ? `Character guidance: ${cleanedCharacterPrompt}`
-        : null,
-      cleanedStylePrompt ? `Style guidance: ${cleanedStylePrompt}` : null,
-      fallbackQualityInstruction,
-      avoidInstruction ? `Avoid: ${avoidInstruction}` : null,
+      identityBlock,
+      `Scene: ${combinedSceneText}`,
+      compositionBlock,
+      cleanedStylePrompt ? `Style guidance: ${cleanedStylePrompt}` : "",
+      realismBlock,
+      qualityBlock,
     ]
       .filter(Boolean)
       .join("\n\n");
 
     const aspect_ratio = mapSizeToAspectRatio(size, ratio);
-    const useConsistencyModel = Boolean(useCharacter) || refs.length > 0;
+    const useConsistencyModel = Boolean(useCharacter) || hasRefs || Boolean(character);
 
-    const model = useConsistencyModel
-      ? "black-forest-labs/flux-1.1-pro-ultra"
-      : "black-forest-labs/flux-1.1-pro";
+const model = chooseModel({
+  useCharacter: Boolean(useCharacter),
+  hasRefs,
+  hasCharacter: Boolean(character),
+  realismMode,
+  quality,
+});
+
+const enablePromptUpsampling = shouldEnablePromptUpsampling({
+  useCharacter: Boolean(useCharacter),
+  hasRefs,
+  hasCharacter: Boolean(character),
+  realismMode,
+});
 
     const requests = Array.from({ length: safeN }, async () => {
       let input;
 
-if (useConsistencyModel) {
-  input = {
-    prompt: finalPrompt,
-    aspect_ratio,
-    output_format: "png",
-    reference_images: refs,
-  };
-} else {
-  input = {
-    prompt: finalPrompt,
-    aspect_ratio,
-    output_format: "png",
-    prompt_upsampling: false,
-  };
-}
+      if (useConsistencyModel) {
+        input = {
+          prompt: finalPrompt,
+          negative_prompt: negativeBlock,
+          aspect_ratio,
+          output_format: "png",
+          reference_images: refs,
+        };
+      } else {
+        input = {
+          prompt: finalPrompt,
+          negative_prompt: negativeBlock,
+          aspect_ratio,
+          output_format: "png",
+          prompt_upsampling: enablePromptUpsampling,
+        };
+      }
 
       const output = await replicate.run(model, { input });
       const tempUrl = await fileOutputToUrl(output);
@@ -263,15 +580,16 @@ if (useConsistencyModel) {
       );
     }
 
-    const generationPayload = {
-      user_id: String(userId),
-      prompt: finalPrompt,
-      negative_prompt: cleanedNegativePrompt,
-      ratio,
-      mode: useConsistencyModel ? "consistency" : "standard",
-      style: styleLabel || style || null,
-      images,
-    };
+const generationPayload = {
+  user_id: String(userId),
+  character_id: character?.id || null,
+  prompt: finalPrompt,
+  negative_prompt: negativeBlock,
+  ratio,
+  mode: useConsistencyModel ? "consistency" : "standard",
+  style: styleLabel || style || null,
+  images,
+};
 
     const { data: savedRow, error: saveError } = await supabaseAdmin
       .from("image_generations")
@@ -291,11 +609,12 @@ if (useConsistencyModel) {
         model,
         mode: useConsistencyModel ? "consistency" : "standard",
         quality,
+        realismMode,
         style,
         styleLabel,
         referenceCount: refs.length,
         usedReferences: useConsistencyModel,
-        usedNegativePrompt: Boolean(cleanedNegativePrompt),
+        usedNegativePrompt: true,
         storage: "supabase",
       },
     });

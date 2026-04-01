@@ -82,8 +82,9 @@ async function sbSaveGroup(group, userId) {
     console.error("sbSaveGroup aborted: missing userId");
     return;
   }
+
   const payload = {
-    id: Number(group.id),
+    id: group.id,
     user_id: userId,
     prompt: group.prompt,
     negative_prompt: group.negativePrompt,
@@ -93,11 +94,14 @@ async function sbSaveGroup(group, userId) {
     images: group.images,
     created_at: group.createdAt,
   };
+
   console.log("sbSaveGroup payload:", payload);
+
   const { data, error } = await supabase
     .from("image_generations")
     .upsert(payload, { onConflict: "id" })
     .select();
+
   if (error) {
     console.error("sbSaveGroup failed:", error);
   } else {
@@ -297,12 +301,15 @@ async function filesToDataUrls(files = []) {
 
 function getCharacterReferenceImages(character) {
   if (!character) return [];
+
   const refs = [
-    character.referenceImage,
+    character.masterImage,
     character.coverImage,
-    ...(Array.isArray(character.generatedImages) ? character.generatedImages : []),
+    character.referenceImage,
+    ...(Array.isArray(character.generatedImages) ? character.generatedImages.slice(0, 2) : []),
   ].filter(Boolean);
-  return [...new Set(refs)];
+
+  return [...new Set(refs)].slice(0, 5);
 }
 
 async function downloadImage(url, filename = "kylor-output.png") {
@@ -361,17 +368,28 @@ function mapCharacterRow(row) {
   try {
     traits = JSON.parse(row.prompt || "{}");
   } catch {}
+
+  const generatedImages = Array.isArray(row.generated_images) ? row.generated_images : [];
+  const dnaProfile = row.dna_profile && typeof row.dna_profile === "object" ? row.dna_profile : null;
+  const anchorViews = Array.isArray(row.anchor_views) ? row.anchor_views : [];
+
   return {
     id: row.id,
     name: row.name,
     description: row.description || "",
     referenceImage: row.reference_image || null,
-    generatedImages: Array.isArray(row.generated_images) ? row.generated_images : [],
+    generatedImages,
     coverImage:
       row.cover_image ||
-      (Array.isArray(row.generated_images) && row.generated_images[0]) ||
+      row.master_image ||
+      (generatedImages[0] || null) ||
       row.reference_image ||
       null,
+    masterImage: row.master_image || null,
+    dnaProfile,
+    dnaConfidence: row.dna_confidence ?? null,
+    anchorViews,
+
     gender: traits.gender || "",
     ageRange: traits.ageRange || "",
     ethnicity: traits.ethnicity || "",
@@ -1324,7 +1342,7 @@ export default function ImagePage() {
       }
       const { data, error } = await supabase
         .from("characters")
-        .select("id, name, description, prompt, reference_image, generated_images, cover_image, created_at")
+        .select("id, name, description, prompt, reference_image, generated_images, cover_image, master_image, dna_profile, dna_confidence, anchor_views, created_at")
         .eq("user_id", uid)
         .order("created_at", { ascending: false });
       if (error || !data) {
@@ -1389,32 +1407,54 @@ export default function ImagePage() {
   }, []);
 
   useEffect(() => {
-    if (!selectedCharacter) {
-      setPrompt("");
-      return;
-    }
-    const traitParts = [
-      selectedCharacter.gender,
-      selectedCharacter.ageRange,
-      selectedCharacter.ethnicity,
-      selectedCharacter.hairColor && selectedCharacter.hairStyle
-        ? `${selectedCharacter.hairColor} ${selectedCharacter.hairStyle} hair`
-        : null,
-      selectedCharacter.eyeColor ? `${selectedCharacter.eyeColor} eyes` : null,
-      selectedCharacter.build ? `${selectedCharacter.build} build` : null,
-    ].filter(Boolean);
+  if (!selectedCharacter) {
+    setPrompt("");
+    return;
+  }
 
-    const characterPrompt = [
-      `Use the same character: ${selectedCharacter.name}`,
-      traitParts.length ? traitParts.join(", ") : null,
-      selectedCharacter.charDesc || null,
-      "Maintain the same facial features, hairstyle, skin tone, proportions, and identity.",
-    ]
-      .filter(Boolean)
-      .join(". ");
+  const traitParts = [
+    selectedCharacter.gender,
+    selectedCharacter.ageRange,
+    selectedCharacter.ethnicity,
+    selectedCharacter.hairColor && selectedCharacter.hairStyle
+      ? `${selectedCharacter.hairColor} ${selectedCharacter.hairStyle} hair`
+      : null,
+    selectedCharacter.eyeColor ? `${selectedCharacter.eyeColor} eyes` : null,
+    selectedCharacter.build ? `${selectedCharacter.build} build` : null,
+  ].filter(Boolean);
 
-    setPrompt(characterPrompt);
-  }, [selectedCharacter]);
+  const dnaTraits = [];
+  const dna = selectedCharacter.dnaProfile;
+
+  if (dna?.identitySummary) dnaTraits.push(dna.identitySummary);
+  if (dna?.traits?.faceShape) dnaTraits.push(`face shape: ${dna.traits.faceShape}`);
+  if (dna?.traits?.jawline) dnaTraits.push(`jawline: ${dna.traits.jawline}`);
+  if (dna?.traits?.eyeShape) dnaTraits.push(`eye shape: ${dna.traits.eyeShape}`);
+  if (dna?.traits?.eyebrowShape) dnaTraits.push(`eyebrows: ${dna.traits.eyebrowShape}`);
+  if (dna?.traits?.noseProfile) dnaTraits.push(`nose: ${dna.traits.noseProfile}`);
+  if (dna?.traits?.lipShape) dnaTraits.push(`lips: ${dna.traits.lipShape}`);
+  if (dna?.traits?.skinTone) dnaTraits.push(`skin tone: ${dna.traits.skinTone}`);
+  if (dna?.traits?.hairstyle) dnaTraits.push(`hairstyle: ${dna.traits.hairstyle}`);
+  if (dna?.traits?.hairline) dnaTraits.push(`hairline: ${dna.traits.hairline}`);
+  if (dna?.traits?.bodyBuild) dnaTraits.push(`body build: ${dna.traits.bodyBuild}`);
+  if (dna?.traits?.distinguishingFeatures?.length) {
+    dnaTraits.push(`distinguishing features: ${dna.traits.distinguishingFeatures.join(", ")}`);
+  }
+
+  const characterPrompt = [
+    `Exact identity lock for ${selectedCharacter.name}.`,
+    traitParts.length ? `Base traits: ${traitParts.join(", ")}.` : null,
+    selectedCharacter.charDesc ? `Description: ${selectedCharacter.charDesc}.` : null,
+    dnaTraits.length ? `DNA traits: ${dnaTraits.join("; ")}.` : null,
+    "Preserve the same real person.",
+    "Do not beautify, replace, reinterpret, or change identity.",
+    "Preserve facial structure, hairline, hairstyle, beard pattern, skin tone, and recognizable likeness.",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  setPrompt(characterPrompt);
+}, [selectedCharacter]);
 
   useEffect(() => {
     let mounted = true;
@@ -1619,22 +1659,24 @@ export default function ImagePage() {
         fetch("/api/generate-image", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            userId: effectiveUserId,
-            prompt: positivePrompt,
-            scenePrompt: trimmedScenePrompt,
-            characterPrompt: hasCharacterControl ? characterPrompt : "",
-            style: selectedStyle,
-            styleLabel,
-            stylePrompt: selectedStyle ? STYLE_PROMPT_MAP[selectedStyle] : "",
-            negativePrompt: negativePrompt.trim(),
-            referenceImages: hasCharacterControl ? uniqueReferenceImages : [],
-            useCharacter: hasCharacterControl,
-            ratio,
-            size: getApiSize(ratio),
-            quality: getApiQuality(mode),
-            n: 1,
-          }),
+body: JSON.stringify({
+  userId: effectiveUserId,
+  characterId: selectedCharacter?.id || null,
+  prompt: positivePrompt,
+  scenePrompt: trimmedScenePrompt,
+  characterPrompt: hasCharacterControl ? characterPrompt : "",
+  style: selectedStyle,
+  styleLabel,
+  stylePrompt: selectedStyle ? STYLE_PROMPT_MAP[selectedStyle] : "",
+  negativePrompt: negativePrompt.trim(),
+  referenceImages: hasCharacterControl ? uniqueReferenceImages : [],
+  useCharacter: hasCharacterControl,
+  ratio,
+  size: getApiSize(ratio),
+  quality: getApiQuality(mode),
+  n: 1,
+  realismMode: selectedStyle === "photorealistic" ? "hyper" : "realistic",
+}),
         }).then(async (r) => {
           const data = await r.json().catch(() => ({}));
           if (!r.ok) throw new Error(data?.error || "Generation failed");
@@ -1724,16 +1766,17 @@ export default function ImagePage() {
       const res = await fetch("/api/generate-image", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          userId: effectiveUserId,
-          prompt: variationPrompt,
-          negativePrompt: group.negativePrompt || "",
-          styleLabel: group.style || "",
-          ratio: group.ratio,
-          size: getApiSize(group.ratio),
-          quality: getApiQuality(group.mode),
-          n: 1,
-        }),
+body: JSON.stringify({
+  userId: effectiveUserId,
+  prompt: variationPrompt,
+  negativePrompt: group.negativePrompt || "",
+  styleLabel: group.style || "",
+  ratio: group.ratio,
+  size: getApiSize(group.ratio),
+  quality: getApiQuality(group.mode),
+  n: 1,
+  realismMode: group.style === "Photorealistic" ? "hyper" : "realistic",
+}),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
