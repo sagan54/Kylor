@@ -897,6 +897,8 @@ export default function ConsistencyPage() {
   const [masterIdentityImage, setMasterIdentityImage] = useState(null);
   const [generatingMaster, setGeneratingMaster] = useState(false);
   const [savingMaster, setSavingMaster] = useState(false);
+  const [savingRefs, setSavingRefs] = useState(false);
+  
 
   const canvasRef = useRef(null);
   const generatingRef = useRef(false);
@@ -990,6 +992,28 @@ const hydrateCachedCharacters = useCallback((cached) => {
 
     return data || [];
   }
+
+async function markCharacterDnaStale(characterId) {
+  if (!userId || !characterId) return;
+
+  const currentChar = characters.find((c) => c.id === characterId);
+
+  const nextMetadata = {
+    ...(currentChar?.metadata || {}),
+    dna_stale: true,
+    refs_updated_at: new Date().toISOString(),
+  };
+
+  const { error } = await supabase
+    .from("characters")
+    .update({ metadata: nextMetadata })
+    .eq("id", characterId)
+    .eq("user_id", userId);
+
+  if (error) {
+    console.error("Failed to mark DNA stale:", error);
+  }
+}
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -1158,6 +1182,68 @@ if (rowError) {
     return rows;
   }
 
+async function autoSaveReferencesForCharacter(characterId, currentEntries) {
+  if (!userId || !characterId) return null;
+
+  const unsavedEntries = (currentEntries || []).filter((entry) => entry?.file);
+  if (!unsavedEntries.length) return null;
+
+  setSavingRefs(true);
+
+  try {
+    const uploadedRows = await uploadCharacterRefs(characterId, unsavedEntries);
+    if (!uploadedRows.length) return null;
+
+    const rows = await loadCharacterImages(characterId);
+    const filteredRows = (rows || []).filter((r) => r.character_id === characterId);
+
+    const currentChar =
+      characters.find((c) => c.id === characterId) ||
+      activeChar ||
+      null;
+
+    if (!currentChar) {
+      setCharacterImages(filteredRows);
+      await markCharacterDnaStale(characterId);
+      return null;
+    }
+
+    const mapped = rowToCharacter(
+      {
+        ...currentChar,
+        master_image:
+          currentChar.masterImage ||
+          currentChar.coverImage ||
+          currentChar.refEntries?.[0]?.previewUrl ||
+          null,
+      },
+      filteredRows
+    );
+
+    setCharacters((prev) => {
+      const updated = prev.map((c) =>
+        c.id === characterId ? mapped : c
+      );
+      updateCharactersCache(updated);
+      return updated;
+    });
+
+    if (activeCharId === characterId) {
+      setCharacterImages(filteredRows);
+      setRefEntries(mapped.refEntries || []);
+    }
+
+    await markCharacterDnaStale(characterId);
+
+    return mapped;
+  } catch (err) {
+    console.error("Auto-save references failed:", err);
+    return null;
+  } finally {
+    setSavingRefs(false);
+  }
+}
+
   async function persistGeneratedImage(imageUrl, characterId, folder = "generated") {
   if (!imageUrl || !userId || !characterId) return null;
 
@@ -1318,7 +1404,14 @@ useEffect(() => {
     updateCharactersCache(updated);
     return updated;
   });
-}, [refEntries, activeCharId, updateCharactersCache]);
+
+  const hasUnsavedFiles = (refEntries || []).some((entry) => entry?.file);
+
+  if (!hasUnsavedFiles) return;
+  if (savingRefs) return;
+
+  autoSaveReferencesForCharacter(activeCharId, refEntries);
+}, [refEntries, activeCharId, savingRefs, updateCharactersCache]);
 
   useEffect(() => {
     if (!activeCharId) {
@@ -1515,11 +1608,21 @@ const { data, error } = await supabase
         return;
       }
 
-      const uploadedRows = await uploadCharacterRefs(data.id, refEntries);
-      if (refEntries.length > 0 && uploadedRows.length === 0) {
-  alert("Reference image upload failed. Check the storage bucket name and policies.");
-  setSaving(false);
-  return;
+      let uploadedRows = [];
+const isNewCharacter = !existingChar?.id;
+
+if (isNewCharacter) {
+  uploadedRows = await uploadCharacterRefs(data.id, refEntries);
+
+  if (refEntries.length > 0 && uploadedRows.length === 0) {
+    alert("Reference image upload failed. Check the storage bucket name and policies.");
+    setSaving(false);
+    return;
+  }
+
+  if (uploadedRows.length > 0) {
+    await markCharacterDnaStale(data.id);
+  }
 }
 
 console.log("SAVE CHARACTER DEBUG", {
@@ -2494,12 +2597,44 @@ cover_image: savedUrl,
 
               {formSection === "refs" && (<>
                 <p style={{ margin: 0, fontSize: 12.5, color: C.textMuted, lineHeight: 1.65 }}>Upload reference photos of the character. More consistent references = more accurate generations.</p>
+                <div
+  style={{
+    fontSize: 11.5,
+    color: savingRefs ? "#c4b5fd" : C.textMuted,
+    lineHeight: 1.6,
+    padding: "8px 10px",
+    borderRadius: radius.sm,
+    border: `1px solid ${savingRefs ? C.accentBorder : C.border}`,
+    background: savingRefs ? C.accentSoft : "rgba(255,255,255,0.02)",
+  }}
+>
+  {activeChar
+    ? savingRefs
+      ? "Saving references… They will be used instantly in generation."
+      : "References auto-save and are used instantly in generation."
+    : "Save character first to permanently attach references."}
+</div>
                 <RefUpload entries={refEntries} onEntries={setRefEntries} label="Face references" hint="Clear, front-facing photos · best results" max={5} />
-                {refEntries.length > 0 && (
-                  <div style={{ padding: "10px 12px", borderRadius: radius.sm, border: `1px solid rgba(34,197,94,0.25)`, background: "rgba(34,197,94,0.06)", display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "#86efac" }}>
-                    <Check size={13} /> {refEntries.length} reference image{refEntries.length > 1 ? "s" : ""} ready — will be saved with character.
-                  </div>
-                )}
+{refEntries.length > 0 && (
+  <div
+    style={{
+      padding: "10px 12px",
+      borderRadius: radius.sm,
+      border: `1px solid rgba(34,197,94,0.25)`,
+      background: "rgba(34,197,94,0.06)",
+      display: "flex",
+      alignItems: "center",
+      gap: 8,
+      fontSize: 12,
+      color: "#86efac",
+    }}
+  >
+    <Check size={13} />
+    {activeChar
+      ? `${refEntries.length} reference image${refEntries.length > 1 ? "s" : ""} attached and ready.`
+      : `${refEntries.length} reference image${refEntries.length > 1 ? "s" : ""} ready — save character first.`}
+  </div>
+)}
                 <div style={{ padding: 14, borderRadius: radius.md, border: `1px solid ${C.border}`, background: C.surface }}>
                   <div style={{ fontSize: 12, fontWeight: 600, color: C.text, marginBottom: 8 }}>Tips for better consistency</div>
                   {["Use clear, well-lit photos", "Include front and 3/4 angles", "Avoid obscured faces or masks", "2–5 references works best"].map((tip, i, arr) => (
