@@ -991,6 +991,53 @@ const hydrateCachedCharacters = useCallback((cached) => {
     return data || [];
   }
 
+  function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function refreshCharacterPackState(character, masterRefOverride = null) {
+  if (!character?.id) return null;
+
+  let rows = [];
+  for (let attempt = 0; attempt < 4; attempt++) {
+    rows = await loadCharacterImages(character.id);
+
+    const hasGenerated = (rows || []).some(
+      (r) =>
+        r.character_id === character.id &&
+        (r.source_type === "generated" ||
+          [IMAGE_TYPES.FRONT, IMAGE_TYPES.LEFT, IMAGE_TYPES.RIGHT, IMAGE_TYPES.BACK, IMAGE_TYPES.CLOSEUP].includes(r.image_type))
+    );
+
+    if (hasGenerated) break;
+    await sleep(700);
+  }
+
+  const filteredRows = (rows || []).filter((r) => r.character_id === character.id);
+
+  const mapped = rowToCharacter(
+    {
+      ...character,
+      master_image: masterRefOverride || character.masterImage || character.coverImage || null,
+    },
+    filteredRows
+  );
+
+  setCharacters((prev) => {
+    const updated = prev.map((c) => (c.id === character.id ? mapped : c));
+    updateCharactersCache(updated);
+    return updated;
+  });
+
+  setCharacterImages(filteredRows);
+  setOutputs((prev) => [
+    ...prev.filter((o) => o.charId !== character.id),
+    ...outputsFromCharacter(mapped),
+  ]);
+
+  return mapped;
+}
+
   async function uploadCharacterRefs(characterId, entries) {
     if (!userId || !characterId || !entries?.length) return [];
 
@@ -1845,41 +1892,11 @@ try {
   console.error("PACK API NON-JSON RESPONSE:", raw);
 
   try {
-    const rows = await loadCharacterImages(activeChar.id);
-
-    const mapped = rowToCharacter(
-      {
-        ...activeChar,
-        master_image: masterRef,
-      },
-      rows
-    );
-
-    setCharacters((prev) => {
-      const updated = prev.map((c) => (c.id === activeChar.id ? mapped : c));
-      updateCharactersCache(updated);
-      return updated;
-    });
-
-    setCharacterImages(rows.filter((r) => r.character_id === activeChar.id));
-
-const refreshedOutputs = (mapped.generatedImages || []).map((url, i) => ({
-  id: `${activeChar.id}-${CHARACTER_PACK_VIEWS[i]?.key || i}`,
-  charId: activeChar.id,
-  prompt: "",
-  scene: CHARACTER_PACK_VIEWS[i]?.label || `View ${i + 1}`,
-  url,
-  createdAt: new Date().toISOString(),
-}));
-
-    if (refreshedOutputs.length > 0) {
-      setOutputs((prev) => [
-        ...prev.filter((o) => o.charId !== activeChar.id),
-        ...refreshedOutputs,
-      ]);
-      return;
-    }
-  } catch (refreshErr) {
+  const mapped = await refreshCharacterPackState(activeChar, masterRef);
+  if ((mapped?.generatedImages || []).length > 0) {
+    return;
+  }
+} catch (refreshErr) {
     console.error("Post-failure refresh also failed:", refreshErr);
   }
 
@@ -1889,35 +1906,12 @@ const refreshedOutputs = (mapped.generatedImages || []).map((url, i) => ({
 if (!res.ok || !data?.success) {
   console.error("PACK GENERATION ERROR RESPONSE:", data);
 
-  try {
-    const rows = await loadCharacterImages(activeChar.id);
-
-    const mapped = rowToCharacter(
-      {
-        ...activeChar,
-        master_image: masterRef,
-      },
-      rows
-    );
-
-    setCharacters((prev) => {
-      const updated = prev.map((c) => (c.id === activeChar.id ? mapped : c));
-      updateCharactersCache(updated);
-      return updated;
-    });
-
-    setCharacterImages(rows.filter((r) => r.character_id === activeChar.id));
-
-    const refreshedOutputs = outputsFromCharacter(mapped);
-
-    if (refreshedOutputs.length > 0) {
-      setOutputs((prev) => [
-        ...prev.filter((o) => o.charId !== activeChar.id),
-        ...refreshedOutputs,
-      ]);
-      return;
-    }
-  } catch (refreshErr) {
+ try {
+  const mapped = await refreshCharacterPackState(activeChar, masterRef);
+  if ((mapped?.generatedImages || []).length > 0) {
+    return;
+  }
+} catch (refreshErr) {
     console.error("Refresh after failed pack response also failed:", refreshErr);
   }
 
@@ -1958,37 +1952,39 @@ fetch("/api/process-character-dna", {
 
 const pack = Array.isArray(data?.pack) ? data.pack : [];
 
-    const nextOutputs = pack.map((item) => ({
-      id: `${activeChar.id}-${item.type}`,
-      charId: activeChar.id,
-      prompt: "",
-      scene: PACK_VIEWS.find((v) => v.key === item.type)?.label || item.type,
-      url: item.url,
-      createdAt: new Date().toISOString(),
-    }));
+const nextOutputs = pack.map((item) => ({
+  id: `${activeChar.id}-${item.type}`,
+  charId: activeChar.id,
+  prompt: "",
+  scene: PACK_VIEWS.find((v) => v.key === item.type)?.label || item.type,
+  url: item.url,
+  createdAt: new Date().toISOString(),
+}));
 
-    setOutputs((prev) => [
-      ...prev.filter((o) => o.charId !== activeChar.id),
-      ...nextOutputs,
-    ]);
+// Show results immediately from API response
+setOutputs((prev) => [
+  ...prev.filter((o) => o.charId !== activeChar.id),
+  ...nextOutputs,
+]);
 
-    const rows = await loadCharacterImages(activeChar.id);
+// Also update local character immediately so UI doesn't depend on refresh
+setCharacters((prev) => {
+  const updated = prev.map((c) =>
+    c.id === activeChar.id
+      ? {
+          ...c,
+          masterImage: masterRef,
+          generatedImages: pack.map((item) => item.url).filter(Boolean),
+          generations: pack.filter((item) => item.url).length,
+        }
+      : c
+  );
+  updateCharactersCache(updated);
+  return updated;
+});
 
-    const mapped = rowToCharacter(
-      {
-        ...activeChar,
-        master_image: masterRef,
-      },
-      rows
-    );
-
-    setCharacters((prev) => {
-      const updated = prev.map((c) => (c.id === activeChar.id ? mapped : c));
-      updateCharactersCache(updated);
-      return updated;
-    });
-
-    setCharacterImages(rows.filter((r) => r.character_id === activeChar.id));
+// Then do a reliable DB refresh with retries
+await refreshCharacterPackState(activeChar, masterRef);
   } catch (err) {
     console.error("Character pack generation failed:", err);
     alert(err?.message || "Failed to generate character pack.");

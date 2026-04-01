@@ -330,6 +330,8 @@ Also detect:
 - faceNotVisible
 - identityDrift
 - lowQuality
+- hairMismatch
+- facingDirection
 
 Determine ONE primary failureType:
 - "identity_drift"
@@ -342,14 +344,18 @@ Determine ONE primary failureType:
 
 Rules:
 - If identity does not match → identity_drift
-- If wrong angle → wrong_shot
+- If wrong angle or wrong facing direction → wrong_shot
 - If >1 person → multiple_people
 - If face hidden → face_not_visible
 - If blurry/artifacts → low_quality
 - If framing bad → bad_composition
+- If hair length, hair mass, hair silhouette, or hairstyle differs from the master/front identity anchor → hairMismatch = true
+- For LEFT view, facingDirection must be "left"
+- For RIGHT view, facingDirection must be "right"
+- For FRONT view, facingDirection must be "front"
+- For BACK view, facingDirection must be "back"
 - For back view, face_not_visible is expected and should NOT be treated as a failure by itself
 - If skin looks plastic, glossy, waxy, over-smoothed, or beauty-filtered → low_quality
-
 Return STRICT JSON:
 
 {
@@ -364,6 +370,8 @@ Return STRICT JSON:
   "faceNotVisible": false,
   "identityDrift": false,
   "lowQuality": false,
+  "hairMismatch": false,
+  "facingDirection": "front",
   "failureType": "none",
   "reason": ""
 }
@@ -493,6 +501,11 @@ function getEvaluatorSchema() {
         faceNotVisible: { type: "boolean" },
         identityDrift: { type: "boolean" },
         lowQuality: { type: "boolean" },
+                hairMismatch: { type: "boolean" },
+        facingDirection: {
+          type: "string",
+          enum: ["front", "left", "right", "back", "unknown"],
+        },
 
         failureType: {
           type: "string",
@@ -521,6 +534,8 @@ function getEvaluatorSchema() {
         "faceNotVisible",
         "identityDrift",
         "lowQuality",
+        "hairMismatch",
+        "facingDirection",
         "failureType",
         "reason",
       ],
@@ -747,6 +762,12 @@ function buildGlobalCharacterLockBlock() {
 
     // 👇 OUTFIT LOCK
     "The outfit must remain a plain white t-shirt and plain black pants in every generated pack view.",
+        "Hair continuity lock:",
+    "Hairstyle, hair length, hair volume, hair density, hairline, sideburns, and overall hair silhouette must remain identical across all pack views.",
+    "Do not lengthen the hair in side views or back view.",
+    "Do not shorten the hair in front view or close-up.",
+    "Do not add extra hair mass, extra layers, mullet shape, ponytail shape, or extended back hair unless clearly present in the approved identity anchor.",
+    "Hair must remain the same person, same cut, same length, same structure in every generated image.",
     "No logos, no graphics, no patterns, no printed shirt, no colored shirt, no shorts, no jeans shorts, no costume.",
     "Do not copy outfit from uploaded reference images.",
     "Ignore clothing from source images completely.",
@@ -1171,6 +1192,8 @@ function buildPackContextBlock({
   const lines = [
     `Pack context available from accepted views: ${acceptedTypes.join(", ")}.`,
     "Maintain full cross-view identity consistency with the already accepted pack images.",
+    "Hair continuity with accepted pack views is mandatory.",
+    "Do not change hair length, hair mass, hair shape, hairline, sideburns, or back hair silhouette across views.",
   ];
 
   if (acceptedViewMap[IMAGE_TYPES.FRONT]?.url) {
@@ -1400,6 +1423,12 @@ function shouldRejectScore(score, thresholds, viewType) {
 
   if (score.multiplePeople) return true;
   if (score.wrongShot) return true;
+  if (score.hairMismatch) return true;
+
+  if (viewType === IMAGE_TYPES.LEFT && score.facingDirection !== "left") return true;
+  if (viewType === IMAGE_TYPES.RIGHT && score.facingDirection !== "right") return true;
+  if (viewType === IMAGE_TYPES.FRONT && score.facingDirection !== "front") return true;
+  if (viewType === IMAGE_TYPES.BACK && score.facingDirection !== "back") return true;
 
   // Back view should NOT fail just because face is not visible
   if (viewType !== IMAGE_TYPES.BACK && score.faceNotVisible) return true;
@@ -1490,11 +1519,15 @@ function scoreReferenceCandidate({
   }
 
   if (candidate.type === "UPLOAD") {
-    score += 14;
+    score += 4;
   }
 
   if (candidate.type === "MASTER") {
     score += 16;
+  }
+
+  if (candidate.type === IMAGE_TYPES.FRONT) {
+    score += 18;
   }
 
   if (targetViewType === IMAGE_TYPES.CLOSEUP) {
@@ -1506,15 +1539,15 @@ function scoreReferenceCandidate({
   }
 
   if (targetViewType === IMAGE_TYPES.BACK) {
-    if (candidate.type === IMAGE_TYPES.LEFT || candidate.type === IMAGE_TYPES.RIGHT) score += 6;
-    if (candidate.type === IMAGE_TYPES.FRONT) score += 3;
+    if (candidate.type === IMAGE_TYPES.LEFT || candidate.type === IMAGE_TYPES.RIGHT) score += 8;
+    if (candidate.type === IMAGE_TYPES.FRONT) score += 16;
   }
 
   if (targetViewType === IMAGE_TYPES.LEFT || targetViewType === IMAGE_TYPES.RIGHT) {
     score += identityScore * 2;
     score += shotScore * 1.5;
 
-    if (candidate.type === IMAGE_TYPES.FRONT) score += 8;
+    if (candidate.type === IMAGE_TYPES.FRONT) score += 18;
     if (candidate.type === targetViewType) score += 6;
   }
 
@@ -2400,6 +2433,8 @@ async function scoreGeneratedView({
     faceNotVisible: !!evaluation?.faceNotVisible,
     identityDrift: !!evaluation?.identityDrift,
     lowQuality: !!evaluation?.lowQuality,
+    hairMismatch: !!evaluation?.hairMismatch,
+    facingDirection: evaluation?.facingDirection || "unknown",
 
     failureType: normalizeFailureType(evaluation?.failureType),
     reason: evaluation?.reason || "no_reason_provided",
@@ -2835,6 +2870,8 @@ acceptedResult = {
   faceNotVisible: score.faceNotVisible,
   identityDrift: score.identityDrift,
   lowQuality: score.lowQuality,
+  hairMismatch: score.hairMismatch,
+  facingDirection: score.facingDirection,
   failureType: score.failureType,
   scoreReason: score.reason,
   generationAttempt: attempt,
