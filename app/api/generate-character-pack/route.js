@@ -289,7 +289,11 @@ case IMAGE_TYPES.CLOSEUP:
     "Preserve exact face shape, cheek structure, jawline, chin, forehead, brow shape, eyebrow thickness, eyelids, eye shape, nose bridge, nose tip, lips, ears, hairline, hairstyle, skin tone, beard or moustache pattern, and natural facial asymmetry.",
     "Natural real human skin texture.",
     "Matte skin, not glossy.",
-    "Real pores, subtle natural skin detail, slight real-life imperfections allowed.",
+    "Real pores and subtle natural skin texture.",
+"Skin must be clean, smooth, and healthy.",
+"No acne, no pimples, no skin spots, no blemishes.",
+"No artificial imperfections or added marks.",
+"Keep natural realism without introducing defects.",
     "No skin smoothing, no beauty retouching, no airbrushed face, no cosmetic enhancement.",
     "No glossy skin, no shiny forehead, no waxy skin, no plastic skin, no polished skin, no studio beauty look.",
     "Realistic passport-photo-like facial rendering.",
@@ -766,8 +770,10 @@ function buildGlobalCharacterLockBlock() {
     "Skin realism lock:",
 "Skin must be natural, matte, and realistic.",
 "Preserve natural pores and subtle real skin texture.",
-"Keep skin clean and healthy looking.",
-"Do not add acne, pimples, skin spots, or new blemishes.",
+"Skin must be clean, smooth, and healthy.",
+"Do not generate acne, pimples, skin spots, blemishes, or facial marks.",
+"Do not introduce any new skin defects not present in the reference.",
+"Maintain natural skin texture WITHOUT imperfections.",
 "Do not introduce new facial marks that are not visible in the reference image.",
 "Maintain realistic skin variation without artificial imperfections.",
 "Do not over-smooth skin.",
@@ -1249,6 +1255,9 @@ return [
   fusionBlock,
   packContextBlock,
   realismBlock,
+
+  "Absolute rule: skin must be clean with no acne or pimples under any condition.",
+
   `Shot request: ${String(prompt || "").trim()}`,
 ]
   .filter(Boolean)
