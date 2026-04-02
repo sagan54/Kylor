@@ -13,6 +13,12 @@ const supabaseAdmin = createClient(
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const IDENTITY_EVALUATOR_MODEL = process.env.EVALUATOR_MODEL || "gpt-4.1-mini";
 
+const MODELS = {
+  CHARACTER: "bytedance/flux-pulid",
+  NORMAL: "black-forest-labs/flux-1.1-pro",
+  PREMIUM: "black-forest-labs/flux-1.1-pro-ultra",
+};
+
 async function loadCharacterData(characterId) {
   if (!characterId) return null;
 
@@ -45,6 +51,36 @@ async function loadCharacterAnchorImages(characterId) {
   }
 
   return data;
+}
+
+function normalizeReferenceImage(image) {
+  if (!image || typeof image !== "string") return null;
+
+  if (image.startsWith("data:image/")) return image;
+  if (image.startsWith("http://") || image.startsWith("https://")) return image;
+
+  return null;
+}
+
+function extractPossibleImageUrl(item) {
+  if (!item) return null;
+
+  if (typeof item === "string") {
+    return normalizeReferenceImage(item);
+  }
+
+  if (typeof item === "object") {
+    return normalizeReferenceImage(
+      item.url ||
+        item.image_url ||
+        item.publicUrl ||
+        item.src ||
+        item.reference_image ||
+        null
+    );
+  }
+
+  return null;
 }
 
 function getCharacterImageUrl(row) {
@@ -149,60 +185,6 @@ function buildCharacterProfilePool(character, anchorRows = []) {
   return deduped;
 }
 
-function extractPossibleImageUrl(item) {
-  if (!item) return null;
-
-  if (typeof item === "string") {
-    return normalizeReferenceImage(item);
-  }
-
-  if (typeof item === "object") {
-    return normalizeReferenceImage(
-      item.url ||
-        item.image_url ||
-        item.publicUrl ||
-        item.src ||
-        item.reference_image ||
-        null
-    );
-  }
-
-  return null;
-}
-
-function buildSmartReferencePack(character, anchorRows = []) {
-  const pool = buildCharacterProfilePool(character, anchorRows);
-
-  if (!pool.length) return [];
-
-  const sorted = [...pool].sort((a, b) => (b.score || 0) - (a.score || 0));
-
-  const byView = (view) => sorted.find((item) => item.view === view);
-  const byType = (type) => sorted.find((item) => item.type === type);
-
-  const selected = [];
-
-  const pushIfPresent = (item) => {
-    if (!item?.url) return;
-    if (selected.some((s) => s.url === item.url)) return;
-    selected.push(item);
-  };
-
-  pushIfPresent(byType("master_image"));
-  pushIfPresent(byType("reference_image"));
-  pushIfPresent(byView("closeup"));
-  pushIfPresent(byView("front"));
-  pushIfPresent(byView("left"));
-  pushIfPresent(byView("right"));
-
-  for (const item of sorted) {
-    if (selected.length >= 5) break;
-    pushIfPresent(item);
-  }
-
-  return selected.slice(0, 5);
-}
-
 function buildIdentityPackage(character, anchorRows = [], sceneType = "scene") {
   const pool = buildCharacterProfilePool(character, anchorRows);
   const sorted = [...pool].sort((a, b) => (b.score || 0) - (a.score || 0));
@@ -225,24 +207,24 @@ function buildIdentityPackage(character, anchorRows = [], sceneType = "scene") {
   };
 
   if (sceneType === "portrait") {
+    pushRef(closeup);
     pushRef(master);
     pushRef(original);
-    pushRef(closeup);
   } else if (sceneType === "side") {
-    pushRef(master);
-    pushRef(original);
     pushRef(closeup);
+    pushRef(master);
     pushRef(left || right);
+    pushRef(original);
   } else if (sceneType === "full_body") {
-    pushRef(master);
-    pushRef(original);
-    pushRef(front);
     pushRef(closeup);
+    pushRef(master);
+    pushRef(front);
+    pushRef(original);
   } else {
-    pushRef(master);
-    pushRef(original);
-    pushRef(front);
     pushRef(closeup);
+    pushRef(master);
+    pushRef(front);
+    pushRef(original);
   }
 
   for (const item of sorted) {
@@ -254,13 +236,13 @@ function buildIdentityPackage(character, anchorRows = [], sceneType = "scene") {
 
   const identityNotes = [
     `Scene type: ${sceneType}.`,
+    closeup ? "Close-up facial anchor available." : "",
     master ? "Master identity available." : "",
     original ? "Original uploaded reference available." : "",
-    closeup ? "Close-up facial anchor available." : "",
     front ? "Front-view anchor available." : "",
     left || right ? "Side-view anchor available." : "",
     `Total saved profile count: ${allProfileUrls.length}.`,
-    `Active generation refs: ${strongRefs.length}.`,
+    `Active evaluation refs: ${strongRefs.length}.`,
   ]
     .filter(Boolean)
     .join(" ");
@@ -314,15 +296,6 @@ function buildDnaIdentityText(character) {
   ].filter(Boolean);
 
   return parts.join(". ");
-}
-
-function normalizeReferenceImage(image) {
-  if (!image || typeof image !== "string") return null;
-
-  if (image.startsWith("data:image/")) return image;
-  if (image.startsWith("http://") || image.startsWith("https://")) return image;
-
-  return null;
 }
 
 function mapSizeToAspectRatio(size, ratio = "1:1") {
@@ -431,43 +404,6 @@ function normalizeText(value) {
   return String(value || "").trim();
 }
 
-function buildIdentityBlock({
-  useCharacter,
-  hasRefs,
-  character,
-  identityPackage = null,
-}) {
-  if (!useCharacter && !hasRefs && !character) return "";
-
-const lines = [
-  "Use the exact same real person from the selected saved character references.",
-  "Facial identity is the highest priority. The face must match exactly.",
-  "Preserve the same face, glasses, hairstyle, beard pattern, skin tone, and natural proportions.",
-  "Keep the identity recognizable at first glance.",
-  "Do not beautify, stylize, restyle, or replace the person with a more attractive version.",
-  "Do not change hair, beard, glasses, or facial structure unless explicitly requested.",
-];
-
-  if (character?.name) {
-    lines.push(`Character: ${character.name}.`);
-  }
-
-  if (identityPackage?.identityNotes) {
-    lines.push(identityPackage.identityNotes);
-  }
-
-  return lines.join(" ");
-}
-
-function buildSceneBlock({ prompt, scenePrompt }) {
-  const rawScene = normalizeText(scenePrompt);
-  const rawPrompt = normalizeText(prompt);
-
-  if (rawScene) return rawScene;
-
-  return rawPrompt;
-}
-
 function detectSceneType(text = "") {
   const t = String(text || "").toLowerCase();
 
@@ -497,6 +433,45 @@ function detectSceneType(text = "") {
   return "scene";
 }
 
+function buildSceneBlock({ prompt, scenePrompt }) {
+  const rawScene = normalizeText(scenePrompt);
+  const rawPrompt = normalizeText(prompt);
+
+  if (rawScene) return rawScene;
+  return rawPrompt;
+}
+
+function buildIdentityBlock({
+  characterMode,
+  hasRefs,
+  character,
+  identityPackage = null,
+}) {
+  if (!characterMode && !hasRefs && !character) return "";
+
+  const lines = [
+    "Use the provided identity anchor exactly.",
+    "Preserve the same real person.",
+    "Keep the face recognizable at first glance.",
+    "Do not replace the person with a cleaner, more attractive, younger, or different version.",
+    "Preserve glasses, hairstyle, beard pattern, skin tone, and natural facial structure unless explicitly requested.",
+  ];
+
+  if (character?.name) {
+    lines.push(`Character: ${character.name}.`);
+  }
+
+  if (identityPackage?.dnaText) {
+    lines.push(identityPackage.dnaText);
+  }
+
+  if (identityPackage?.identityNotes) {
+    lines.push(identityPackage.identityNotes);
+  }
+
+  return lines.join(" ");
+}
+
 function buildCompositionBlock({ combinedPrompt, ratio }) {
   const text = combinedPrompt.toLowerCase();
 
@@ -523,11 +498,9 @@ function buildCompositionBlock({ combinedPrompt, ratio }) {
   if (wantsCloseup) {
     return [
       "Composition:",
-      "Use a close-up or portrait framing only because the prompt asks for it.",
-      "Face identity preservation is critical.",
-      "Exact likeness is more important than portrait beauty.",
-      "Do not beautify, sharpen, idealize, or commercially polish the face.",
-      "Keep the face clearly visible and preserve exact identity.",
+      "Use close-up or portrait framing only because the prompt asks for it.",
+      "Keep the face clearly visible.",
+      "Do not beautify or idealize the person.",
       "Do not crop awkwardly or distort facial proportions.",
     ].join(" ");
   }
@@ -537,8 +510,7 @@ function buildCompositionBlock({ combinedPrompt, ratio }) {
       "Composition:",
       "Follow the requested scene exactly.",
       "Keep the environment clearly visible.",
-      "Use full-body or wider framing only if requested by the prompt.",
-      "Keep the face visible enough to preserve identity.",
+      "Use full-body or wider framing only if requested.",
       "Do not turn this into a face-only portrait unless the prompt explicitly asks for it.",
     ].join(" ");
   }
@@ -560,7 +532,7 @@ function buildRealismBlock({ realismMode = "realistic" }) {
       "Realism:",
       "Extremely photorealistic image.",
       "Natural skin texture with believable pores and facial detail.",
-      "Real-world lighting, realistic anatomy, realistic lens behavior, grounded depth of field.",
+      "Real-world lighting, realistic anatomy, grounded depth of field.",
       "Avoid glamour retouching, fantasy skin, or synthetic cinematic exaggeration.",
     ].join(" ");
   }
@@ -578,7 +550,7 @@ function buildRealismBlock({ realismMode = "realistic" }) {
     "Realism:",
     "Photorealistic image with strong natural detail.",
     "Believable skin texture, grounded anatomy, realistic lighting, realistic proportions.",
-    "Avoid artificial beauty-filter skin or over-stylized cinematic rendering.",
+    "Avoid artificial beauty-filter skin or over-stylized rendering.",
   ].join(" ");
 }
 
@@ -596,10 +568,7 @@ function buildNegativeBlock({ negativePrompt, combinedPrompt, useCharacter }) {
     "plastic skin",
     "beauty filter",
     "over-smoothed face",
-    "fake beard",
     "doll-like face",
-    "unrealistic muscles",
-    "bodybuilder proportions",
     "exaggerated anatomy",
     "deformed body",
     "bad hands",
@@ -611,26 +580,14 @@ function buildNegativeBlock({ negativePrompt, combinedPrompt, useCharacter }) {
     "low detail face",
     "synthetic lighting",
     "oversharpened skin",
-    "tattoo",
-    "chest tattoo",
-    "neck tattoo",
-    "missing glasses",
-    "removed eyewear",
-    "long flowing hair",
-    "extra beard density",
-    "male model face",
-    "fitness model body",
-    "heroic body proportions",
-"fashion model portrait",
-"clean commercial portrait",
-"beautified male face",
-"idealized male face",
-"polished linkedin portrait",
-"restyled haircut",
-"shorter styled hair",
-"sharp salon haircut",
-"symmetrical glamour face",
-"clean actor headshot",
+    "fashion model portrait",
+    "clean commercial portrait",
+    "beautified male face",
+    "idealized male face",
+    "polished linkedin portrait",
+    "restyled haircut",
+    "symmetrical glamour face",
+    "clean actor headshot",
   ];
 
   if (useCharacter) {
@@ -661,39 +618,19 @@ function buildNegativeBlock({ negativePrompt, combinedPrompt, useCharacter }) {
 }
 
 function chooseModel({
-  useCharacter,
-  hasRefs,
-  hasCharacter,
-  realismMode,
-  quality,
+  characterMode,
+  premiumRender,
 }) {
-  const realism = String(realismMode || "realistic").toLowerCase();
-  const q = String(quality || "medium").toLowerCase();
-  const needsIdentityLock =
-    Boolean(useCharacter) || Boolean(hasRefs) || Boolean(hasCharacter);
-
-  if (needsIdentityLock && (realism === "hyper" || q === "high")) {
-    return "black-forest-labs/flux-1.1-pro-ultra";
-  }
-
-  if (needsIdentityLock) {
-    return "black-forest-labs/flux-1.1-pro";
-  }
-
-  if (realism === "hyper") {
-    return "black-forest-labs/flux-1.1-pro";
-  }
-
-  return "black-forest-labs/flux-1.1-pro";
+  if (characterMode) return MODELS.CHARACTER;
+  if (premiumRender) return MODELS.PREMIUM;
+  return MODELS.NORMAL;
 }
 
 function shouldEnablePromptUpsampling({
-  useCharacter,
-  hasRefs,
-  hasCharacter,
+  characterMode,
   realismMode,
 }) {
-  if (useCharacter || hasRefs || hasCharacter) return false;
+  if (characterMode) return false;
   return String(realismMode || "realistic").toLowerCase() === "standard";
 }
 
@@ -896,22 +833,22 @@ Required schema:
     const failureType = getFailureTypeFromEvaluation(result);
 
     const gymAction = isGymOrActionScene(scenePrompt);
-const minimumIdentityScore = gymAction ? 9.0 : 8.7;
-const minimumFaceScore = gymAction ? 9.0 : 8.7;
-const minimumBodyScore = gymAction ? 7.5 : 7.2;
+    const minimumIdentityScore = gymAction ? 9.0 : 8.7;
+    const minimumFaceScore = gymAction ? 9.0 : 8.7;
+    const minimumBodyScore = gymAction ? 7.5 : 7.2;
 
-const shouldPass =
-  !result.faceMismatch &&
-  !result.hairstyleDrift &&
-  !result.glassesMissing &&
-  !result.bodyExaggeration &&
-  !result.ageDrift &&
-  !result.stylizationDrift &&
-  !result.weakResemblance &&
-  !result.beardMismatch &&
-  result.identityScore >= minimumIdentityScore &&
-  result.faceScore >= minimumFaceScore &&
-  result.bodyProportionScore >= minimumBodyScore;
+    const shouldPass =
+      !result.faceMismatch &&
+      !result.hairstyleDrift &&
+      !result.glassesMissing &&
+      !result.bodyExaggeration &&
+      !result.ageDrift &&
+      !result.stylizationDrift &&
+      !result.weakResemblance &&
+      !result.beardMismatch &&
+      result.identityScore >= minimumIdentityScore &&
+      result.faceScore >= minimumFaceScore &&
+      result.bodyProportionScore >= minimumBodyScore;
 
     return {
       ...result,
@@ -921,29 +858,29 @@ const shouldPass =
   } catch (error) {
     console.error("scoreGeneratedIdentity failed:", error);
 
-return {
-  passed: true,
-  identityScore: 7,
-  faceScore: 7,
-  hairScore: 7,
-  bodyProportionScore: 7,
-  sceneScore: 7,
-  qualityScore: 7,
-  glassesPreserved: true,
-  faceMismatch: false,
-  hairstyleDrift: false,
-  glassesMissing: false,
-  bodyExaggeration: false,
-  ageDrift: false,
-  stylizationDrift: false,
-  weakResemblance: false,
-  beardMismatch: false,
-  driftDetected: false,
-  failureType: "none",
-  failureReasons: [],
-  evaluatorSkipped: `Evaluator error: ${error?.message || "unknown"}`,
-  evaluatorRaw: null,
-};
+    return {
+      passed: true,
+      identityScore: 7,
+      faceScore: 7,
+      hairScore: 7,
+      bodyProportionScore: 7,
+      sceneScore: 7,
+      qualityScore: 7,
+      glassesPreserved: true,
+      faceMismatch: false,
+      hairstyleDrift: false,
+      glassesMissing: false,
+      bodyExaggeration: false,
+      ageDrift: false,
+      stylizationDrift: false,
+      weakResemblance: false,
+      beardMismatch: false,
+      driftDetected: false,
+      failureType: "none",
+      failureReasons: [],
+      evaluatorSkipped: `Evaluator error: ${error?.message || "unknown"}`,
+      evaluatorRaw: null,
+    };
   }
 }
 
@@ -954,9 +891,9 @@ function buildIdentityRetryPrompt({
 }) {
   const corrections = [
     "Retry with stronger identity match.",
-    "Keep the exact same real person from the saved references.",
+    "Preserve the exact same real person.",
     "Correct identity drift.",
-    "Do not replace the person with a cleaner, more attractive, or different version.",
+    "Do not replace the person with a cleaner, younger, more attractive, or different version.",
     "Preserve the same face, hair, beard, glasses, and natural proportions.",
   ];
 
@@ -1030,14 +967,14 @@ function buildRetryNegativeBlock({
   }
 
   if (failedEvaluation?.beardMismatch) {
-  extra.push(
-    "wrong beard",
-    "wrong mustache",
-    "different facial hair",
-    "clean shaven mismatch",
-    "incorrect beard density"
-  );
-}
+    extra.push(
+      "wrong beard",
+      "wrong mustache",
+      "different facial hair",
+      "clean shaven mismatch",
+      "incorrect beard density"
+    );
+  }
 
   if (failedEvaluation?.stylizationDrift) {
     extra.push(
@@ -1085,37 +1022,95 @@ async function removeStoredImageIfExists(image) {
   }
 }
 
+function pickBestFaceAnchor({
+  identityPackage = null,
+  frontendRefs = [],
+}) {
+  return (
+    identityPackage?.closeup?.url ||
+    identityPackage?.master?.url ||
+    identityPackage?.original?.url ||
+    frontendRefs?.[0] ||
+    null
+  );
+}
+
+function isPulidModel(model) {
+  return model === MODELS.CHARACTER;
+}
+
+function buildPulidInput({
+  prompt,
+  negativePrompt,
+  aspect_ratio,
+  faceImage,
+}) {
+  const input = {
+    main_face_image: faceImage,
+    prompt,
+    aspect_ratio,
+    output_format: "png",
+  };
+
+  if (negativePrompt) {
+    input.negative_prompt = negativePrompt;
+  }
+
+  return input;
+}
+
+function buildFluxInput({
+  prompt,
+  negativePrompt,
+  aspect_ratio,
+  enablePromptUpsampling,
+  premiumRender,
+}) {
+  const input = {
+    prompt,
+    aspect_ratio,
+    output_format: "png",
+  };
+
+  if (negativePrompt) {
+    input.negative_prompt = negativePrompt;
+  }
+
+  if (enablePromptUpsampling) {
+    input.prompt_upsampling = true;
+  }
+
+  if (premiumRender) {
+    input.raw = true;
+  }
+
+  return input;
+}
+
 async function generateSingleCandidate({
   model,
   prompt,
   negativePrompt,
   aspect_ratio,
-  refs,
-  identityPackage = null,
-  useConsistencyModel,
+  faceImage,
   enablePromptUpsampling,
+  premiumRender,
   userId,
 }) {
-  const input = useConsistencyModel
-    ? {
+  const input = isPulidModel(model)
+    ? buildPulidInput({
         prompt,
-        negative_prompt: negativePrompt,
+        negativePrompt,
         aspect_ratio,
-        output_format: "png",
-        reference_images: [
-  identityPackage?.closeup?.url,
-  identityPackage?.master?.url,
-  identityPackage?.original?.url,
-  ...refs
-].filter(Boolean).slice(0, 5)
-      }
-    : {
+        faceImage,
+      })
+    : buildFluxInput({
         prompt,
-        negative_prompt: negativePrompt,
+        negativePrompt,
         aspect_ratio,
-        output_format: "png",
-        prompt_upsampling: enablePromptUpsampling,
-      };
+        enablePromptUpsampling,
+        premiumRender,
+      });
 
   const output = await replicate.run(model, { input });
   const tempUrl = await fileOutputToUrl(output);
@@ -1150,6 +1145,7 @@ export async function POST(req) {
       referenceImages = [],
       ratio = "1:1",
       realismMode = "realistic",
+      premiumRender = false,
     } = await req.json();
 
     if (!userId || !String(userId).trim()) {
@@ -1171,21 +1167,38 @@ export async function POST(req) {
       ? referenceImages.map(normalizeReferenceImage).filter(Boolean).slice(0, 5)
       : [];
 
-const sceneType = detectSceneType(
-  `${normalizeText(prompt)} ${normalizeText(scenePrompt)}`
-);
+    const sceneType = detectSceneType(
+      `${normalizeText(prompt)} ${normalizeText(scenePrompt)}`
+    );
 
-const identityPackage = character
-  ? buildIdentityPackage(character, anchorRows, sceneType)
-  : null;
+    const identityPackage = character
+      ? buildIdentityPackage(character, anchorRows, sceneType)
+      : null;
 
-const characterRefs = identityPackage?.strongRefs || [];
-
-    const refs = character
+    const characterRefs = identityPackage?.strongRefs || [];
+    const evaluationRefs = character
       ? [...new Set(characterRefs)].slice(0, 5)
       : [...new Set(frontendRefs)].slice(0, 5);
 
-    const hasRefs = refs.length > 0;
+    const bestFaceAnchor = pickBestFaceAnchor({
+      identityPackage,
+      frontendRefs,
+    });
+
+    const characterMode =
+      Boolean(character) || (Boolean(useCharacter) && Boolean(bestFaceAnchor));
+
+    if (Boolean(useCharacter) && !bestFaceAnchor) {
+      return Response.json(
+        {
+          error:
+            "Character mode was requested but no valid face anchor was found.",
+        },
+        { status: 400 }
+      );
+    }
+
+    const hasRefs = evaluationRefs.length > 0;
     const cleanedPrompt = normalizeText(prompt);
     const cleanedScenePrompt = normalizeText(scenePrompt);
     const cleanedCharacterPrompt = normalizeText(characterPrompt);
@@ -1197,12 +1210,12 @@ const characterRefs = identityPackage?.strongRefs || [];
       scenePrompt: cleanedScenePrompt,
     });
 
-const identityBlock = buildIdentityBlock({
-  useCharacter: Boolean(useCharacter),
-  hasRefs,
-  character,
-  identityPackage,
-});
+    const identityBlock = buildIdentityBlock({
+      characterMode,
+      hasRefs,
+      character,
+      identityPackage,
+    });
 
     const compositionBlock = buildCompositionBlock({
       combinedPrompt: combinedSceneText,
@@ -1216,7 +1229,7 @@ const identityBlock = buildIdentityBlock({
     const negativeBlock = buildNegativeBlock({
       negativePrompt: cleanedNegativePrompt,
       combinedPrompt: combinedSceneText,
-      useCharacter: Boolean(useCharacter) || hasRefs || Boolean(character),
+      useCharacter: characterMode,
     });
 
     const qualityBlock = [
@@ -1230,6 +1243,7 @@ const identityBlock = buildIdentityBlock({
 
     const baseFinalPrompt = [
       identityBlock,
+      cleanedCharacterPrompt ? `Character guidance: ${cleanedCharacterPrompt}` : "",
       `Scene: ${combinedSceneText}`,
       compositionBlock,
       cleanedStylePrompt ? `Style guidance: ${cleanedStylePrompt}` : "",
@@ -1240,26 +1254,19 @@ const identityBlock = buildIdentityBlock({
       .join("\n\n");
 
     const aspect_ratio = mapSizeToAspectRatio(size, ratio);
-    const useConsistencyModel =
-      Boolean(useCharacter) || hasRefs || Boolean(character);
 
     const model = chooseModel({
-      useCharacter: Boolean(useCharacter),
-      hasRefs,
-      hasCharacter: Boolean(character),
-      realismMode,
-      quality,
+      characterMode,
+      premiumRender: Boolean(premiumRender) || String(quality).toLowerCase() === "high",
     });
 
     const enablePromptUpsampling = shouldEnablePromptUpsampling({
-      useCharacter: Boolean(useCharacter),
-      hasRefs,
-      hasCharacter: Boolean(character),
+      characterMode,
       realismMode,
     });
 
     const shouldRunIdentityEnforcement =
-      useConsistencyModel && refs.length > 0 && Boolean(character || useCharacter);
+      characterMode && Boolean(bestFaceAnchor);
 
     const requests = Array.from({ length: safeN }, async () => {
       let bestCandidate = null;
@@ -1269,17 +1276,19 @@ const identityBlock = buildIdentityBlock({
       let currentNegativePrompt = negativeBlock;
 
       for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-const storedImage = await generateSingleCandidate({
-  model,
-  prompt: currentPrompt,
-  negativePrompt: currentNegativePrompt,
-  aspect_ratio,
-  refs,
-  identityPackage,
-  useConsistencyModel,
-  enablePromptUpsampling,
-  userId,
-});
+        const storedImage = await generateSingleCandidate({
+          model,
+          prompt: currentPrompt,
+          negativePrompt: currentNegativePrompt,
+          aspect_ratio,
+          faceImage: bestFaceAnchor,
+          enablePromptUpsampling,
+          premiumRender:
+            model === MODELS.PREMIUM ||
+            Boolean(premiumRender) ||
+            String(quality).toLowerCase() === "high",
+          userId,
+        });
 
         if (!storedImage?.url) continue;
 
@@ -1287,34 +1296,33 @@ const storedImage = await generateSingleCandidate({
           ? await scoreGeneratedIdentity({
               generatedImage: storedImage.url,
               referencePack: identityPackage?.allProfileUrls?.length
-  ? identityPackage.allProfileUrls.slice(0, 8)
-  : refs,
-
+                ? identityPackage.allProfileUrls.slice(0, 8)
+                : evaluationRefs,
               dnaProfile: character?.dna_profile || null,
               scenePrompt: combinedSceneText,
               characterName: character?.name || "",
             })
- : {
-    passed: true,
-    identityScore: 7,
-    faceScore: 7,
-    hairScore: 7,
-    bodyProportionScore: 7,
-    sceneScore: 7,
-    qualityScore: 7,
-    glassesPreserved: true,
-    faceMismatch: false,
-    hairstyleDrift: false,
-    glassesMissing: false,
-    bodyExaggeration: false,
-    ageDrift: false,
-    stylizationDrift: false,
-    weakResemblance: false,
-    beardMismatch: false,
-    driftDetected: false,
-    failureType: "none",
-    failureReasons: [],
-  };
+          : {
+              passed: true,
+              identityScore: 7,
+              faceScore: 7,
+              hairScore: 7,
+              bodyProportionScore: 7,
+              sceneScore: 7,
+              qualityScore: 7,
+              glassesPreserved: true,
+              faceMismatch: false,
+              hairstyleDrift: false,
+              glassesMissing: false,
+              bodyExaggeration: false,
+              ageDrift: false,
+              stylizationDrift: false,
+              weakResemblance: false,
+              beardMismatch: false,
+              driftDetected: false,
+              failureType: "none",
+              failureReasons: [],
+            };
 
         const weightedScore = getEvaluationWeightedScore(
           evaluation,
@@ -1351,7 +1359,6 @@ const storedImage = await generateSingleCandidate({
             basePrompt: baseFinalPrompt,
             failedEvaluation: evaluation,
             character,
-            scenePrompt: combinedSceneText,
           });
 
           currentNegativePrompt = buildRetryNegativeBlock({
@@ -1392,27 +1399,31 @@ const storedImage = await generateSingleCandidate({
       prompt: bestOverall.prompt,
       negative_prompt: bestOverall.negativePrompt,
       ratio,
-      mode: useConsistencyModel ? "consistency" : "standard",
+      mode: characterMode ? "character" : "standard",
       style: styleLabel || style || null,
       images: finalImages,
       evaluation: {
-  identity_score: bestOverall.evaluation?.identityScore || null,
-  face_score: bestOverall.evaluation?.faceScore || null,
-  hair_score: bestOverall.evaluation?.hairScore || null,
-  body_score: bestOverall.evaluation?.bodyProportionScore || null,
-  scene_score: bestOverall.evaluation?.sceneScore || null,
-  quality_score: bestOverall.evaluation?.qualityScore || null,
-  passed: Boolean(bestOverall.evaluation?.passed),
-  failure_type: bestOverall.evaluation?.failureType || "none",
-  failure_reasons: bestOverall.evaluation?.failureReasons || [],
-  drift_detected: Boolean(bestOverall.evaluation?.driftDetected),
-  glasses_preserved: Boolean(bestOverall.evaluation?.glassesPreserved),
-  beard_mismatch: Boolean(bestOverall.evaluation?.beardMismatch),
-  retry_count: Math.max(0, Number(bestOverall.attempt || 1) - 1),
-  used_reference_count: refs.length,
-  reference_preview: refs,
-  weighted_score: bestOverall.weightedScore,
-},
+        identity_score: bestOverall.evaluation?.identityScore || null,
+        face_score: bestOverall.evaluation?.faceScore || null,
+        hair_score: bestOverall.evaluation?.hairScore || null,
+        body_score: bestOverall.evaluation?.bodyProportionScore || null,
+        scene_score: bestOverall.evaluation?.sceneScore || null,
+        quality_score: bestOverall.evaluation?.qualityScore || null,
+        passed: Boolean(bestOverall.evaluation?.passed),
+        failure_type: bestOverall.evaluation?.failureType || "none",
+        failure_reasons: bestOverall.evaluation?.failureReasons || [],
+        drift_detected: Boolean(bestOverall.evaluation?.driftDetected),
+        glasses_preserved: Boolean(bestOverall.evaluation?.glassesPreserved),
+        beard_mismatch: Boolean(bestOverall.evaluation?.beardMismatch),
+        retry_count: Math.max(0, Number(bestOverall.attempt || 1) - 1),
+        used_reference_count: characterMode
+          ? identityPackage?.allProfileUrls?.length || evaluationRefs.length
+          : 0,
+        reference_preview: characterMode
+          ? (identityPackage?.allProfileUrls?.slice(0, 8) || evaluationRefs)
+          : [],
+        weighted_score: bestOverall.weightedScore,
+      },
     };
 
     const { data: savedRow, error: saveError } = await supabaseAdmin
@@ -1433,36 +1444,39 @@ const storedImage = await generateSingleCandidate({
       generation: savedRow,
       meta: {
         model,
-        mode: useConsistencyModel ? "consistency" : "standard",
+        mode: characterMode ? "character" : "standard",
         quality,
         realismMode,
         style,
         styleLabel,
-        referenceCount: refs.length,
-        referencePreview: refs,
+        referenceCount: characterMode
+          ? identityPackage?.allProfileUrls?.length || evaluationRefs.length
+          : 0,
+        referencePreview: characterMode
+          ? identityPackage?.allProfileUrls?.slice(0, 8) || evaluationRefs
+          : [],
         characterLoaded: Boolean(character),
         characterName: character?.name || null,
-        usedReferences: useConsistencyModel,
+        usedReferences: characterMode,
         usedNegativePrompt: true,
         storage: "supabase",
         identityEnforcementEnabled: shouldRunIdentityEnforcement,
         attemptsUsed: bestOverall.attempt || 1,
         identityEvaluation: bestOverall.evaluation,
         weightedScore: bestOverall.weightedScore,
-
-identityPackageSummary: identityPackage
-  ? {
-      totalProfiles: identityPackage.allProfileUrls.length,
-      strongRefCount: identityPackage.strongRefs.length,
-      hasMaster: Boolean(identityPackage.master),
-      hasOriginal: Boolean(identityPackage.original),
-      hasCloseup: Boolean(identityPackage.closeup),
-      hasFront: Boolean(identityPackage.front),
-      hasSide: Boolean(identityPackage.left || identityPackage.right),
-      identityNotes: identityPackage.identityNotes,
-    }
-  : null,
-        
+        bestFaceAnchor,
+        identityPackageSummary: identityPackage
+          ? {
+              totalProfiles: identityPackage.allProfileUrls.length,
+              strongRefCount: identityPackage.strongRefs.length,
+              hasMaster: Boolean(identityPackage.master),
+              hasOriginal: Boolean(identityPackage.original),
+              hasCloseup: Boolean(identityPackage.closeup),
+              hasFront: Boolean(identityPackage.front),
+              hasSide: Boolean(identityPackage.left || identityPackage.right),
+              identityNotes: identityPackage.identityNotes,
+            }
+          : null,
       },
     });
   } catch (error) {
