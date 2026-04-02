@@ -14,8 +14,11 @@ const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const IDENTITY_EVALUATOR_MODEL = process.env.EVALUATOR_MODEL || "gpt-4.1-mini";
 
 const MODELS = {
-  NORMAL: "black-forest-labs/flux-2-pro",
-  PREMIUM: "black-forest-labs/flux-2-max",
+  SCENE: "black-forest-labs/flux-2-pro",
+  SCENE_PREMIUM: "black-forest-labs/flux-2-max",
+
+  // Identity-conditioned path
+  CHARACTER_ID: "zsxkib/dream-o",
 };
 
 async function loadCharacterData(characterId) {
@@ -558,6 +561,42 @@ function buildIdentityBlock({
   return lines.join(" ");
 }
 
+// ✅ ADD THE NEW HELPER HERE
+function buildConditionedIdentityBlock({
+  character,
+  identityPackage = null,
+  combinedPrompt = "",
+}) {
+  const promptText = String(combinedPrompt || "").toLowerCase();
+  const actionScene = isGymOrActionScene(promptText);
+  const traits = detectReferenceTraits(identityPackage, character);
+
+  const lines = [
+    "Use the supplied reference images as the exact same person.",
+    "Preserve the same facial geometry and overall likeness.",
+    "Do not redesign or beautify the face.",
+    "Do not turn the person into a generic actor, model, or cinematic hero.",
+  ];
+
+  if (traits.wearsGlasses) {
+    lines.push(
+      "Keep the glasses present and consistent with the identity references."
+    );
+  }
+
+  if (actionScene) {
+    lines.push(
+      "Even in an action or gym scene, the face must remain the same person."
+    );
+  }
+
+  if (character?.name) {
+    lines.push(`Character name: ${character.name}.`);
+  }
+
+  return lines.join(" ");
+}
+
 function buildCompositionBlock({ combinedPrompt, ratio }) {
   const text = combinedPrompt.toLowerCase();
 
@@ -720,10 +759,12 @@ function buildNegativeBlock({ negativePrompt, combinedPrompt, useCharacter }) {
 }
 
 function chooseModel({
+  characterMode,
   premiumRender,
 }) {
-  if (premiumRender) return MODELS.PREMIUM;
-  return MODELS.NORMAL;
+  if (characterMode) return MODELS.CHARACTER_ID;
+  if (premiumRender) return MODELS.SCENE_PREMIUM;
+  return MODELS.SCENE;
 }
 
 function shouldEnablePromptUpsampling({
@@ -1171,6 +1212,33 @@ function buildFluxInput({
   return input;
 }
 
+function buildDreamOInput({
+  prompt,
+  negativePrompt,
+  referenceImages = [],
+  aspect_ratio,
+}) {
+  const primaryRef = referenceImages?.[0] || null;
+  const secondaryRefs = Array.isArray(referenceImages)
+    ? referenceImages.slice(1, 3)
+    : [];
+
+  if (!primaryRef) {
+    throw new Error("DreamO requires at least one identity reference image.");
+  }
+
+  const input = {
+    prompt,
+    negative_prompt: negativePrompt || "",
+    reference_image: primaryRef,
+    additional_reference_images: secondaryRefs,
+    aspect_ratio,
+    output_format: "png",
+  };
+
+  return input;
+}
+
 async function generateSingleCandidate({
   model,
   prompt,
@@ -1181,14 +1249,22 @@ async function generateSingleCandidate({
   premiumRender,
   userId,
 }) {
-  const input = buildFluxInput({
-    prompt,
-    negativePrompt,
-    aspect_ratio,
-    enablePromptUpsampling,
-    premiumRender,
-    referenceImages,
-  });
+  const input =
+    model === MODELS.CHARACTER_ID
+      ? buildDreamOInput({
+          prompt,
+          negativePrompt,
+          referenceImages,
+          aspect_ratio,
+        })
+      : buildFluxInput({
+          prompt,
+          negativePrompt,
+          aspect_ratio,
+          enablePromptUpsampling,
+          premiumRender,
+          referenceImages,
+        });
 
   console.log("Replicate model:", model);
   console.log("Replicate input:", JSON.stringify(input, null, 2));
@@ -1350,13 +1426,20 @@ export async function POST(req) {
       scenePrompt: cleanedScenePrompt,
     });
 
-    const identityBlock = buildIdentityBlock({
-      characterMode,
-      hasRefs,
-      character,
-      identityPackage,
-      combinedPrompt: combinedSceneText,
-    });
+    const identityBlock =
+      characterMode
+        ? buildConditionedIdentityBlock({
+            character,
+            identityPackage,
+            combinedPrompt: combinedSceneText,
+          })
+        : buildIdentityBlock({
+            characterMode,
+            hasRefs,
+            character,
+            identityPackage,
+            combinedPrompt: combinedSceneText,
+          });
 
     const compositionBlock = buildCompositionBlock({
       combinedPrompt: combinedSceneText,
