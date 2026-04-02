@@ -276,20 +276,15 @@ function selectGenerationReferenceImages({
     refs.push(normalized);
   };
 
-  // Priority order for scene generation:
-  // 1) strongest face lock
-  // 2) strongest frontal identity
-  // 3) strongest neutral base identity
-  if (identityPackage?.master?.url) pushRef(identityPackage.master.url);
+  // Strongest face lock first
   if (identityPackage?.closeup?.url) pushRef(identityPackage.closeup.url);
+  if (identityPackage?.master?.url) pushRef(identityPackage.master.url);
   if (identityPackage?.front?.url) pushRef(identityPackage.front.url);
 
-  // Only use original upload if we still don't have enough
   if (refs.length < maxRefs && identityPackage?.original?.url) {
     pushRef(identityPackage.original.url);
   }
 
-  // Frontend refs only as fallback
   for (const url of frontendRefs || []) {
     if (refs.length >= maxRefs) break;
     pushRef(url);
@@ -331,6 +326,23 @@ function buildDnaIdentityText(character) {
   ].filter(Boolean);
 
   return parts.join(". ");
+}
+
+function detectReferenceTraits(identityPackage = null, character = null) {
+  const dnaText = String(identityPackage?.dnaText || "").toLowerCase();
+  const notes = String(identityPackage?.identityNotes || "").toLowerCase();
+  const nameText = String(character?.description || "").toLowerCase();
+
+  const combined = [dnaText, notes, nameText].join(" ");
+
+  const wearsGlasses =
+    combined.includes("glasses") ||
+    combined.includes("spectacles") ||
+    combined.includes("eyewear");
+
+  return {
+    wearsGlasses,
+  };
 }
 
 function mapSizeToAspectRatio(size, ratio = "1:1") {
@@ -487,22 +499,30 @@ function buildIdentityBlock({
 
   const promptText = String(combinedPrompt || "").toLowerCase();
   const actionScene = isGymOrActionScene(promptText);
+  const traits = detectReferenceTraits(identityPackage, character);
 
   const lines = [
     "The generated person must be the exact same individual as the supplied reference images.",
-    "This is identity preservation, not reinterpretation.",
+    "Identity preservation is the top priority.",
+    "This is not an inspired-by character, not a variation, and not a reinterpretation.",
     "Keep the face instantly recognizable as the same real person at first glance.",
-    "Preserve the exact same facial identity: face shape, jawline, cheek structure, eye shape, eyebrow shape, nose shape, lips, beard pattern, skin tone, hairline, hairstyle, and overall likeness.",
-    "Do not turn the person into a generic cinematic hero, model, actor, boxer, or a more attractive version.",
-    "Do not replace, beautify, sharpen, masculinize, or redesign the face.",
-    "Keep the same age impression, same ethnicity appearance, same facial proportions, and same recognizable features.",
+    "Preserve the exact same facial geometry: face shape, jawline, cheek structure, forehead, eye shape, eyebrow shape, nose bridge, nose tip, lips, beard pattern, skin tone, and hairline.",
+    "Do not redesign, beautify, sharpen, idealize, masculinize, or replace the face.",
+    "Do not turn the person into a generic actor, model, cinematic hero, athlete, or boxer.",
+    "The identity must remain the same even if clothing, background, pose, or lighting changes.",
   ];
+
+  if (traits.wearsGlasses) {
+    lines.push(
+      "The character wears glasses in the identity references. Keep the glasses present and consistent unless the prompt explicitly asks to remove them."
+    );
+  }
 
   if (actionScene) {
     lines.push(
-      "Even in an action or gym scene, preserve the exact same face identity.",
-      "Muscle tension, sweat, dramatic lighting, and expression changes must not change who the person is.",
-      "Do not transform the person into a generic fighter or bodybuilder."
+      "Even in a gym or action scene, keep the exact same person.",
+      "Sweat, intensity, dramatic light, and physical tension must not change the facial identity.",
+      "Do not transform the person into a generic fighter face or athletic hero face."
     );
   }
 
@@ -641,10 +661,16 @@ function buildNegativeBlock({ negativePrompt, combinedPrompt, useCharacter }) {
       "different hairstyle",
       "different beard pattern",
       "different skin tone",
+      "missing glasses",
+      "removed glasses",
       "generic boxer face",
       "heroic fighter face",
       "model-like male face",
-      "cinematic actor face"
+      "cinematic actor face",
+      "beautified male face",
+      "sharper jawline",
+      "different nose shape",
+      "different eye shape"
     );
   }
 
@@ -893,6 +919,7 @@ Required schema:
       !result.beardMismatch &&
       result.identityScore >= minimumIdentityScore &&
       result.faceScore >= minimumFaceScore &&
+      result.hairScore >= 8.0 &&
       result.bodyProportionScore >= minimumBodyScore;
 
     return {
@@ -959,7 +986,9 @@ function buildIdentityRetryPrompt({
   }
 
   if (failedEvaluation?.glassesMissing) {
-    corrections.push("Keep the glasses visible and correct.");
+    corrections.push(
+      "Keep the glasses clearly visible and consistent with the reference identity."
+    );
   }
 
   if (failedEvaluation?.bodyExaggeration) {
