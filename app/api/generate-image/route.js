@@ -14,7 +14,8 @@ const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const IDENTITY_EVALUATOR_MODEL = process.env.EVALUATOR_MODEL || "gpt-4.1-mini";
 
 const MODELS = {
-  CHARACTER: "bytedance/flux-pulid",
+  CHARACTER:
+    "bytedance/flux-pulid:8baa7ef2255075b46f4d91cd238c21d31181b3e6a864463f967960bb0112525b",
   NORMAL: "black-forest-labs/flux-1.1-pro",
   PREMIUM: "black-forest-labs/flux-1.1-pro-ultra",
 };
@@ -1039,22 +1040,43 @@ function isPulidModel(model) {
   return model === MODELS.CHARACTER;
 }
 
+function mapAspectRatioToDimensions(aspectRatio = "1:1") {
+  switch (aspectRatio) {
+    case "16:9":
+      return { width: 1344, height: 768 };
+    case "21:9":
+      return { width: 1536, height: 640 };
+    case "3:2":
+      return { width: 1216, height: 832 };
+    case "2:3":
+      return { width: 832, height: 1216 };
+    case "4:5":
+      return { width: 896, height: 1120 };
+    case "5:4":
+      return { width: 1120, height: 896 };
+    case "9:16":
+      return { width: 768, height: 1344 };
+    case "1:1":
+    default:
+      return { width: 1024, height: 1024 };
+  }
+}
+
 function buildPulidInput({
   prompt,
   negativePrompt,
   aspect_ratio,
   faceImage,
 }) {
+  const { width, height } = mapAspectRatioToDimensions(aspect_ratio);
+
   const input = {
     main_face_image: faceImage,
     prompt,
-    aspect_ratio,
-    output_format: "png",
+    negative_prompt: negativePrompt || "",
+    width,
+    height,
   };
-
-  if (negativePrompt) {
-    input.negative_prompt = negativePrompt;
-  }
 
   return input;
 }
@@ -1111,6 +1133,9 @@ async function generateSingleCandidate({
         enablePromptUpsampling,
         premiumRender,
       });
+
+console.log("Replicate model:", model);
+console.log("Replicate input:", JSON.stringify(input, null, 2));
 
   const output = await replicate.run(model, { input });
   const tempUrl = await fileOutputToUrl(output);
