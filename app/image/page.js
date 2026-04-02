@@ -48,11 +48,14 @@ async function sbLoadAll(userId) {
     .eq("user_id", userId)
     .order("created_at", { ascending: false })
     .limit(24);
+
   if (error) {
     console.error("sbLoadAll failed:", error);
     return [];
   }
+
   console.log("sbLoadAll result:", data);
+
   return (data || []).map((row) => ({
     id: row.id,
     prompt: row.prompt,
@@ -61,6 +64,15 @@ async function sbLoadAll(userId) {
     mode: row.mode,
     style: row.style,
     createdAt: row.created_at,
+
+    characterPrompt: "",
+    scenePrompt: "",
+    finalPrompt: row.prompt || "",
+    stylePrompt: "",
+    identityPrompt: "",
+    compositionPrompt: "",
+    realismPrompt: "",
+
     images: Array.isArray(row.images)
       ? row.images.map((img) => {
           if (typeof img === "string") return { url: img, starred: false };
@@ -83,17 +95,17 @@ async function sbSaveGroup(group, userId) {
     return;
   }
 
-  const payload = {
-    id: group.id,
-    user_id: userId,
-    prompt: group.prompt,
-    negative_prompt: group.negativePrompt,
-    ratio: group.ratio,
-    mode: group.mode,
-    style: group.style,
-    images: group.images,
-    created_at: group.createdAt,
-  };
+const payload = {
+  id: group.id,
+  user_id: userId,
+  prompt: group.prompt,
+  negative_prompt: group.negativePrompt,
+  ratio: group.ratio,
+  mode: group.mode,
+  style: group.style,
+  images: group.images,
+  created_at: group.createdAt,
+};
 
   console.log("sbSaveGroup payload:", payload);
 
@@ -791,6 +803,97 @@ function StylesPicker({ value, onChange, onClose }) {
   );
 }
 
+function PromptSectionCard({ title, text, accent = C.textMuted, onCopy = null }) {
+  const [copied, setCopied] = useState(false);
+
+  async function handleCopy() {
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+      onCopy?.();
+    } catch {}
+  }
+
+  if (!text) return null;
+
+  return (
+    <div
+      style={{
+        borderRadius: radius.md,
+        border: `1px solid ${C.border}`,
+        background: "rgba(255,255,255,0.02)",
+        padding: "10px 12px",
+        display: "flex",
+        flexDirection: "column",
+        gap: 8,
+        minHeight: 0,
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 8,
+        }}
+      >
+        <div
+          style={{
+            fontSize: 10.5,
+            fontWeight: 700,
+            letterSpacing: "0.08em",
+            textTransform: "uppercase",
+            color: accent,
+          }}
+        >
+          {title}
+        </div>
+
+        <button
+          onClick={handleCopy}
+          style={{
+            height: 24,
+            padding: "0 8px",
+            borderRadius: 7,
+            cursor: "pointer",
+            border: `1px solid ${copied ? C.accentBorder : C.border}`,
+            background: copied ? C.accentSoft : C.surface,
+            color: copied ? "#c4b5fd" : C.textMuted,
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 4,
+            fontSize: 11,
+            fontFamily: "inherit",
+            transition: "all 0.16s",
+            flexShrink: 0,
+          }}
+        >
+          {copied ? <Check size={10} /> : <Copy size={10} />}
+          {copied ? "Copied" : "Copy"}
+        </button>
+      </div>
+
+      <div
+        style={{
+          maxHeight: 110,
+          overflowY: "auto",
+          paddingRight: 4,
+          color: "rgba(255,255,255,0.82)",
+          fontSize: 12.5,
+          lineHeight: 1.65,
+          wordBreak: "break-word",
+          whiteSpace: "pre-wrap",
+          scrollbarWidth: "thin",
+        }}
+      >
+        {text}
+      </div>
+    </div>
+  );
+}
+
 // ─── Generation Feed Card ────────────────────────────────────────────────────
 function GenerationCard({
   group,
@@ -803,18 +906,8 @@ function GenerationCard({
   onVariation,
   generating,
 }) {
-  const [copiedPrompt, setCopiedPrompt] = useState(false);
   const [featuredIdx, setFeaturedIdx] = useState(0);
   const featured = group.images[featuredIdx];
-
-  async function copyPrompt() {
-    if (!group.prompt) return;
-    try {
-      await navigator.clipboard.writeText(group.prompt);
-      setCopiedPrompt(true);
-      setTimeout(() => setCopiedPrompt(false), 1800);
-    } catch {}
-  }
 
   return (
     <motion.div
@@ -1070,108 +1163,40 @@ function GenerationCard({
               </div>
             )}
           </div>
-          <div
-            style={{
-              flex: 1,
-              borderRadius: radius.md,
-              border: `1px solid ${C.border}`,
-              background: "rgba(255,255,255,0.02)",
-              padding: "10px 12px",
-              overflow: "hidden",
-              display: "flex",
-              flexDirection: "column",
-              gap: 8,
-            }}
-          >
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-              }}
-            >
-              <div
-                style={{
-                  fontSize: 10.5,
-                  fontWeight: 700,
-                  letterSpacing: "0.08em",
-                  textTransform: "uppercase",
-                  color: C.textMuted,
-                }}
-              >
-                Prompt
-              </div>
-              <button
-                onClick={copyPrompt}
-                style={{
-                  height: 24,
-                  padding: "0 8px",
-                  borderRadius: 7,
-                  cursor: "pointer",
-                  border: `1px solid ${copiedPrompt ? C.accentBorder : C.border}`,
-                  background: copiedPrompt ? C.accentSoft : C.surface,
-                  color: copiedPrompt ? "#c4b5fd" : C.textMuted,
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 4,
-                  fontSize: 11,
-                  fontFamily: "inherit",
-                  transition: "all 0.16s",
-                }}
-              >
-                {copiedPrompt ? <Check size={10} /> : <Copy size={10} />}
-                {copiedPrompt ? "Copied" : "Copy"}
-              </button>
-            </div>
-            <p
-              style={{
-                margin: 0,
-                color: "rgba(255,255,255,0.82)",
-                fontSize: 12.5,
-                lineHeight: 1.65,
-                wordBreak: "break-word",
-                display: "-webkit-box",
-                WebkitLineClamp: 7,
-                WebkitBoxOrient: "vertical",
-                overflow: "hidden",
-              }}
-            >
-              {group.prompt}
-            </p>
-          </div>
-          {group.negativePrompt && (
-            <div
-              style={{
-                borderRadius: radius.sm,
-                border: "1px solid rgba(248,113,113,0.2)",
-                background: "rgba(248,113,113,0.04)",
-                padding: "8px 12px",
-              }}
-            >
-              <div
-                style={{
-                  fontSize: 10.5,
-                  fontWeight: 700,
-                  letterSpacing: "0.08em",
-                  textTransform: "uppercase",
-                  color: "#fca5a5",
-                  marginBottom: 4,
-                }}
-              >
-                Negative
-              </div>
-              <p
-                style={{
-                  margin: 0,
-                  color: "rgba(255,255,255,0.65)",
-                  fontSize: 12,
-                  lineHeight: 1.6,
-                }}
-              >
-                {group.negativePrompt}
-              </p>
-            </div>
-          )}
+        <div
+  style={{
+    flex: 1,
+    minHeight: 0,
+    display: "flex",
+    flexDirection: "column",
+    gap: 10,
+    overflow: "hidden",
+  }}
+>
+  <PromptSectionCard
+    title="Character Prompt"
+    text={group.characterPrompt}
+    accent="#c4b5fd"
+  />
+
+  <PromptSectionCard
+    title="Scene Prompt"
+    text={group.scenePrompt}
+    accent="#93c5fd"
+  />
+
+  <PromptSectionCard
+    title="Final Prompt"
+    text={group.finalPrompt || group.prompt}
+    accent={C.textMuted}
+  />
+
+  <PromptSectionCard
+    title="Negative Prompt"
+    text={group.negativePrompt}
+    accent="#fca5a5"
+  />
+</div>
           <div>
             <div
               style={{
@@ -1678,30 +1703,45 @@ body: JSON.stringify({
         })
       );
       const results = await Promise.all(requests);
-      const newGroups = results
-        .map((d) => {
-          const row = d?.generation;
-          if (!row) return null;
-          return {
-            id: row.id,
-            prompt: row.prompt,
-            negativePrompt: row.negative_prompt,
-            ratio: row.ratio,
-            mode: row.mode,
-            style: row.style,
-            createdAt: row.created_at,
-            images: Array.isArray(row.images)
-              ? row.images.map((img) => {
-                  if (typeof img === "string") return { url: img, starred: false };
-                  if (img && typeof img === "object") {
-                    return { url: img.url || null, path: img.path || null, starred: Boolean(img.starred) };
-                  }
-                  return { url: null, starred: false };
-                })
-              : [],
-          };
-        })
-        .filter(Boolean);
+const newGroups = results
+  .map((d) => {
+    const row = d?.generation;
+    const meta = d?.meta || {};
+    if (!row) return null;
+
+    return {
+      id: row.id,
+      prompt: row.prompt,
+      negativePrompt: row.negative_prompt,
+      ratio: row.ratio,
+      mode: row.mode,
+      style: row.style,
+      createdAt: row.created_at,
+
+      characterPrompt: meta.characterPrompt || "",
+      scenePrompt: meta.scenePrompt || "",
+      finalPrompt: meta.finalPrompt || row.prompt || "",
+      stylePrompt: meta.stylePrompt || "",
+      identityPrompt: meta.identityPrompt || "",
+      compositionPrompt: meta.compositionPrompt || "",
+      realismPrompt: meta.realismPrompt || "",
+
+      images: Array.isArray(row.images)
+        ? row.images.map((img) => {
+            if (typeof img === "string") return { url: img, starred: false };
+            if (img && typeof img === "object") {
+              return {
+                url: img.url || null,
+                path: img.path || null,
+                starred: Boolean(img.starred),
+              };
+            }
+            return { url: null, starred: false };
+          })
+        : [],
+    };
+  })
+  .filter(Boolean);
 
       if (!newGroups.length) {
         throw new Error("No saved generation returned from API");
@@ -1787,24 +1827,39 @@ body: JSON.stringify({
       if (!row) {
         throw new Error("No saved variation returned from API");
       }
-      const newGroup = {
-        id: row.id,
-        prompt: row.prompt,
-        negativePrompt: row.negative_prompt,
-        ratio: row.ratio,
-        mode: row.mode,
-        style: row.style,
-        createdAt: row.created_at,
-        images: Array.isArray(row.images)
-          ? row.images.map((img) => {
-              if (typeof img === "string") return { url: img, starred: false };
-              if (img && typeof img === "object") {
-                return { url: img.url || null, path: img.path || null, starred: Boolean(img.starred) };
-              }
-              return { url: null, starred: false };
-            })
-          : [],
-      };
+const meta = data?.meta || {};
+
+const newGroup = {
+  id: row.id,
+  prompt: row.prompt,
+  negativePrompt: row.negative_prompt,
+  ratio: row.ratio,
+  mode: row.mode,
+  style: row.style,
+  createdAt: row.created_at,
+
+  characterPrompt: meta.characterPrompt || "",
+  scenePrompt: meta.scenePrompt || "",
+  finalPrompt: meta.finalPrompt || row.prompt || "",
+  stylePrompt: meta.stylePrompt || "",
+  identityPrompt: meta.identityPrompt || "",
+  compositionPrompt: meta.compositionPrompt || "",
+  realismPrompt: meta.realismPrompt || "",
+
+  images: Array.isArray(row.images)
+    ? row.images.map((img) => {
+        if (typeof img === "string") return { url: img, starred: false };
+        if (img && typeof img === "object") {
+          return {
+            url: img.url || null,
+            path: img.path || null,
+            starred: Boolean(img.starred),
+          };
+        }
+        return { url: null, starred: false };
+      })
+    : [],
+};
       setGroups((p) => {
         const next = [newGroup, ...p];
         syncCache(next);

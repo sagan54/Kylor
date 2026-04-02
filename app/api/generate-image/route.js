@@ -1266,17 +1266,17 @@ export async function POST(req) {
       "Do not replace the requested scene with a generic beauty shot.",
     ].join(" ");
 
-    const baseFinalPrompt = [
-      identityBlock,
-      cleanedCharacterPrompt ? `Character guidance: ${cleanedCharacterPrompt}` : "",
-      `Scene: ${combinedSceneText}`,
-      compositionBlock,
-      cleanedStylePrompt ? `Style guidance: ${cleanedStylePrompt}` : "",
-      realismBlock,
-      qualityBlock,
-    ]
-      .filter(Boolean)
-      .join("\n\n");
+const baseFinalPrompt = [
+  `Scene: ${combinedSceneText}`,
+  compositionBlock,
+  cleanedStylePrompt ? `Style guidance: ${cleanedStylePrompt}` : "",
+  realismBlock,
+  cleanedCharacterPrompt ? `Character guidance: ${cleanedCharacterPrompt}` : "",
+  identityBlock,
+  qualityBlock,
+]
+  .filter(Boolean)
+  .join("\n\n");
 
     const aspect_ratio = mapSizeToAspectRatio(size, ratio);
 
@@ -1467,42 +1467,53 @@ export async function POST(req) {
       image: finalImages[0]?.url || null,
       images: finalImages,
       generation: savedRow,
-      meta: {
-        model,
-        mode: characterMode ? "character" : "standard",
-        quality,
-        realismMode,
-        style,
-        styleLabel,
-        referenceCount: characterMode
-          ? identityPackage?.allProfileUrls?.length || evaluationRefs.length
-          : 0,
-        referencePreview: characterMode
-          ? identityPackage?.allProfileUrls?.slice(0, 8) || evaluationRefs
-          : [],
-        characterLoaded: Boolean(character),
-        characterName: character?.name || null,
-        usedReferences: characterMode,
-        usedNegativePrompt: true,
-        storage: "supabase",
-        identityEnforcementEnabled: shouldRunIdentityEnforcement,
-        attemptsUsed: bestOverall.attempt || 1,
-        identityEvaluation: bestOverall.evaluation,
-        weightedScore: bestOverall.weightedScore,
-        bestFaceAnchor,
-        identityPackageSummary: identityPackage
-          ? {
-              totalProfiles: identityPackage.allProfileUrls.length,
-              strongRefCount: identityPackage.strongRefs.length,
-              hasMaster: Boolean(identityPackage.master),
-              hasOriginal: Boolean(identityPackage.original),
-              hasCloseup: Boolean(identityPackage.closeup),
-              hasFront: Boolean(identityPackage.front),
-              hasSide: Boolean(identityPackage.left || identityPackage.right),
-              identityNotes: identityPackage.identityNotes,
-            }
-          : null,
-      },
+meta: {
+  model,
+  mode: characterMode ? "character" : "standard",
+  quality,
+  realismMode,
+  style,
+  styleLabel,
+
+  characterPrompt: cleanedCharacterPrompt,
+  scenePrompt: cleanedScenePrompt,
+  combinedScenePrompt: combinedSceneText,
+  stylePrompt: cleanedStylePrompt,
+  identityPrompt: identityBlock,
+  compositionPrompt: compositionBlock,
+  realismPrompt: realismBlock,
+  finalPrompt: bestOverall.prompt,
+  negativePrompt: bestOverall.negativePrompt,
+
+  referenceCount: characterMode
+    ? identityPackage?.allProfileUrls?.length || evaluationRefs.length
+    : 0,
+  referencePreview: characterMode
+    ? identityPackage?.allProfileUrls?.slice(0, 8) || evaluationRefs
+    : [],
+  characterLoaded: Boolean(character),
+  characterName: character?.name || null,
+  usedReferences: characterMode,
+  usedNegativePrompt: true,
+  storage: "supabase",
+  identityEnforcementEnabled: shouldRunIdentityEnforcement,
+  attemptsUsed: bestOverall.attempt || 1,
+  identityEvaluation: bestOverall.evaluation,
+  weightedScore: bestOverall.weightedScore,
+  bestFaceAnchor,
+  identityPackageSummary: identityPackage
+    ? {
+        totalProfiles: identityPackage.allProfileUrls.length,
+        strongRefCount: identityPackage.strongRefs.length,
+        hasMaster: Boolean(identityPackage.master),
+        hasOriginal: Boolean(identityPackage.original),
+        hasCloseup: Boolean(identityPackage.closeup),
+        hasFront: Boolean(identityPackage.front),
+        hasSide: Boolean(identityPackage.left || identityPackage.right),
+        identityNotes: identityPackage.identityNotes,
+      }
+    : null,
+},
     });
   } catch (error) {
     console.error("Image generation error:", error);
