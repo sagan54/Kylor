@@ -279,9 +279,13 @@ function selectGenerationReferenceImages({
     refs.push(normalized);
   };
 
-  // Strongest facial anchors first
-  if (identityPackage?.closeup?.url) pushRef(identityPackage.closeup.url);
-  if (identityPackage?.master?.url) pushRef(identityPackage.master.url);
+// 🔥 HARD PRIORITY ORDER
+pushRef(identityPackage?.closeup?.url);
+pushRef(identityPackage?.master?.url);
+pushRef(identityPackage?.original?.url);
+
+// Repeat face anchors for stronger conditioning
+pushRef(identityPackage?.closeup?.url);
 
   // Use front only as third choice
   if (refs.length < maxRefs && identityPackage?.front?.url) {
@@ -574,6 +578,7 @@ function buildConditionedIdentityBlock({
   const lines = [
     "Use the supplied reference images as the exact same person.",
     "Preserve the same facial geometry and overall likeness.",
+    "The facial identity must match the reference images with near-exact similarity. Even small differences in eyes, nose, lips, or bone structure are not acceptable.",
     "Do not redesign or beautify the face.",
     "Do not turn the person into a generic actor, model, or cinematic hero.",
   ];
@@ -673,7 +678,7 @@ function buildRealismBlock({ realismMode = "realistic" }) {
 
   return [
     "Realism:",
-    "Photorealistic image with strong natural detail.",
+    "Photorealistic image while strictly preserving the original face identity without enhancement or beautification.",
     "Believable skin texture, grounded anatomy, realistic lighting, realistic proportions.",
     "Avoid artificial beauty-filter skin or over-stylized rendering.",
   ].join(" ");
@@ -1441,6 +1446,19 @@ export async function POST(req) {
             combinedPrompt: combinedSceneText,
           });
 
+          const strictIdentityBlock = [
+  identityBlock,
+  buildIdentityBlock({
+    characterMode,
+    hasRefs,
+    character,
+    identityPackage,
+    combinedPrompt: combinedSceneText,
+  }),
+]
+  .filter(Boolean)
+  .join(" ");
+
     const compositionBlock = buildCompositionBlock({
       combinedPrompt: combinedSceneText,
       ratio,
@@ -1471,7 +1489,7 @@ const baseFinalPrompt = [
   cleanedStylePrompt ? `Style guidance: ${cleanedStylePrompt}` : "",
   realismBlock,
   cleanedCharacterPrompt ? `Character guidance: ${cleanedCharacterPrompt}` : "",
-  identityBlock,
+  strictIdentityBlock,
   qualityBlock,
 ]
   .filter(Boolean)
@@ -1493,10 +1511,11 @@ console.log("Resolved generation prompt blocks:", {
 
     const aspect_ratio = mapSizeToAspectRatio(size, ratio);
 
-    const model = chooseModel({
-      premiumRender:
-        Boolean(premiumRender) || String(quality).toLowerCase() === "high",
-    });
+const model = chooseModel({
+  characterMode,
+  premiumRender:
+    Boolean(premiumRender) || String(quality).toLowerCase() === "high",
+});
 
     const enablePromptUpsampling = shouldEnablePromptUpsampling({
       characterMode,
@@ -1521,10 +1540,10 @@ console.log("Resolved generation prompt blocks:", {
           aspect_ratio,
           referenceImages: generationRefs,
           enablePromptUpsampling,
-          premiumRender:
-            model === MODELS.PREMIUM ||
-            Boolean(premiumRender) ||
-            String(quality).toLowerCase() === "high",
+premiumRender:
+  model === MODELS.SCENE_PREMIUM ||
+  Boolean(premiumRender) ||
+  String(quality).toLowerCase() === "high",
           userId,
         });
 
