@@ -14,10 +14,8 @@ const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const IDENTITY_EVALUATOR_MODEL = process.env.EVALUATOR_MODEL || "gpt-4.1-mini";
 
 const MODELS = {
-  CHARACTER:
-    "bytedance/flux-pulid:8baa7ef2255075b46f4d91cd238c21d31181b3e6a864463f967960bb0112525b",
-  NORMAL: "black-forest-labs/flux-1.1-pro",
-  PREMIUM: "black-forest-labs/flux-1.1-pro-ultra",
+  NORMAL: "black-forest-labs/flux-2-pro",
+  PREMIUM: "black-forest-labs/flux-2-max",
 };
 
 async function loadCharacterData(characterId) {
@@ -264,6 +262,39 @@ function buildIdentityPackage(character, anchorRows = [], sceneType = "scene") {
   };
 }
 
+function selectGenerationReferenceImages({
+  identityPackage = null,
+  frontendRefs = [],
+  maxRefs = 4,
+}) {
+  const refs = [];
+
+  const pushRef = (url) => {
+    const normalized = normalizeReferenceImage(url);
+    if (!normalized) return;
+    if (refs.includes(normalized)) return;
+    refs.push(normalized);
+  };
+
+  if (identityPackage?.closeup?.url) pushRef(identityPackage.closeup.url);
+  if (identityPackage?.master?.url) pushRef(identityPackage.master.url);
+  if (identityPackage?.front?.url) pushRef(identityPackage.front.url);
+  if (identityPackage?.left?.url) pushRef(identityPackage.left.url);
+  if (identityPackage?.right?.url) pushRef(identityPackage.right.url);
+  if (identityPackage?.original?.url) pushRef(identityPackage.original.url);
+
+  for (const url of frontendRefs || []) {
+    pushRef(url);
+  }
+
+  for (const url of identityPackage?.allProfileUrls || []) {
+    if (refs.length >= maxRefs) break;
+    pushRef(url);
+  }
+
+  return refs.slice(0, maxRefs);
+}
+
 function buildDnaIdentityText(character) {
   const dna = character?.dna_profile;
   if (!dna || typeof dna !== "object") return "";
@@ -451,11 +482,11 @@ function buildIdentityBlock({
   if (!characterMode && !hasRefs && !character) return "";
 
   const lines = [
-    "Use the provided identity anchor exactly.",
-    "Preserve the same real person.",
-    "Keep the face recognizable at first glance.",
-    "Do not replace the person with a cleaner, more attractive, younger, or different version.",
-    "Preserve glasses, hairstyle, beard pattern, skin tone, and natural facial structure unless explicitly requested.",
+    "Use the provided reference images as the exact same person identity.",
+    "Preserve the same real person across the generated scene.",
+    "Keep the face instantly recognizable at first glance.",
+    "Do not reinterpret the person as a cleaner, younger, more attractive, or different version.",
+    "Preserve face structure, hairstyle, hairline, skin tone, beard pattern, glasses, and natural proportions unless explicitly requested.",
   ];
 
   if (character?.name) {
@@ -581,14 +612,12 @@ function buildNegativeBlock({ negativePrompt, combinedPrompt, useCharacter }) {
     "low detail face",
     "synthetic lighting",
     "oversharpened skin",
-    "fashion model portrait",
-    "clean commercial portrait",
-    "beautified male face",
-    "idealized male face",
-    "polished linkedin portrait",
-    "restyled haircut",
-    "symmetrical glamour face",
-    "clean actor headshot",
+    "beauty filter",
+    "airbrushed skin",
+    "oversmoothed portrait",
+    "identity drift",
+    "wrong hairstyle",
+    "wrong facial structure",
   ];
 
   if (useCharacter) {
@@ -619,10 +648,8 @@ function buildNegativeBlock({ negativePrompt, combinedPrompt, useCharacter }) {
 }
 
 function chooseModel({
-  characterMode,
   premiumRender,
 }) {
-  if (characterMode) return MODELS.CHARACTER;
   if (premiumRender) return MODELS.PREMIUM;
   return MODELS.NORMAL;
 }
@@ -1036,57 +1063,13 @@ function pickBestFaceAnchor({
   );
 }
 
-function isPulidModel(model) {
-  return model === MODELS.CHARACTER;
-}
-
-function mapAspectRatioToDimensions(aspectRatio = "1:1") {
-  switch (aspectRatio) {
-    case "16:9":
-      return { width: 1344, height: 768 };
-    case "21:9":
-      return { width: 1536, height: 640 };
-    case "3:2":
-      return { width: 1216, height: 832 };
-    case "2:3":
-      return { width: 832, height: 1216 };
-    case "4:5":
-      return { width: 896, height: 1120 };
-    case "5:4":
-      return { width: 1120, height: 896 };
-    case "9:16":
-      return { width: 768, height: 1344 };
-    case "1:1":
-    default:
-      return { width: 1024, height: 1024 };
-  }
-}
-
-function buildPulidInput({
-  prompt,
-  negativePrompt,
-  aspect_ratio,
-  faceImage,
-}) {
-  const { width, height } = mapAspectRatioToDimensions(aspect_ratio);
-
-  const input = {
-    main_face_image: faceImage,
-    prompt,
-    negative_prompt: negativePrompt || "",
-    width,
-    height,
-  };
-
-  return input;
-}
-
 function buildFluxInput({
   prompt,
   negativePrompt,
   aspect_ratio,
   enablePromptUpsampling,
   premiumRender,
+  referenceImages = [],
 }) {
   const input = {
     prompt,
@@ -1106,6 +1089,10 @@ function buildFluxInput({
     input.raw = true;
   }
 
+  if (Array.isArray(referenceImages) && referenceImages.length > 0) {
+    input.reference_images = referenceImages.slice(0, 4);
+  }
+
   return input;
 }
 
@@ -1114,28 +1101,22 @@ async function generateSingleCandidate({
   prompt,
   negativePrompt,
   aspect_ratio,
-  faceImage,
+  referenceImages = [],
   enablePromptUpsampling,
   premiumRender,
   userId,
 }) {
-  const input = isPulidModel(model)
-    ? buildPulidInput({
-        prompt,
-        negativePrompt,
-        aspect_ratio,
-        faceImage,
-      })
-    : buildFluxInput({
-        prompt,
-        negativePrompt,
-        aspect_ratio,
-        enablePromptUpsampling,
-        premiumRender,
-      });
+  const input = buildFluxInput({
+    prompt,
+    negativePrompt,
+    aspect_ratio,
+    enablePromptUpsampling,
+    premiumRender,
+    referenceImages,
+  });
 
-console.log("Replicate model:", model);
-console.log("Replicate input:", JSON.stringify(input, null, 2));
+  console.log("Replicate model:", model);
+  console.log("Replicate input:", JSON.stringify(input, null, 2));
 
   const output = await replicate.run(model, { input });
   const tempUrl = await fileOutputToUrl(output);
@@ -1200,9 +1181,16 @@ export async function POST(req) {
       ? buildIdentityPackage(character, anchorRows, sceneType)
       : null;
 
-    const characterRefs = identityPackage?.strongRefs || [];
+    const generationRefs = character
+      ? selectGenerationReferenceImages({
+          identityPackage,
+          frontendRefs,
+          maxRefs: 4,
+        })
+      : [...new Set(frontendRefs)].slice(0, 4);
+
     const evaluationRefs = character
-      ? [...new Set(characterRefs)].slice(0, 5)
+      ? [...new Set(identityPackage?.allProfileUrls || generationRefs)].slice(0, 8)
       : [...new Set(frontendRefs)].slice(0, 5);
 
     const bestFaceAnchor = pickBestFaceAnchor({
@@ -1211,13 +1199,13 @@ export async function POST(req) {
     });
 
     const characterMode =
-      Boolean(character) || (Boolean(useCharacter) && Boolean(bestFaceAnchor));
+      Boolean(character) || (Boolean(useCharacter) && generationRefs.length > 0);
 
-    if (Boolean(useCharacter) && !bestFaceAnchor) {
+    if (Boolean(useCharacter) && generationRefs.length === 0) {
       return Response.json(
         {
           error:
-            "Character mode was requested but no valid face anchor was found.",
+            "Character mode was requested but no valid character reference images were found.",
         },
         { status: 400 }
       );
@@ -1281,8 +1269,8 @@ const baseFinalPrompt = [
     const aspect_ratio = mapSizeToAspectRatio(size, ratio);
 
     const model = chooseModel({
-      characterMode,
-      premiumRender: Boolean(premiumRender) || String(quality).toLowerCase() === "high",
+      premiumRender:
+        Boolean(premiumRender) || String(quality).toLowerCase() === "high",
     });
 
     const enablePromptUpsampling = shouldEnablePromptUpsampling({
@@ -1291,7 +1279,7 @@ const baseFinalPrompt = [
     });
 
     const shouldRunIdentityEnforcement =
-      characterMode && Boolean(bestFaceAnchor);
+      characterMode && evaluationRefs.length > 0;
 
     const requests = Array.from({ length: safeN }, async () => {
       let bestCandidate = null;
@@ -1306,7 +1294,7 @@ const baseFinalPrompt = [
           prompt: currentPrompt,
           negativePrompt: currentNegativePrompt,
           aspect_ratio,
-          faceImage: bestFaceAnchor,
+          referenceImages: generationRefs,
           enablePromptUpsampling,
           premiumRender:
             model === MODELS.PREMIUM ||
@@ -1424,7 +1412,7 @@ const baseFinalPrompt = [
       prompt: bestOverall.prompt,
       negative_prompt: bestOverall.negativePrompt,
       ratio,
-      mode: characterMode ? "character" : "standard",
+      mode: characterMode ? "character_guided" : "scene_only",
       style: styleLabel || style || null,
       images: finalImages,
       evaluation: {
@@ -1441,12 +1429,8 @@ const baseFinalPrompt = [
         glasses_preserved: Boolean(bestOverall.evaluation?.glassesPreserved),
         beard_mismatch: Boolean(bestOverall.evaluation?.beardMismatch),
         retry_count: Math.max(0, Number(bestOverall.attempt || 1) - 1),
-        used_reference_count: characterMode
-          ? identityPackage?.allProfileUrls?.length || evaluationRefs.length
-          : 0,
-        reference_preview: characterMode
-          ? (identityPackage?.allProfileUrls?.slice(0, 8) || evaluationRefs)
-          : [],
+        used_reference_count: characterMode ? generationRefs.length : 0,
+        reference_preview: characterMode ? generationRefs : [],
         weighted_score: bestOverall.weightedScore,
       },
     };
@@ -1469,7 +1453,7 @@ const baseFinalPrompt = [
       generation: savedRow,
 meta: {
   model,
-  mode: characterMode ? "character" : "standard",
+  mode: characterMode ? "character_guided" : "scene_only",
   quality,
   realismMode,
   style,
@@ -1485,12 +1469,8 @@ meta: {
   finalPrompt: bestOverall.prompt,
   negativePrompt: bestOverall.negativePrompt,
 
-  referenceCount: characterMode
-    ? identityPackage?.allProfileUrls?.length || evaluationRefs.length
-    : 0,
-  referencePreview: characterMode
-    ? identityPackage?.allProfileUrls?.slice(0, 8) || evaluationRefs
-    : [],
+  referenceCount: characterMode ? generationRefs.length : 0,
+  referencePreview: characterMode ? generationRefs : [],
   characterLoaded: Boolean(character),
   characterName: character?.name || null,
   usedReferences: characterMode,
