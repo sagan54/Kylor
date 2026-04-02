@@ -803,32 +803,56 @@ function StylesPicker({ value, onChange, onClose }) {
   );
 }
 
-function PromptSectionCard({ title, text, accent = C.textMuted, onCopy = null }) {
+function UnifiedPromptCard({ group }) {
   const [copied, setCopied] = useState(false);
 
+  const sections = [
+    {
+      label: "Character Prompt",
+      color: "#c4b5fd",
+      text: group.characterPrompt,
+    },
+    {
+      label: "Scene Prompt",
+      color: "#93c5fd",
+      text: group.scenePrompt,
+    },
+    {
+      label: "Final Prompt",
+      color: "rgba(255,255,255,0.72)",
+      text: group.finalPrompt || group.prompt,
+    },
+  ].filter((section) => section.text && String(section.text).trim());
+
   async function handleCopy() {
-    if (!text) return;
+    const mergedText = sections
+      .map((section) => `${section.label}:\n${section.text}`)
+      .join("\n\n");
+
+    if (!mergedText) return;
+
     try {
-      await navigator.clipboard.writeText(text);
+      await navigator.clipboard.writeText(mergedText);
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
-      onCopy?.();
     } catch {}
   }
 
-  if (!text) return null;
+  if (!sections.length) return null;
 
   return (
     <div
       style={{
+        flex: 1,
+        minHeight: 0,
         borderRadius: radius.md,
         border: `1px solid ${C.border}`,
         background: "rgba(255,255,255,0.02)",
         padding: "10px 12px",
         display: "flex",
         flexDirection: "column",
-        gap: 8,
-        minHeight: 0,
+        gap: 10,
+        overflow: "hidden",
       }}
     >
       <div
@@ -837,6 +861,7 @@ function PromptSectionCard({ title, text, accent = C.textMuted, onCopy = null })
           alignItems: "center",
           justifyContent: "space-between",
           gap: 8,
+          flexShrink: 0,
         }}
       >
         <div
@@ -845,10 +870,10 @@ function PromptSectionCard({ title, text, accent = C.textMuted, onCopy = null })
             fontWeight: 700,
             letterSpacing: "0.08em",
             textTransform: "uppercase",
-            color: accent,
+            color: C.textMuted,
           }}
         >
-          {title}
+          Prompt
         </div>
 
         <button
@@ -877,18 +902,43 @@ function PromptSectionCard({ title, text, accent = C.textMuted, onCopy = null })
 
       <div
         style={{
-          maxHeight: 110,
+          flex: 1,
+          minHeight: 0,
           overflowY: "auto",
           paddingRight: 4,
-          color: "rgba(255,255,255,0.82)",
-          fontSize: 12.5,
-          lineHeight: 1.65,
-          wordBreak: "break-word",
-          whiteSpace: "pre-wrap",
+          display: "flex",
+          flexDirection: "column",
+          gap: 12,
           scrollbarWidth: "thin",
         }}
       >
-        {text}
+        {sections.map((section) => (
+          <div key={section.label}>
+            <div
+              style={{
+                fontSize: 10.5,
+                fontWeight: 700,
+                letterSpacing: "0.08em",
+                textTransform: "uppercase",
+                color: section.color,
+                marginBottom: 6,
+              }}
+            >
+              {section.label}
+            </div>
+            <div
+              style={{
+                color: "rgba(255,255,255,0.82)",
+                fontSize: 12.5,
+                lineHeight: 1.65,
+                wordBreak: "break-word",
+                whiteSpace: "pre-wrap",
+              }}
+            >
+              {section.text}
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -1163,40 +1213,7 @@ function GenerationCard({
               </div>
             )}
           </div>
-        <div
-  style={{
-    flex: 1,
-    minHeight: 0,
-    display: "flex",
-    flexDirection: "column",
-    gap: 10,
-    overflow: "hidden",
-  }}
->
-  <PromptSectionCard
-    title="Character Prompt"
-    text={group.characterPrompt}
-    accent="#c4b5fd"
-  />
-
-  <PromptSectionCard
-    title="Scene Prompt"
-    text={group.scenePrompt}
-    accent="#93c5fd"
-  />
-
-  <PromptSectionCard
-    title="Final Prompt"
-    text={group.finalPrompt || group.prompt}
-    accent={C.textMuted}
-  />
-
-  <PromptSectionCard
-    title="Negative Prompt"
-    text={group.negativePrompt}
-    accent="#fca5a5"
-  />
-</div>
+<UnifiedPromptCard group={group} />
           <div>
             <div
               style={{
