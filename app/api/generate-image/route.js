@@ -1350,7 +1350,7 @@ console.log("Resolved generation prompt blocks:", {
     const requests = Array.from({ length: safeN }, async () => {
       let bestCandidate = null;
 
-      const maxAttempts = shouldRunIdentityEnforcement ? 3 : 1;
+      const maxAttempts = shouldRunIdentityEnforcement ? 1 : 1;
       let currentPrompt = baseFinalPrompt;
       let currentNegativePrompt = negativeBlock;
 
