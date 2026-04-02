@@ -1671,38 +1671,53 @@ const hasCharacterControl =
   Boolean(selectedCharacter) ||
   Boolean(characterPrompt) ||
   uniqueReferenceImages.length > 0;
-    const n = Math.min(outputCount, 4);
+const requestedCount = Math.min(outputCount, 4);
+const n = requestedCount > 1 ? 1 : requestedCount;
+let lastGenerationError = null;
 
-    try {
-      const requests = Array.from({ length: n }, () =>
-        fetch("/api/generate-image", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-body: JSON.stringify({
-  userId: effectiveUserId,
-  characterId: selectedCharacter?.id || null,
-  prompt: positivePrompt,
-  scenePrompt: trimmedScenePrompt,
-  characterPrompt: hasCharacterControl ? characterPrompt : "",
-  style: selectedStyle,
-  styleLabel,
-  stylePrompt: selectedStyle ? STYLE_PROMPT_MAP[selectedStyle] : "",
-  negativePrompt: negativePrompt.trim(),
-  referenceImages: hasCharacterControl ? uniqueReferenceImages : [],
-  useCharacter: hasCharacterControl,
-  ratio,
-  size: getApiSize(ratio),
-  quality: getApiQuality(mode),
-  n: 1,
-  realismMode: selectedStyle === "photorealistic" ? "hyper" : "realistic",
-}),
-        }).then(async (r) => {
-          const data = await r.json().catch(() => ({}));
-          if (!r.ok) throw new Error(data?.error || "Generation failed");
-          return data;
-        })
-      );
-      const results = await Promise.all(requests);
+try {
+const results = [];
+
+for (let i = 0; i < n; i++) {
+  try {
+    const res = await fetch("/api/generate-image", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        userId: effectiveUserId,
+        characterId: selectedCharacter?.id || null,
+        prompt: positivePrompt,
+        scenePrompt: trimmedScenePrompt,
+        characterPrompt: hasCharacterControl ? characterPrompt : "",
+        style: selectedStyle,
+        styleLabel,
+        stylePrompt: selectedStyle ? STYLE_PROMPT_MAP[selectedStyle] : "",
+        negativePrompt: negativePrompt.trim(),
+        referenceImages: hasCharacterControl ? uniqueReferenceImages : [],
+        useCharacter: hasCharacterControl,
+        ratio,
+        size: getApiSize(ratio),
+        quality: getApiQuality(mode),
+        n: 1,
+        realismMode: selectedStyle === "photorealistic" ? "hyper" : "realistic",
+      }),
+    });
+
+    const data = await res.json().catch(() => ({}));
+
+    if (!res.ok) {
+      throw new Error(data?.error || "Generation failed");
+    }
+
+    results.push(data);
+
+    // 🔥 IMPORTANT: delay between requests
+    await new Promise((r) => setTimeout(r, 1200)); // 1.2 sec gap
+} catch (err) {
+  console.error("Single generation failed:", err);
+  lastGenerationError = err;
+}
+}
 const newGroups = results
   .map((d) => {
     const row = d?.generation;
@@ -1743,9 +1758,9 @@ const newGroups = results
   })
   .filter(Boolean);
 
-      if (!newGroups.length) {
-        throw new Error("No saved generation returned from API");
-      }
+if (!newGroups.length) {
+  throw lastGenerationError || new Error("No saved generation returned from API");
+}
       setGroups((p) => {
         const next = [...newGroups, ...p];
         syncCache(next);
@@ -1756,7 +1771,13 @@ const newGroups = results
       }
     } catch (err) {
       console.error("Generation failed:", err);
-      alert(err?.message || "Generation failed");
+      if (err?.message?.includes("429")) {
+  alert("You're hitting rate limits. Wait a few seconds or reduce outputs.");
+} else if (err?.message?.includes("credit")) {
+  alert("Replicate credit is low. Add credits for better performance.");
+} else {
+  alert(err?.message || "Generation failed");
+}
     } finally {
       setGenerating(false);
     }
