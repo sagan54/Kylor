@@ -803,56 +803,35 @@ function StylesPicker({ value, onChange, onClose }) {
   );
 }
 
-function UnifiedPromptCard({ group }) {
+function FixedPromptBox({ title, text, accent = C.textMuted, height = 170 }) {
   const [copied, setCopied] = useState(false);
 
-  const sections = [
-    {
-      label: "Character Prompt",
-      color: "#c4b5fd",
-      text: group.characterPrompt,
-    },
-    {
-      label: "Scene Prompt",
-      color: "#93c5fd",
-      text: group.scenePrompt,
-    },
-    {
-      label: "Final Prompt",
-      color: "rgba(255,255,255,0.72)",
-      text: group.finalPrompt || group.prompt,
-    },
-  ].filter((section) => section.text && String(section.text).trim());
-
   async function handleCopy() {
-    const mergedText = sections
-      .map((section) => `${section.label}:\n${section.text}`)
-      .join("\n\n");
-
-    if (!mergedText) return;
-
+    if (!text || !String(text).trim()) return;
     try {
-      await navigator.clipboard.writeText(mergedText);
+      await navigator.clipboard.writeText(text);
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     } catch {}
   }
 
-  if (!sections.length) return null;
+  if (!text || !String(text).trim()) return null;
 
   return (
     <div
       style={{
-        flex: 1,
-        minHeight: 0,
         borderRadius: radius.md,
         border: `1px solid ${C.border}`,
         background: "rgba(255,255,255,0.02)",
         padding: "10px 12px",
         display: "flex",
         flexDirection: "column",
-        gap: 10,
+        gap: 8,
+        height,
+        minHeight: height,
+        maxHeight: height,
         overflow: "hidden",
+        boxSizing: "border-box",
       }}
     >
       <div
@@ -870,10 +849,10 @@ function UnifiedPromptCard({ group }) {
             fontWeight: 700,
             letterSpacing: "0.08em",
             textTransform: "uppercase",
-            color: C.textMuted,
+            color: accent,
           }}
         >
-          Prompt
+          {title}
         </div>
 
         <button
@@ -906,42 +885,22 @@ function UnifiedPromptCard({ group }) {
           minHeight: 0,
           overflowY: "auto",
           paddingRight: 4,
-          display: "flex",
-          flexDirection: "column",
-          gap: 12,
+          color: "rgba(255,255,255,0.82)",
+          fontSize: 12.5,
+          lineHeight: 1.65,
+          wordBreak: "break-word",
+          whiteSpace: "pre-wrap",
           scrollbarWidth: "thin",
         }}
       >
-        {sections.map((section) => (
-          <div key={section.label}>
-            <div
-              style={{
-                fontSize: 10.5,
-                fontWeight: 700,
-                letterSpacing: "0.08em",
-                textTransform: "uppercase",
-                color: section.color,
-                marginBottom: 6,
-              }}
-            >
-              {section.label}
-            </div>
-            <div
-              style={{
-                color: "rgba(255,255,255,0.82)",
-                fontSize: 12.5,
-                lineHeight: 1.65,
-                wordBreak: "break-word",
-                whiteSpace: "pre-wrap",
-              }}
-            >
-              {section.text}
-            </div>
-          </div>
-        ))}
+        {text}
       </div>
     </div>
   );
+}
+
+function buildDisplayFinalPrompt(group) {
+  return group.finalPrompt || group.prompt || "";
 }
 
 // ─── Generation Feed Card ────────────────────────────────────────────────────
@@ -1213,7 +1172,28 @@ function GenerationCard({
               </div>
             )}
           </div>
-<UnifiedPromptCard group={group} />
+<div
+  style={{
+    display: "flex",
+    flexDirection: "column",
+    gap: 10,
+    flexShrink: 0,
+  }}
+>
+  <FixedPromptBox
+    title="Prompt"
+    text={buildDisplayFinalPrompt(group)}
+    accent={C.textMuted}
+    height={220}
+  />
+
+  <FixedPromptBox
+    title="Negative Prompt"
+    text={group.negativePrompt}
+    accent="#fca5a5"
+    height={140}
+  />
+</div>
           <div>
             <div
               style={{
