@@ -1380,7 +1380,7 @@ export async function POST(req) {
       ? await loadCharacterAnchorImages(characterId)
       : [];
 
-    const safeN = Math.min(Math.max(Number(n) || 1, 1), 4);
+    const safeN = 1;
 
     const frontendRefs = Array.isArray(referenceImages)
       ? referenceImages.map(normalizeReferenceImage).filter(Boolean).slice(0, 5)
@@ -1554,7 +1554,20 @@ premiumRender:
           userId,
         });
 
-        if (!storedImage?.url) continue;
+if (!storedImage?.url) continue;
+
+return Response.json({
+  image: storedImage.url,
+  images: [storedImage],
+  debug: "EARLY_RETURN_SUCCESS",
+  meta: {
+    model,
+    mode: characterMode ? "character_guided" : "scene_only",
+    referencePreview: generationRefs,
+    finalPrompt: currentPrompt,
+    negativePrompt: currentNegativePrompt,
+  },
+});
 
         const evaluation = shouldRunIdentityEnforcement
           ? await scoreGeneratedIdentity({
@@ -1712,7 +1725,7 @@ meta: {
   scenePrompt: cleanedScenePrompt,
   combinedScenePrompt: combinedSceneText,
   stylePrompt: cleanedStylePrompt,
-  identityPrompt: identityBlock,
+  identityPrompt: strictIdentityBlock,
   compositionPrompt: compositionBlock,
   realismPrompt: realismBlock,
   finalPrompt: bestOverall.prompt,
