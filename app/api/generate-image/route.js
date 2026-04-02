@@ -1091,6 +1091,7 @@ async function generateSingleCandidate({
   negativePrompt,
   aspect_ratio,
   refs,
+  identityPackage = null,
   useConsistencyModel,
   enablePromptUpsampling,
   userId,
@@ -1268,16 +1269,17 @@ const identityBlock = buildIdentityBlock({
       let currentNegativePrompt = negativeBlock;
 
       for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-        const storedImage = await generateSingleCandidate({
-          model,
-          prompt: currentPrompt,
-          negativePrompt: currentNegativePrompt,
-          aspect_ratio,
-          refs,
-          useConsistencyModel,
-          enablePromptUpsampling,
-          userId,
-        });
+const storedImage = await generateSingleCandidate({
+  model,
+  prompt: currentPrompt,
+  negativePrompt: currentNegativePrompt,
+  aspect_ratio,
+  refs,
+  identityPackage,
+  useConsistencyModel,
+  enablePromptUpsampling,
+  userId,
+});
 
         if (!storedImage?.url) continue;
 
