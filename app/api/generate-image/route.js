@@ -439,13 +439,14 @@ function buildIdentityBlock({
 }) {
   if (!useCharacter && !hasRefs && !character) return "";
 
-  const lines = [
-    "Use the exact same real person from the selected saved character references.",
-    "Preserve the same face, glasses, hairstyle, beard pattern, skin tone, and natural proportions.",
-    "Keep the identity recognizable at first glance.",
-    "Do not beautify, stylize, restyle, or replace the person with a more attractive version.",
-    "Do not change hair, beard, glasses, or facial structure unless explicitly requested.",
-  ];
+const lines = [
+  "Use the exact same real person from the selected saved character references.",
+  "Facial identity is the highest priority. The face must match exactly.",
+  "Preserve the same face, glasses, hairstyle, beard pattern, skin tone, and natural proportions.",
+  "Keep the identity recognizable at first glance.",
+  "Do not beautify, stylize, restyle, or replace the person with a more attractive version.",
+  "Do not change hair, beard, glasses, or facial structure unless explicitly requested.",
+];
 
   if (character?.name) {
     lines.push(`Character: ${character.name}.`);
@@ -620,11 +621,8 @@ function buildNegativeBlock({ negativePrompt, combinedPrompt, useCharacter }) {
     "male model face",
     "fitness model body",
     "heroic body proportions",
-    "handsome model face",
-"perfect jawline",
 "fashion model portrait",
 "clean commercial portrait",
-"corporate headshot look",
 "beautified male face",
 "idealized male face",
 "polished linkedin portrait",
@@ -633,8 +631,6 @@ function buildNegativeBlock({ negativePrompt, combinedPrompt, useCharacter }) {
 "sharp salon haircut",
 "symmetrical glamour face",
 "clean actor headshot",
-"improved facial structure",
-"more attractive replacement face",
   ];
 
   if (useCharacter) {
@@ -900,9 +896,9 @@ Required schema:
     const failureType = getFailureTypeFromEvaluation(result);
 
     const gymAction = isGymOrActionScene(scenePrompt);
-    const minimumIdentityScore = gymAction ? 8.5 : 8.0;
-    const minimumFaceScore = gymAction ? 8.5 : 8.0;
-    const minimumBodyScore = gymAction ? 7.5 : 7.0;
+const minimumIdentityScore = gymAction ? 9.0 : 8.7;
+const minimumFaceScore = gymAction ? 9.0 : 8.7;
+const minimumBodyScore = gymAction ? 7.5 : 7.2;
 
 const shouldPass =
   !result.faceMismatch &&
@@ -1105,7 +1101,12 @@ async function generateSingleCandidate({
         negative_prompt: negativePrompt,
         aspect_ratio,
         output_format: "png",
-        reference_images: refs,
+        reference_images: [
+  identityPackage?.closeup?.url,
+  identityPackage?.master?.url,
+  identityPackage?.original?.url,
+  ...refs
+].filter(Boolean).slice(0, 5)
       }
     : {
         prompt,
