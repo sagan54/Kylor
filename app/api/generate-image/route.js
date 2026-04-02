@@ -265,7 +265,7 @@ function buildIdentityPackage(character, anchorRows = [], sceneType = "scene") {
 function selectGenerationReferenceImages({
   identityPackage = null,
   frontendRefs = [],
-  maxRefs = 4,
+  maxRefs = 3,
 }) {
   const refs = [];
 
@@ -276,18 +276,21 @@ function selectGenerationReferenceImages({
     refs.push(normalized);
   };
 
-  if (identityPackage?.closeup?.url) pushRef(identityPackage.closeup.url);
+  // Priority order for scene generation:
+  // 1) strongest face lock
+  // 2) strongest frontal identity
+  // 3) strongest neutral base identity
   if (identityPackage?.master?.url) pushRef(identityPackage.master.url);
+  if (identityPackage?.closeup?.url) pushRef(identityPackage.closeup.url);
   if (identityPackage?.front?.url) pushRef(identityPackage.front.url);
-  if (identityPackage?.left?.url) pushRef(identityPackage.left.url);
-  if (identityPackage?.right?.url) pushRef(identityPackage.right.url);
-  if (identityPackage?.original?.url) pushRef(identityPackage.original.url);
 
-  for (const url of frontendRefs || []) {
-    pushRef(url);
+  // Only use original upload if we still don't have enough
+  if (refs.length < maxRefs && identityPackage?.original?.url) {
+    pushRef(identityPackage.original.url);
   }
 
-  for (const url of identityPackage?.allProfileUrls || []) {
+  // Frontend refs only as fallback
+  for (const url of frontendRefs || []) {
     if (refs.length >= maxRefs) break;
     pushRef(url);
   }
@@ -478,27 +481,37 @@ function buildIdentityBlock({
   hasRefs,
   character,
   identityPackage = null,
+  combinedPrompt = "",
 }) {
   if (!characterMode && !hasRefs && !character) return "";
 
+  const promptText = String(combinedPrompt || "").toLowerCase();
+  const actionScene = isGymOrActionScene(promptText);
+
   const lines = [
-    "Use the provided reference images as the exact same person identity.",
-    "Preserve the same real person across the generated scene.",
-    "Keep the face instantly recognizable at first glance.",
-    "Do not reinterpret the person as a cleaner, younger, more attractive, or different version.",
-    "Preserve face structure, hairstyle, hairline, skin tone, beard pattern, glasses, and natural proportions unless explicitly requested.",
+    "The generated person must be the exact same individual as the supplied reference images.",
+    "This is identity preservation, not reinterpretation.",
+    "Keep the face instantly recognizable as the same real person at first glance.",
+    "Preserve the exact same facial identity: face shape, jawline, cheek structure, eye shape, eyebrow shape, nose shape, lips, beard pattern, skin tone, hairline, hairstyle, and overall likeness.",
+    "Do not turn the person into a generic cinematic hero, model, actor, boxer, or a more attractive version.",
+    "Do not replace, beautify, sharpen, masculinize, or redesign the face.",
+    "Keep the same age impression, same ethnicity appearance, same facial proportions, and same recognizable features.",
   ];
 
+  if (actionScene) {
+    lines.push(
+      "Even in an action or gym scene, preserve the exact same face identity.",
+      "Muscle tension, sweat, dramatic lighting, and expression changes must not change who the person is.",
+      "Do not transform the person into a generic fighter or bodybuilder."
+    );
+  }
+
   if (character?.name) {
-    lines.push(`Character: ${character.name}.`);
+    lines.push(`Character name: ${character.name}.`);
   }
 
   if (identityPackage?.dnaText) {
     lines.push(identityPackage.dnaText);
-  }
-
-  if (identityPackage?.identityNotes) {
-    lines.push(identityPackage.identityNotes);
   }
 
   return lines.join(" ");
@@ -627,7 +640,11 @@ function buildNegativeBlock({ negativePrompt, combinedPrompt, useCharacter }) {
       "face change",
       "different hairstyle",
       "different beard pattern",
-      "different skin tone"
+      "different skin tone",
+      "generic boxer face",
+      "heroic fighter face",
+      "model-like male face",
+      "cinematic actor face"
     );
   }
 
@@ -1240,7 +1257,7 @@ export async function POST(req) {
       : [...new Set(frontendRefs)].slice(0, 4);
 
     const evaluationRefs = character
-      ? [...new Set(identityPackage?.allProfileUrls || generationRefs)].slice(0, 8)
+      ? [...new Set(generationRefs)].slice(0, 3)
       : [...new Set(frontendRefs)].slice(0, 5);
 
     const bestFaceAnchor = pickBestFaceAnchor({
@@ -1280,6 +1297,7 @@ export async function POST(req) {
       hasRefs,
       character,
       identityPackage,
+      combinedPrompt: combinedSceneText,
     });
 
     const compositionBlock = buildCompositionBlock({
@@ -1374,9 +1392,7 @@ console.log("Resolved generation prompt blocks:", {
         const evaluation = shouldRunIdentityEnforcement
           ? await scoreGeneratedIdentity({
               generatedImage: storedImage.url,
-              referencePack: identityPackage?.allProfileUrls?.length
-                ? identityPackage.allProfileUrls.slice(0, 8)
-                : evaluationRefs,
+              referencePack: evaluationRefs,
               dnaProfile: character?.dna_profile || null,
               scenePrompt: combinedSceneText,
               characterName: character?.name || "",
