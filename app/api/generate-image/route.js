@@ -750,12 +750,12 @@ function buildDreamOInput({
 
   const sizeMap = {
     "1:1": { width: 1024, height: 1024 },
-    "16:9": { width: 1024, height: 576 },
-    "9:16": { width: 576, height: 1024 },
-    "3:2": { width: 1024, height: 682 },
-    "2:3": { width: 682, height: 1024 },
-    "4:5": { width: 819, height: 1024 },
-    "5:4": { width: 1024, height: 819 },
+    "16:9": { width: 1344, height: 768 },
+    "9:16": { width: 768, height: 1344 },
+    "3:2": { width: 1216, height: 832 },
+    "2:3": { width: 832, height: 1216 },
+    "4:5": { width: 896, height: 1120 },
+    "5:4": { width: 1120, height: 896 },
   };
 
   const dims = sizeMap[aspect_ratio] || sizeMap["1:1"];
