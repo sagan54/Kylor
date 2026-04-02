@@ -17,8 +17,9 @@ const MODELS = {
   SCENE: "black-forest-labs/flux-2-pro",
   SCENE_PREMIUM: "black-forest-labs/flux-2-max",
 
-  // Identity-conditioned path
-  CHARACTER_ID: "zsxkib/dream-o",
+  // Pin a specific DreamO version
+  CHARACTER_ID:
+    "zsxkib/dream-o:efe92b897afb0e7da9f83d0f2ee20355c3a48fa5553c46ffbc4c111f5ca87dbb",
 };
 
 async function loadCharacterData(characterId) {
@@ -1221,12 +1222,10 @@ function buildDreamOInput({
   prompt,
   negativePrompt,
   referenceImages = [],
-  aspect_ratio,
 }) {
   const primaryRef = referenceImages?.[0] || null;
-  const secondaryRefs = Array.isArray(referenceImages)
-    ? referenceImages.slice(1, 3)
-    : [];
+  const secondaryRef = referenceImages?.[1] || null;
+  const thirdRef = referenceImages?.[2] || null;
 
   if (!primaryRef) {
     throw new Error("DreamO requires at least one identity reference image.");
@@ -1235,11 +1234,20 @@ function buildDreamOInput({
   const input = {
     prompt,
     negative_prompt: negativePrompt || "",
-    reference_image: primaryRef,
-    additional_reference_images: secondaryRefs,
-    aspect_ratio,
-    output_format: "png",
+
+    ref_image1: primaryRef,
+    ref_task1: "id",
   };
+
+  if (secondaryRef) {
+    input.ref_image2 = secondaryRef;
+    input.ref_task2 = "id";
+  }
+
+  if (thirdRef) {
+    input.ref_image3 = thirdRef;
+    input.ref_task3 = "id";
+  }
 
   return input;
 }
@@ -1260,7 +1268,6 @@ async function generateSingleCandidate({
           prompt,
           negativePrompt,
           referenceImages,
-          aspect_ratio,
         })
       : buildFluxInput({
           prompt,
@@ -1502,7 +1509,7 @@ console.log("Resolved generation prompt blocks:", {
   cleanedCharacterPrompt,
   cleanedStylePrompt,
   combinedSceneText,
-  identityBlock,
+  strictIdentityBlock,
   compositionBlock,
   realismBlock,
   negativeBlock,
