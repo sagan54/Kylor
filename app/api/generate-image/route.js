@@ -203,7 +203,7 @@ function buildSmartReferencePack(character, anchorRows = []) {
   return selected.slice(0, 5);
 }
 
-function buildIdentityPackage(character, anchorRows = []) {
+function buildIdentityPackage(character, anchorRows = [], sceneType = "scene") {
   const pool = buildCharacterProfilePool(character, anchorRows);
   const sorted = [...pool].sort((a, b) => (b.score || 0) - (a.score || 0));
 
@@ -224,21 +224,43 @@ function buildIdentityPackage(character, anchorRows = []) {
     strongRefs.push(item.url);
   };
 
-  pushRef(master);
-  pushRef(original);
-  pushRef(closeup);
-  pushRef(front);
-  pushRef(left || right);
+  if (sceneType === "portrait") {
+    pushRef(master);
+    pushRef(original);
+    pushRef(closeup);
+  } else if (sceneType === "side") {
+    pushRef(master);
+    pushRef(original);
+    pushRef(closeup);
+    pushRef(left || right);
+  } else if (sceneType === "full_body") {
+    pushRef(master);
+    pushRef(original);
+    pushRef(front);
+    pushRef(closeup);
+  } else {
+    pushRef(master);
+    pushRef(original);
+    pushRef(front);
+    pushRef(closeup);
+  }
+
+  for (const item of sorted) {
+    if (strongRefs.length >= 4) break;
+    pushRef(item);
+  }
 
   const allProfileUrls = sorted.map((item) => item.url).filter(Boolean);
 
   const identityNotes = [
+    `Scene type: ${sceneType}.`,
     master ? "Master identity available." : "",
     original ? "Original uploaded reference available." : "",
     closeup ? "Close-up facial anchor available." : "",
-    front ? "Front-view body anchor available." : "",
+    front ? "Front-view anchor available." : "",
     left || right ? "Side-view anchor available." : "",
     `Total saved profile count: ${allProfileUrls.length}.`,
+    `Active generation refs: ${strongRefs.length}.`,
   ]
     .filter(Boolean)
     .join(" ");
@@ -246,7 +268,7 @@ function buildIdentityPackage(character, anchorRows = []) {
   return {
     allProfiles: sorted,
     allProfileUrls,
-    strongRefs: strongRefs.slice(0, 5),
+    strongRefs: strongRefs.slice(0, 4),
     master,
     original,
     closeup,
@@ -255,6 +277,7 @@ function buildIdentityPackage(character, anchorRows = []) {
     right,
     dnaText: buildDnaIdentityText(character),
     identityNotes,
+    sceneType,
   };
 }
 
@@ -411,61 +434,25 @@ function normalizeText(value) {
 function buildIdentityBlock({
   useCharacter,
   hasRefs,
-  characterPrompt,
   character,
-  referenceCount = 0,
   identityPackage = null,
 }) {
   if (!useCharacter && !hasRefs && !character) return "";
 
-  const dnaText = identityPackage?.dnaText || buildDnaIdentityText(character);
-
   const lines = [
-    "IDENTITY PRESERVATION MODE:",
-    "Generate the exact same real person from the selected saved character package.",
-    "All provided saved references, profile views, and character data belong to one single fixed identity.",
-    "You must preserve that exact identity in the new scene.",
-    "This is not a reinterpretation task.",
-    "This is not a variation task.",
-    "This is not a 'similar person' task.",
-    "The output must look like the exact same person at first glance.",
-    "Preserve the exact face, facial proportions, cheek structure, jawline, eyes, eyebrows, nose, lips, ears, skin tone, beard pattern, hairline, hairstyle, hair length, and natural body proportions.",
-    "Preserve accessories like glasses exactly when present in the saved identity.",
-    "Do not beautify, glamorize, idealize, stylize, sharpen, clean up, masculinize, or commercially improve the person.",
-    "Do not generate a prettier version, a model-like version, a cinematic hero version, or a bodybuilder version.",
-    "Do not restyle the hair.",
-    "Do not alter beard density or beard pattern.",
-    "Do not make the jawline sharper.",
-    "Do not make the nose more refined.",
-    "Do not smooth the skin into beauty-filter skin.",
-    "Keep the identity fixed even if clothing, pose, camera angle, framing, or environment changes.",
-    "Identity accuracy is more important than dramatic scene styling.",
+    "Use the exact same real person from the selected saved character references.",
+    "Preserve the same face, glasses, hairstyle, beard pattern, skin tone, and natural proportions.",
+    "Keep the identity recognizable at first glance.",
+    "Do not beautify, stylize, restyle, or replace the person with a more attractive version.",
+    "Do not change hair, beard, glasses, or facial structure unless explicitly requested.",
   ];
 
   if (character?.name) {
-    lines.push(`Locked character: ${character.name}.`);
-  }
-
-  if (character?.description) {
-    lines.push(`Saved character description: ${character.description}`);
+    lines.push(`Character: ${character.name}.`);
   }
 
   if (identityPackage?.identityNotes) {
-    lines.push(`Saved identity package: ${identityPackage.identityNotes}`);
-  }
-
-  if (referenceCount > 0) {
-    lines.push(
-      `Use all saved profile information together as one identity package. Strong active reference count: ${referenceCount}.`
-    );
-  }
-
-  if (characterPrompt && !character) {
-    lines.push(`Character details: ${characterPrompt}`);
-  }
-
-  if (dnaText) {
-    lines.push(`DNA identity lock: ${dnaText}`);
+    lines.push(identityPackage.identityNotes);
   }
 
   return lines.join(" ");
@@ -478,6 +465,35 @@ function buildSceneBlock({ prompt, scenePrompt }) {
   if (rawScene) return rawScene;
 
   return rawPrompt;
+}
+
+function detectSceneType(text = "") {
+  const t = String(text || "").toLowerCase();
+
+  const isPortrait =
+    t.includes("close-up") ||
+    t.includes("close up") ||
+    t.includes("portrait") ||
+    t.includes("headshot") ||
+    t.includes("face shot");
+
+  const isSideAngle =
+    t.includes("side angle") ||
+    t.includes("side profile") ||
+    t.includes("profile view") ||
+    t.includes("looking sideways") ||
+    t.includes("from the side");
+
+  const isFullBody =
+    t.includes("full body") ||
+    t.includes("full-body") ||
+    t.includes("head to toe") ||
+    t.includes("head-to-toe");
+
+  if (isPortrait) return "portrait";
+  if (isSideAngle) return "side";
+  if (isFullBody) return "full_body";
+  return "scene";
 }
 
 function buildCompositionBlock({ combinedPrompt, ratio }) {
@@ -939,74 +955,41 @@ function buildIdentityRetryPrompt({
   basePrompt,
   failedEvaluation,
   character,
-  scenePrompt,
 }) {
   const corrections = [
-    "IDENTITY CORRECTION RETRY:",
-    "The previous result failed identity preservation.",
-    "Regenerate the exact same saved character.",
-    "The person must match the selected character package much more closely.",
-    "Do not generate a similar person.",
-    "Do not generate a more attractive or cleaner replacement.",
-    "Do not restyle the hair.",
-    "Do not improve facial symmetry.",
-    "Do not sharpen the jawline.",
-    "Do not replace the real face with a model-like face.",
-    "Do not change beard pattern, skin tone, glasses, or facial proportions.",
-    "Identity preservation is more important than scene aesthetics.",
+    "Retry with stronger identity match.",
+    "Keep the exact same real person from the saved references.",
+    "Correct identity drift.",
+    "Do not replace the person with a cleaner, more attractive, or different version.",
+    "Preserve the same face, hair, beard, glasses, and natural proportions.",
   ];
 
   if (character?.name) {
-    corrections.push(`Locked character identity: ${character.name}.`);
+    corrections.push(`Character: ${character.name}.`);
   }
 
   if (failedEvaluation?.faceMismatch) {
-    corrections.push(
-      "Correct face mismatch. Match the exact real facial identity from the saved profile package."
-    );
+    corrections.push("Correct the face to match the saved person much more closely.");
   }
 
   if (failedEvaluation?.hairstyleDrift) {
-    corrections.push(
-      "Correct hairstyle drift. Preserve exact hairline, hair length, volume, and natural shape."
-    );
+    corrections.push("Correct the hairstyle and hairline.");
   }
 
   if (failedEvaluation?.beardMismatch) {
-  corrections.push(
-    "Correct beard mismatch. Preserve the exact beard and mustache density, placement, shape, and facial hair pattern from the saved character."
-  );
-}
+    corrections.push("Correct the beard and mustache pattern.");
+  }
 
   if (failedEvaluation?.glassesMissing) {
-    corrections.push(
-      "Correct accessory mismatch. Keep the exact same glasses visible."
-    );
+    corrections.push("Keep the glasses visible and correct.");
   }
 
   if (failedEvaluation?.bodyExaggeration) {
-    corrections.push(
-      "Correct body exaggeration. Preserve natural realistic build and proportions."
-    );
+    corrections.push("Keep natural body proportions. Do not exaggerate the physique.");
   }
 
   if (failedEvaluation?.stylizationDrift) {
-    corrections.push(
-      "Remove stylization drift. Keep the subject grounded, real, and unchanged."
-    );
-  }
-
-  if (failedEvaluation?.weakResemblance) {
-    corrections.push(
-      "Increase resemblance sharply. The result must be immediately recognizable as the same person."
-    );
-  }
-  
-
-  if (failedEvaluation?.failureReasons?.length) {
-    corrections.push(
-      `Correct these failures: ${failedEvaluation.failureReasons.join("; ")}`
-    );
+    corrections.push("Reduce stylization and keep the result realistic.");
   }
 
   return [basePrompt, corrections.join(" ")].filter(Boolean).join("\n\n");
@@ -1186,8 +1169,12 @@ export async function POST(req) {
       ? referenceImages.map(normalizeReferenceImage).filter(Boolean).slice(0, 5)
       : [];
 
+const sceneType = detectSceneType(
+  `${normalizeText(prompt)} ${normalizeText(scenePrompt)}`
+);
+
 const identityPackage = character
-  ? buildIdentityPackage(character, anchorRows)
+  ? buildIdentityPackage(character, anchorRows, sceneType)
   : null;
 
 const characterRefs = identityPackage?.strongRefs || [];
@@ -1211,9 +1198,7 @@ const characterRefs = identityPackage?.strongRefs || [];
 const identityBlock = buildIdentityBlock({
   useCharacter: Boolean(useCharacter),
   hasRefs,
-  characterPrompt: cleanedCharacterPrompt,
   character,
-  referenceCount: refs.length,
   identityPackage,
 });
 
