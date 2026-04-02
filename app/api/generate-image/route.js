@@ -276,11 +276,16 @@ function selectGenerationReferenceImages({
     refs.push(normalized);
   };
 
-  // Strongest face lock first
+  // Strongest facial anchors first
   if (identityPackage?.closeup?.url) pushRef(identityPackage.closeup.url);
   if (identityPackage?.master?.url) pushRef(identityPackage.master.url);
-  if (identityPackage?.front?.url) pushRef(identityPackage.front.url);
 
+  // Use front only as third choice
+  if (refs.length < maxRefs && identityPackage?.front?.url) {
+    pushRef(identityPackage.front.url);
+  }
+
+  // Fallbacks only if needed
   if (refs.length < maxRefs && identityPackage?.original?.url) {
     pushRef(identityPackage.original.url);
   }
@@ -331,9 +336,12 @@ function buildDnaIdentityText(character) {
 function detectReferenceTraits(identityPackage = null, character = null) {
   const dnaText = String(identityPackage?.dnaText || "").toLowerCase();
   const notes = String(identityPackage?.identityNotes || "").toLowerCase();
-  const nameText = String(character?.description || "").toLowerCase();
+  const desc = String(character?.description || "").toLowerCase();
 
-  const combined = [dnaText, notes, nameText].join(" ");
+  const primaryAnchor = getPrimaryIdentityAnchor(identityPackage);
+  const primaryMeta = JSON.stringify(primaryAnchor?.row?.metadata || {}).toLowerCase();
+
+  const combined = [dnaText, notes, desc, primaryMeta].join(" ");
 
   const wearsGlasses =
     combined.includes("glasses") ||
@@ -343,6 +351,15 @@ function detectReferenceTraits(identityPackage = null, character = null) {
   return {
     wearsGlasses,
   };
+}
+
+function getPrimaryIdentityAnchor(identityPackage = null) {
+  return (
+    identityPackage?.closeup ||
+    identityPackage?.master ||
+    identityPackage?.front ||
+    null
+  );
 }
 
 function mapSizeToAspectRatio(size, ratio = "1:1") {
@@ -506,15 +523,19 @@ function buildIdentityBlock({
     "Identity preservation is the top priority.",
     "This is not an inspired-by character, not a variation, and not a reinterpretation.",
     "Keep the face instantly recognizable as the same real person at first glance.",
-    "Preserve the exact same facial geometry: face shape, jawline, cheek structure, forehead, eye shape, eyebrow shape, nose bridge, nose tip, lips, beard pattern, skin tone, and hairline.",
-    "Do not redesign, beautify, sharpen, idealize, masculinize, or replace the face.",
+    "The face must match the references more than the scene style.",
+    "Preserve the exact same facial geometry: face width, face length, jawline, cheek structure, forehead, eye shape, eyebrow shape, nose bridge, nose tip, nostril shape, lips, beard pattern, mustache shape, skin tone, and hairline.",
+    "Keep the same facial proportions and recognizable bone structure.",
+    "Do not redesign, beautify, sharpen, idealize, masculinize, stylize, or replace the face.",
     "Do not turn the person into a generic actor, model, cinematic hero, athlete, or boxer.",
     "The identity must remain the same even if clothing, background, pose, or lighting changes.",
   ];
 
   if (traits.wearsGlasses) {
     lines.push(
-      "The character wears glasses in the identity references. Keep the glasses present and consistent unless the prompt explicitly asks to remove them."
+      "The glasses are part of the character identity in the reference images.",
+      "Keep the glasses present, visible, and consistent.",
+      "Do not remove, redesign, restyle, resize, or replace the glasses unless the prompt explicitly requests removal."
     );
   }
 
@@ -663,14 +684,22 @@ function buildNegativeBlock({ negativePrompt, combinedPrompt, useCharacter }) {
       "different skin tone",
       "missing glasses",
       "removed glasses",
+      "different glasses",
+      "restyled glasses",
       "generic boxer face",
       "heroic fighter face",
       "model-like male face",
       "cinematic actor face",
       "beautified male face",
+      "idealized male face",
       "sharper jawline",
+      "narrower face",
+      "longer face",
       "different nose shape",
-      "different eye shape"
+      "different eye shape",
+      "different lip shape",
+      "different mustache",
+      "different beard density"
     );
   }
 
