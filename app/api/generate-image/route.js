@@ -1132,6 +1132,28 @@ async function generateSingleCandidate({
   return storedImage;
 }
 
+function sanitizeSensitiveSceneText(text = "") {
+  let t = String(text || "");
+
+  const replacements = [
+    { from: /\bwar-torn\b/gi, to: "battle-worn" },
+    { from: /\bbattlefield\b/gi, to: "historical field after conflict" },
+    { from: /\bgory\b/gi, to: "intense" },
+    { from: /\bgore\b/gi, to: "aftermath" },
+    { from: /\bblood\b/gi, to: "signs of conflict" },
+    { from: /\bdead bodies\b/gi, to: "abandoned traces of battle" },
+    { from: /\bcorpse\b/gi, to: "fallen figure" },
+    { from: /\bmassacre\b/gi, to: "devastation" },
+    { from: /\bbrutal\b/gi, to: "harsh" },
+  ];
+
+  for (const item of replacements) {
+    t = t.replace(item.from, item.to);
+  }
+
+  return t.trim();
+}
+
 export async function POST(req) {
   try {
     const {
@@ -1153,6 +1175,34 @@ export async function POST(req) {
       realismMode = "realistic",
       premiumRender = false,
     } = await req.json();
+
+    console.log("Incoming request:", {
+  prompt,
+  scenePrompt,
+  characterPrompt,
+});
+
+        console.log("Incoming generate-image payload:", {
+      userId,
+      characterId,
+      prompt,
+      scenePrompt,
+      characterPrompt,
+      style,
+      styleLabel,
+      stylePrompt,
+      negativePrompt,
+      useCharacter,
+      size,
+      quality,
+      n,
+      ratio,
+      realismMode,
+      premiumRender,
+      referenceImagesCount: Array.isArray(referenceImages)
+        ? referenceImages.length
+        : 0,
+    });
 
     if (!userId || !String(userId).trim()) {
       return Response.json({ error: "userId is required" }, { status: 400 });
@@ -1212,8 +1262,10 @@ export async function POST(req) {
     }
 
     const hasRefs = evaluationRefs.length > 0;
-    const cleanedPrompt = normalizeText(prompt);
-    const cleanedScenePrompt = normalizeText(scenePrompt);
+    const cleanedPrompt = sanitizeSensitiveSceneText(normalizeText(prompt));
+    const cleanedScenePrompt = sanitizeSensitiveSceneText(
+      normalizeText(scenePrompt)
+    );
     const cleanedCharacterPrompt = normalizeText(characterPrompt);
     const cleanedStylePrompt = normalizeText(stylePrompt);
     const cleanedNegativePrompt = normalizeText(negativePrompt);
@@ -1265,6 +1317,20 @@ const baseFinalPrompt = [
 ]
   .filter(Boolean)
   .join("\n\n");
+
+// ✅ ADD THIS RIGHT HERE
+console.log("Resolved generation prompt blocks:", {
+  cleanedPrompt,
+  cleanedScenePrompt,
+  cleanedCharacterPrompt,
+  cleanedStylePrompt,
+  combinedSceneText,
+  identityBlock,
+  compositionBlock,
+  realismBlock,
+  negativeBlock,
+  baseFinalPrompt,
+});
 
     const aspect_ratio = mapSizeToAspectRatio(size, ratio);
 
@@ -1497,8 +1563,28 @@ meta: {
     });
   } catch (error) {
     console.error("Image generation error:", error);
+
+    const rawMessage = String(error?.message || "");
+
+    if (
+      rawMessage.toLowerCase().includes("flagged as sensitive") ||
+      rawMessage.toLowerCase().includes("sensitive")
+    ) {
+      return Response.json(
+        {
+          error:
+            "This prompt was blocked by the image provider safety filter. Try softer wording such as 'after conflict', 'historical tension', or 'battle-worn environment' instead of direct violent terms.",
+          errorType: "safety_filter",
+        },
+        { status: 400 }
+      );
+    }
+
     return Response.json(
-      { error: error?.message || "Failed to generate image" },
+      {
+        error: rawMessage || "Failed to generate image",
+        errorType: "generation_error",
+      },
       { status: 500 }
     );
   }
