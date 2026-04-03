@@ -470,7 +470,6 @@ function buildIdentityBlock({
   return lines.join(" ");
 }
 
-// ✅ ADD THE NEW HELPER HERE
 function buildConditionedIdentityBlock({
   character,
   identityPackage = null,
@@ -559,34 +558,27 @@ function buildCompositionBlock({ combinedPrompt, ratio }) {
   ].join(" ");
 }
 
+// FIX 5 — upgraded realism block with anti-AI-polish instructions
 function buildRealismBlock({ realismMode = "realistic" }) {
   const mode = String(realismMode || "realistic").toLowerCase();
 
+  const antiPolish = [
+    "Natural skin with visible pores, subtle texture, and micro-imperfections.",
+    "Asymmetric features as they appear in real life.",
+    "Do NOT apply beauty filtering, skin smoothing, or AI face enhancement.",
+    "Do NOT render this as a studio headshot or polished portrait.",
+    "Film grain quality, not digital perfection.",
+  ].join(" ");
+
   if (mode === "hyper") {
-    return [
-      "Realism:",
-      "Extremely photorealistic image.",
-      "Natural skin texture with believable pores and facial detail.",
-      "Real-world lighting, realistic anatomy, grounded depth of field.",
-      "Avoid glamour retouching, fantasy skin, or synthetic cinematic exaggeration.",
-    ].join(" ");
+    return `Realism: Hyper-photorealistic. ${antiPolish} Analog film quality. Strong subsurface scattering on skin.`;
   }
 
   if (mode === "standard") {
-    return [
-      "Realism:",
-      "Clean realistic image.",
-      "Natural facial detail, believable lighting, and grounded anatomy.",
-      "Keep the result realistic and not stylized.",
-    ].join(" ");
+    return `Realism: Clean realistic image. ${antiPolish}`;
   }
 
-  return [
-    "Realism:",
-    "Photorealistic image while strictly preserving the original face identity without enhancement or beautification.",
-    "Believable skin texture, grounded anatomy, realistic lighting, realistic proportions.",
-    "Avoid artificial beauty-filter skin or over-stylized rendering.",
-  ].join(" ");
+  return `Realism: Photorealistic. ${antiPolish} Avoid artificial beauty-filter rendering or synthetic skin texture.`;
 }
 
 function buildNegativeBlock({ negativePrompt, combinedPrompt, useCharacter }) {
@@ -734,60 +726,66 @@ function buildFluxInput({
   return input;
 }
 
+// FIX 1 + FIX 4 + FIX 6 — guidance/steps raised, size map corrected, smart ref_task per view
 function buildDreamOInput({
   prompt,
   negativePrompt,
   referenceImages = [],
   aspect_ratio,
+  identityPackage = null,
 }) {
-  const primaryRef = referenceImages?.[0] || null;
+  const primaryRef   = referenceImages?.[0] || null;
   const secondaryRef = referenceImages?.[1] || null;
-  const thirdRef = referenceImages?.[2] || null;
+  const thirdRef     = referenceImages?.[2] || null;
 
   if (!primaryRef) {
     throw new Error("DreamO requires at least one identity reference image.");
   }
 
-const sizeMap = {
-  "1:1": { width: 1024, height: 1024 },
-
-  // ✅ Valid 16:9
-  "16:9": { width: 1024, height: 768 },
-
-  // ✅ Valid 9:16
-  "9:16": { width: 768, height: 1024 },
-
-  // ✅ Safe cinematic ratios
-  "3:2": { width: 1024, height: 768 },
-  "2:3": { width: 768, height: 1024 },
-
-  "4:5": { width: 819, height: 1024 },
-  "5:4": { width: 1024, height: 819 },
-};
+  // FIX 4 — corrected size map with true aspect ratios
+  const sizeMap = {
+    "1:1":  { width: 1024, height: 1024 },
+    "16:9": { width: 1280, height: 720  },
+    "9:16": { width: 720,  height: 1280 },
+    "3:2":  { width: 1152, height: 768  },
+    "2:3":  { width: 768,  height: 1152 },
+    "4:5":  { width: 819,  height: 1024 },
+    "5:4":  { width: 1024, height: 819  },
+    "4:3":  { width: 1024, height: 768  },
+    "21:9": { width: 1344, height: 576  },
+  };
 
   const dims = sizeMap[aspect_ratio] || sizeMap["1:1"];
+
+  // FIX 6 — detect if third ref is a body view (less face-reliable)
+  const thirdIsBodyView =
+    identityPackage &&
+    (identityPackage.allProfiles?.find((p) => p.url === thirdRef)?.view === "front" ||
+      identityPackage.allProfiles?.find((p) => p.url === thirdRef)?.view === "back");
 
   const input = {
     prompt,
     neg_prompt: negativePrompt || "",
     ref_image1: primaryRef,
     ref_task1: "id",
-    width: dims.width,
+    width:  dims.width,
     height: dims.height,
-    guidance: 3.0,
-    num_steps: 12,
+    // FIX 1 — raised from guidance:3.0/num_steps:12
+    guidance:      5.5,
+    num_steps:     25,
     output_format: "webp",
     output_quality: 90,
   };
 
   if (secondaryRef) {
     input.ref_image2 = secondaryRef;
-    input.ref_task2 = "id";
+    input.ref_task2  = "id";          // second face ref stays "id"
   }
 
   if (thirdRef) {
     input.ref_image3 = thirdRef;
-    input.ref_task3 = "id";
+    // FIX 6 — body view uses "style" so it doesn't compete as face anchor
+    input.ref_task3  = thirdIsBodyView ? "style" : "id";
   }
 
   return input;
@@ -861,12 +859,12 @@ export async function POST(req) {
     } = await req.json();
 
     console.log("Incoming request:", {
-  prompt,
-  scenePrompt,
-  characterPrompt,
-});
+      prompt,
+      scenePrompt,
+      characterPrompt,
+    });
 
-        console.log("Incoming generate-image payload:", {
+    console.log("Incoming generate-image payload:", {
       userId,
       characterId,
       prompt,
@@ -900,7 +898,6 @@ export async function POST(req) {
     const anchorRows = characterId
       ? await loadCharacterAnchorImages(characterId)
       : [];
-
 
     const frontendRefs = Array.isArray(referenceImages)
       ? referenceImages.map(normalizeReferenceImage).filter(Boolean).slice(0, 5)
@@ -936,46 +933,33 @@ export async function POST(req) {
     }
 
     const hasRefs = generationRefs.length > 0;
-    const cleanedPrompt = sanitizeSensitiveSceneText(normalizeText(prompt));
-    const cleanedScenePrompt = sanitizeSensitiveSceneText(
-      normalizeText(scenePrompt)
-    );
+    const cleanedPrompt          = sanitizeSensitiveSceneText(normalizeText(prompt));
+    const cleanedScenePrompt     = sanitizeSensitiveSceneText(normalizeText(scenePrompt));
     const cleanedCharacterPrompt = normalizeText(characterPrompt);
-    const cleanedStylePrompt = normalizeText(stylePrompt);
-    const cleanedNegativePrompt = normalizeText(negativePrompt);
+    const cleanedStylePrompt     = normalizeText(stylePrompt);
+    const cleanedNegativePrompt  = normalizeText(negativePrompt);
 
     const combinedSceneText = buildSceneBlock({
-      prompt: cleanedPrompt,
+      prompt:      cleanedPrompt,
       scenePrompt: cleanedScenePrompt,
     });
 
-    const identityBlock =
-      characterMode
-        ? buildConditionedIdentityBlock({
-            character,
-            identityPackage,
-            combinedPrompt: combinedSceneText,
-          })
-        : buildIdentityBlock({
-            characterMode,
-            hasRefs,
-            character,
-            identityPackage,
-            combinedPrompt: combinedSceneText,
-          });
-
-          const strictIdentityBlock = [
-  identityBlock,
-  buildIdentityBlock({
-    characterMode,
-    hasRefs,
-    character,
-    identityPackage,
-    combinedPrompt: combinedSceneText,
-  }),
-]
-  .filter(Boolean)
-  .join(" ");
+    // FIX 2 + FIX 3 — single identity block, correct branch per mode
+    // characterMode (DreamO): short conditioned block — visual ref does the heavy lifting
+    // non-character (Flux):   full identity block — text is the only identity signal
+    const strictIdentityBlock = characterMode
+      ? buildConditionedIdentityBlock({
+          character,
+          identityPackage,
+          combinedPrompt: combinedSceneText,
+        })
+      : buildIdentityBlock({
+          characterMode: false,
+          hasRefs,
+          character:       null,
+          identityPackage: null,
+          combinedPrompt:  combinedSceneText,
+        });
 
     const compositionBlock = buildCompositionBlock({
       combinedPrompt: combinedSceneText,
@@ -989,7 +973,7 @@ export async function POST(req) {
     const negativeBlock = buildNegativeBlock({
       negativePrompt: cleanedNegativePrompt,
       combinedPrompt: combinedSceneText,
-      useCharacter: characterMode,
+      useCharacter:   characterMode,
     });
 
     const qualityBlock = [
@@ -1001,59 +985,61 @@ export async function POST(req) {
       "Do not replace the requested scene with a generic beauty shot.",
     ].join(" ");
 
-const baseFinalPrompt = [
-  `Scene: ${combinedSceneText}`,
-  compositionBlock,
-  cleanedStylePrompt ? `Style guidance: ${cleanedStylePrompt}` : "",
-  realismBlock,
-  cleanedCharacterPrompt ? `Character guidance: ${cleanedCharacterPrompt}` : "",
-  strictIdentityBlock,
-  qualityBlock,
-]
-  .filter(Boolean)
-  .join("\n\n");
+    // FIX 5 — realism block moved up (position 3) so it hits before style
+    const baseFinalPrompt = [
+      `Scene: ${combinedSceneText}`,
+      compositionBlock,
+      realismBlock,
+      cleanedStylePrompt     ? `Style guidance: ${cleanedStylePrompt}`         : "",
+      cleanedCharacterPrompt ? `Character guidance: ${cleanedCharacterPrompt}` : "",
+      strictIdentityBlock,
+      qualityBlock,
+    ]
+      .filter(Boolean)
+      .join("\n\n");
 
-// ✅ ADD THIS RIGHT HERE
-console.log("Resolved generation prompt blocks:", {
-  cleanedPrompt,
-  cleanedScenePrompt,
-  cleanedCharacterPrompt,
-  cleanedStylePrompt,
-  combinedSceneText,
-  strictIdentityBlock,
-  compositionBlock,
-  realismBlock,
-  negativeBlock,
-  baseFinalPrompt,
-});
+    console.log("Resolved generation prompt blocks:", {
+      cleanedPrompt,
+      cleanedScenePrompt,
+      cleanedCharacterPrompt,
+      cleanedStylePrompt,
+      combinedSceneText,
+      strictIdentityBlock,
+      compositionBlock,
+      realismBlock,
+      negativeBlock,
+      baseFinalPrompt,
+    });
 
     const aspect_ratio = mapSizeToAspectRatio(size, ratio);
 
-const model = chooseModel({
-  characterMode,
-  premiumRender:
-    Boolean(premiumRender) || String(quality).toLowerCase() === "high",
-});
+    const model = chooseModel({
+      characterMode,
+      premiumRender:
+        Boolean(premiumRender) || String(quality).toLowerCase() === "high",
+    });
 
     const enablePromptUpsampling = shouldEnablePromptUpsampling({
       characterMode,
       realismMode,
     });
 
-    const currentPrompt = baseFinalPrompt;
+    const currentPrompt         = baseFinalPrompt;
     const currentNegativePrompt = negativeBlock;
 
+    // FIX 6 — pass identityPackage into buildDreamOInput for smart ref_task selection
     const input =
       model === MODELS.CHARACTER_ID
         ? buildDreamOInput({
-            prompt: currentPrompt,
-            negativePrompt: currentNegativePrompt,
+            prompt:          currentPrompt,
+            negativePrompt:  currentNegativePrompt,
             referenceImages: generationRefs,
             aspect_ratio,
+            identityPackage,
           })
         : buildFluxInput({
-            prompt: currentPrompt,
-            negativePrompt: currentNegativePrompt,
+            prompt:                currentPrompt,
+            negativePrompt:        currentNegativePrompt,
             aspect_ratio,
             enablePromptUpsampling,
             premiumRender:
@@ -1072,49 +1058,49 @@ const model = chooseModel({
     });
 
     const jobPayload = {
-  prediction_id: prediction.id,
-  user_id: String(userId),
-  character_id: character?.id || null,
-  prompt: currentPrompt,
-  negative_prompt: currentNegativePrompt,
-  ratio,
-  mode: characterMode ? "character_guided" : "scene_only",
-  style: styleLabel || style || null,
-  meta: {
-    referencePreview: generationRefs,
-    finalPrompt: currentPrompt,
-    negativePrompt: currentNegativePrompt,
-    characterPrompt: cleanedCharacterPrompt,
-    scenePrompt: cleanedScenePrompt,
-    combinedScenePrompt: combinedSceneText,
-    stylePrompt: cleanedStylePrompt,
-    identityPrompt: strictIdentityBlock,
-    compositionPrompt: compositionBlock,
-    realismPrompt: realismBlock,
-    characterLoaded: Boolean(character),
-    characterName: character?.name || null,
-  },
-  evaluation: {},
-  status: prediction.status || "starting",
-};
+      prediction_id: prediction.id,
+      user_id:       String(userId),
+      character_id:  character?.id || null,
+      prompt:        currentPrompt,
+      negative_prompt: currentNegativePrompt,
+      ratio,
+      mode:  characterMode ? "character_guided" : "scene_only",
+      style: styleLabel || style || null,
+      meta: {
+        referencePreview:    generationRefs,
+        finalPrompt:         currentPrompt,
+        negativePrompt:      currentNegativePrompt,
+        characterPrompt:     cleanedCharacterPrompt,
+        scenePrompt:         cleanedScenePrompt,
+        combinedScenePrompt: combinedSceneText,
+        stylePrompt:         cleanedStylePrompt,
+        identityPrompt:      strictIdentityBlock,
+        compositionPrompt:   compositionBlock,
+        realismPrompt:       realismBlock,
+        characterLoaded:     Boolean(character),
+        characterName:       character?.name || null,
+      },
+      evaluation: {},
+      status: prediction.status || "starting",
+    };
 
-const { error: jobInsertError } = await supabaseAdmin
-  .from("generation_jobs")
-  .insert(jobPayload);
+    const { error: jobInsertError } = await supabaseAdmin
+      .from("generation_jobs")
+      .insert(jobPayload);
 
-if (jobInsertError) {
-  throw new Error(jobInsertError.message || "Failed to save generation job");
-}
+    if (jobInsertError) {
+      throw new Error(jobInsertError.message || "Failed to save generation job");
+    }
 
     return Response.json({
-      status: prediction.status,
+      status:      prediction.status,
       predictionId: prediction.id,
       model,
       mode: characterMode ? "character_guided" : "scene_only",
       meta: {
         referencePreview: generationRefs,
-        finalPrompt: currentPrompt,
-        negativePrompt: currentNegativePrompt,
+        finalPrompt:      currentPrompt,
+        negativePrompt:   currentNegativePrompt,
       },
     });
 
@@ -1139,7 +1125,7 @@ if (jobInsertError) {
 
     return Response.json(
       {
-        error: rawMessage || "Failed to generate image",
+        error:     rawMessage || "Failed to generate image",
         errorType: "generation_error",
       },
       { status: 500 }
