@@ -14,9 +14,12 @@ const MODELS = {
   SCENE: "black-forest-labs/flux-2-pro",
   SCENE_PREMIUM: "black-forest-labs/flux-2-max",
 
-  // Pin a specific DreamO version
   CHARACTER_ID:
     "zsxkib/dream-o:efe92b897afb0e7da9f83d0f2ee20355c3a48fa5553c46ffbc4c111f5ca87dbb",
+
+  // ✅ NEW MODEL
+  INSTANT_ID:
+    "grandlineai/instant-id-photorealistic",
 };
 
 async function loadCharacterData(characterId) {
@@ -752,8 +755,13 @@ function buildNegativeBlock({ negativePrompt, combinedPrompt, useCharacter }) {
 function chooseModel({
   characterMode,
   premiumRender,
+  modelType,
 }) {
-  if (characterMode) return MODELS.CHARACTER_ID;
+  if (characterMode) {
+    if (modelType === "instant") return MODELS.INSTANT_ID;
+    return MODELS.CHARACTER_ID; // fallback DreamO
+  }
+
   if (premiumRender) return MODELS.SCENE_PREMIUM;
   return MODELS.SCENE;
 }
@@ -889,6 +897,24 @@ const thirdIsBodyView =
   return input;
 }
 
+function buildInstantIDInput({
+  prompt,
+  negativePrompt,
+  referenceImages = [],
+}) {
+  const faceImage = referenceImages?.[0] || null;
+
+  if (!faceImage) {
+    throw new Error("InstantID requires at least one face reference image.");
+  }
+
+  return {
+    image: faceImage,
+    prompt,
+    negative_prompt: negativePrompt || "",
+  };
+}
+
 async function createReplicatePrediction({ model, input }) {
   if (!model || typeof model !== "string") {
     throw new Error("Invalid model target");
@@ -937,24 +963,26 @@ function sanitizeSensitiveSceneText(text = "") {
 export async function POST(req) {
   try {
     const {
-      userId,
-      characterId = null,
-      prompt,
-      scenePrompt = "",
-      characterPrompt = "",
-      style = null,
-      styleLabel = "",
-      stylePrompt = "",
-      negativePrompt = "",
-      useCharacter = false,
-      size = "1024x1024",
-      quality = "medium",
-      n = 1,
-      referenceImages = [],
-      ratio = "1:1",
-      realismMode = "realistic",
-      premiumRender = false,
-    } = await req.json();
+  userId,
+  characterId = null,
+  prompt,
+  scenePrompt = "",
+  characterPrompt = "",
+  style = null,
+  styleLabel = "",
+  stylePrompt = "",
+  negativePrompt = "",
+  useCharacter = false,
+  size = "1024x1024",
+  quality = "medium",
+  n = 1,
+  referenceImages = [],
+  ratio = "1:1",
+  realismMode = "realistic",
+  premiumRender = false,
+} = await req.json();
+
+const modelType = "instant";
 
     console.log("Incoming request:", {
       prompt,
@@ -1123,11 +1151,12 @@ const qualityBlock = characterMode
 
     const aspect_ratio = mapSizeToAspectRatio(size, ratio);
 
-    const model = chooseModel({
-      characterMode,
-      premiumRender:
-        Boolean(premiumRender) || String(quality).toLowerCase() === "high",
-    });
+const model = chooseModel({
+  characterMode,
+  premiumRender:
+    Boolean(premiumRender) || String(quality).toLowerCase() === "high",
+  modelType,
+});
 
     const enablePromptUpsampling = shouldEnablePromptUpsampling({
       characterMode,
@@ -1138,26 +1167,32 @@ const qualityBlock = characterMode
     const currentNegativePrompt = negativeBlock;
 
     // FIX 6 — pass identityPackage into buildDreamOInput for smart ref_task selection
-    const input =
-      model === MODELS.CHARACTER_ID
-        ? buildDreamOInput({
-            prompt:          currentPrompt,
-            negativePrompt:  currentNegativePrompt,
-            referenceImages: generationRefs,
-            aspect_ratio,
-            identityPackage,
-          })
-        : buildFluxInput({
-            prompt:                currentPrompt,
-            negativePrompt:        currentNegativePrompt,
-            aspect_ratio,
-            enablePromptUpsampling,
-            premiumRender:
-              model === MODELS.SCENE_PREMIUM ||
-              Boolean(premiumRender) ||
-              String(quality).toLowerCase() === "high",
-            referenceImages: generationRefs,
-          });
+const input =
+  model === MODELS.CHARACTER_ID
+    ? buildDreamOInput({
+        prompt: currentPrompt,
+        negativePrompt: currentNegativePrompt,
+        referenceImages: generationRefs,
+        aspect_ratio,
+        identityPackage,
+      })
+    : model === MODELS.INSTANT_ID
+    ? buildInstantIDInput({
+        prompt: currentPrompt,
+        negativePrompt: currentNegativePrompt,
+        referenceImages: generationRefs,
+      })
+    : buildFluxInput({
+        prompt: currentPrompt,
+        negativePrompt: currentNegativePrompt,
+        aspect_ratio,
+        enablePromptUpsampling,
+        premiumRender:
+          model === MODELS.SCENE_PREMIUM ||
+          Boolean(premiumRender) ||
+          String(quality).toLowerCase() === "high",
+        referenceImages: generationRefs,
+      });
 
     console.log("Replicate model:", model);
     console.log("Replicate input:", JSON.stringify(input, null, 2));
