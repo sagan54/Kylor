@@ -19,6 +19,12 @@ const MODELS = {
     "zsxkib/dream-o:efe92b897afb0e7da9f83d0f2ee20355c3a48fa5553c46ffbc4c111f5ca87dbb",
 };
 
+const FACE_MATCH_MODEL =
+  process.env.FACE_MATCH_MODEL || "apna-mart/face-match";
+
+const CHARACTER_VERIFY_RETRIES = 2;
+const DEFAULT_IDENTITY_THRESHOLD = 0.82;
+
 async function loadCharacterData(characterId) {
   if (!characterId) return null;
 
@@ -917,6 +923,162 @@ function sanitizeSensitiveSceneText(text = "") {
   return t.trim();
 }
 
+function extractOutputImageUrls(output) {
+  const urls = [];
+
+  const pushUrl = (value) => {
+    const normalized = normalizeReferenceImage(value);
+    if (!normalized) return;
+    if (!urls.includes(normalized)) urls.push(normalized);
+  };
+
+  const visit = (value) => {
+    if (!value) return;
+
+    if (typeof value === "string") {
+      pushUrl(value);
+      return;
+    }
+
+    if (Array.isArray(value)) {
+      for (const item of value) visit(item);
+      return;
+    }
+
+    if (typeof value === "object") {
+      pushUrl(
+        value.url ||
+          value.image_url ||
+          value.publicUrl ||
+          value.src ||
+          value.output ||
+          null
+      );
+
+      for (const nested of Object.values(value)) {
+        visit(nested);
+      }
+    }
+  };
+
+  visit(output);
+  return urls;
+}
+
+function extractFaceMatchScore(output) {
+  if (typeof output === "number") return output;
+
+  if (typeof output === "string") {
+    const n = Number(output);
+    return Number.isFinite(n) ? n : null;
+  }
+
+  if (Array.isArray(output)) {
+    for (const item of output) {
+      const value = extractFaceMatchScore(item);
+      if (Number.isFinite(value)) return value;
+    }
+    return null;
+  }
+
+  if (output && typeof output === "object") {
+    const possibleKeys = [
+      "similarity",
+      "score",
+      "match_score",
+      "confidence",
+      "distance_score",
+      "face_similarity",
+    ];
+
+    for (const key of possibleKeys) {
+      const value = Number(output[key]);
+      if (Number.isFinite(value)) return value;
+    }
+
+    for (const value of Object.values(output)) {
+      const nested = extractFaceMatchScore(value);
+      if (Number.isFinite(nested)) return nested;
+    }
+  }
+
+  return null;
+}
+
+function normalizeFaceMatchScore(score) {
+  const n = Number(score);
+  if (!Number.isFinite(n)) return null;
+
+  if (n > 1 && n <= 100) {
+    return Math.max(0, Math.min(1, n / 100));
+  }
+
+  if (n >= 0 && n <= 1) {
+    return n;
+  }
+
+  return null;
+}
+
+function pickBestVerificationReference(character, identityPackage = null, generationRefs = []) {
+  return (
+    identityPackage?.master?.url ||
+    identityPackage?.closeup?.url ||
+    identityPackage?.original?.url ||
+    generationRefs?.[0] ||
+    character?.master_image ||
+    character?.reference_image ||
+    null
+  );
+}
+
+async function verifyGeneratedFace({
+  referenceImage,
+  candidateImage,
+  threshold = DEFAULT_IDENTITY_THRESHOLD,
+}) {
+  const normalizedReference = normalizeReferenceImage(referenceImage);
+  const normalizedCandidate = normalizeReferenceImage(candidateImage);
+
+  if (!normalizedReference || !normalizedCandidate) {
+    return {
+      accepted: false,
+      similarity: null,
+      threshold,
+      predictionId: null,
+      reason: "Missing valid reference or candidate image",
+      rawOutput: null,
+    };
+  }
+
+  const prediction = await replicate.models.predictions.create(
+    FACE_MATCH_MODEL,
+    {
+      input: {
+        image1: normalizedReference,
+        image2: normalizedCandidate,
+      },
+    }
+  );
+
+  const rawOutput = prediction?.output;
+  const extracted = extractFaceMatchScore(rawOutput);
+  const similarity = normalizeFaceMatchScore(extracted);
+
+  return {
+    accepted: Number.isFinite(similarity)
+      ? similarity >= Number(threshold)
+      : false,
+    similarity,
+    threshold: Number(threshold),
+    predictionId: prediction?.id || null,
+    reason: Number.isFinite(similarity)
+      ? null
+      : "Could not parse face match similarity",
+    rawOutput,
+  };
+}
+
 export async function POST(req) {
   try {
     const {
@@ -1144,10 +1306,88 @@ const qualityBlock = characterMode
     console.log("Replicate model:", model);
     console.log("Replicate input:", JSON.stringify(input, null, 2));
 
-    const prediction = await createReplicatePrediction({
-      model,
-      input,
-    });
+const identityThreshold = Number(
+  character?.identity_threshold ?? DEFAULT_IDENTITY_THRESHOLD
+);
+
+const verificationReferenceImage = characterMode
+  ? pickBestVerificationReference(character, identityPackage, generationRefs)
+  : null;
+
+let prediction = null;
+let finalVerification = null;
+let attemptCount = 0;
+let finalCandidateImage = null;
+
+for (
+  let attempt = 0;
+  attempt <= (characterMode ? CHARACTER_VERIFY_RETRIES : 0);
+  attempt++
+) {
+  attemptCount = attempt + 1;
+
+  const attemptInput =
+    model === MODELS.CHARACTER_ID
+      ? {
+          ...input,
+          guidance:
+            attempt === 0
+              ? input.guidance
+              : Math.min((input.guidance || 4.5) + attempt * 0.4, 6.0),
+          num_steps:
+            attempt === 0
+              ? input.num_steps
+              : Math.min((input.num_steps || 22) + attempt * 2, 28),
+        }
+      : input;
+
+  const currentPrediction = await createReplicatePrediction({
+    model,
+    input: attemptInput,
+  });
+
+  prediction = currentPrediction;
+
+  const outputUrls = extractOutputImageUrls(currentPrediction?.output);
+  finalCandidateImage = outputUrls[0] || null;
+
+  if (!characterMode) {
+    break;
+  }
+
+  if (!finalCandidateImage) {
+    finalVerification = {
+      accepted: false,
+      similarity: null,
+      threshold: identityThreshold,
+      predictionId: null,
+      reason: "No output image URL found for verification",
+      rawOutput: null,
+    };
+    continue;
+  }
+
+  finalVerification = await verifyGeneratedFace({
+    referenceImage: verificationReferenceImage,
+    candidateImage: finalCandidateImage,
+    threshold: identityThreshold,
+  });
+
+  if (finalVerification.accepted) {
+    break;
+  }
+
+  console.warn("Identity verification failed, retrying generation:", {
+    attempt: attempt + 1,
+    similarity: finalVerification?.similarity ?? null,
+    threshold: identityThreshold,
+    candidateImage: finalCandidateImage,
+  });
+}
+
+if (!prediction) {
+  throw new Error("Failed to create prediction");
+}
 
     const jobPayload = {
       prediction_id: prediction.id,
@@ -1171,6 +1411,22 @@ const qualityBlock = characterMode
         realismPrompt:       realismBlock,
         characterLoaded:     Boolean(character),
         characterName:       character?.name || null,
+verificationReferenceImage,
+identityThreshold,
+attemptCount,
+identityVerified: Boolean(finalVerification?.accepted),
+identitySimilarity: finalVerification?.similarity ?? null,
+identityVerification: finalVerification
+  ? {
+      accepted: finalVerification.accepted,
+      similarity: finalVerification.similarity,
+      threshold: finalVerification.threshold,
+      predictionId: finalVerification.predictionId || null,
+      reason: finalVerification.reason || null,
+    }
+  : null,
+candidateImageForVerification: finalCandidateImage,
+
       },
       evaluation: {},
       status: prediction.status || "starting",
@@ -1184,17 +1440,23 @@ const qualityBlock = characterMode
       throw new Error(jobInsertError.message || "Failed to save generation job");
     }
 
-    return Response.json({
-      status:      prediction.status,
-      predictionId: prediction.id,
-      model,
-      mode: characterMode ? "character_guided" : "scene_only",
-      meta: {
-        referencePreview: generationRefs,
-        finalPrompt:      currentPrompt,
-        negativePrompt:   currentNegativePrompt,
-      },
-    });
+return Response.json({
+  status: prediction.status,
+  predictionId: prediction.id,
+  model,
+  mode: characterMode ? "character_guided" : "scene_only",
+  meta: {
+    referencePreview: generationRefs,
+    finalPrompt: currentPrompt,
+    negativePrompt: currentNegativePrompt,
+    verificationReferenceImage,
+    candidateImageForVerification: finalCandidateImage,
+    attemptCount,
+    identityVerified: Boolean(finalVerification?.accepted),
+    identitySimilarity: finalVerification?.similarity ?? null,
+    identityThreshold,
+  },
+});
 
   } catch (error) {
     console.error("Image generation error:", error);
