@@ -13,6 +13,8 @@ const supabaseAdmin = createClient(
 const FACE_MATCH_MODEL =
   process.env.FACE_MATCH_MODEL || "apna-mart/face-match";
 
+const DEFAULT_IDENTITY_THRESHOLD = 0.82;
+
 function normalizeImageUrl(value) {
   const url = String(value || "").trim();
   if (!url) return null;
@@ -93,7 +95,11 @@ function pickBestReferenceImage(character, anchorRows = []) {
   push(character?.cover_image, 700, "character.cover_image");
 
   for (const row of anchorRows) {
-    push(row?.image_url, scoreAnchor(row), `character_images:${row?.id || "row"}`);
+    push(
+      row?.image_url,
+      scoreAnchor(row),
+      `character_images:${row?.id || "row"}`
+    );
   }
 
   candidates.sort((a, b) => b.score - a.score);
@@ -145,105 +151,6 @@ function normalizeSimilarity(score) {
   const n = Number(score);
   if (!Number.isFinite(n)) return null;
 
-  // If model returns 0..100, convert to 0..1
-  if (n > 1 && n <= 100) {
-    return Math.max(0, Math.min(1, n / 100));
-  }
-
-  // Already 0..1
-  if (n >= 0 && n <= 1) {
-    return n;
-  }
-
-  return null;
-}
-
-function extractOutputImageUrls(output) {
-  const urls = [];
-
-  const pushUrl = (value) => {
-    const normalized = normalizeReferenceImage(value);
-    if (!normalized) return;
-    if (!urls.includes(normalized)) urls.push(normalized);
-  };
-
-  const visit = (value) => {
-    if (!value) return;
-
-    if (typeof value === "string") {
-      pushUrl(value);
-      return;
-    }
-
-    if (Array.isArray(value)) {
-      for (const item of value) visit(item);
-      return;
-    }
-
-    if (typeof value === "object") {
-      pushUrl(
-        value.url ||
-          value.image_url ||
-          value.publicUrl ||
-          value.src ||
-          value.output ||
-          null
-      );
-
-      for (const nested of Object.values(value)) {
-        visit(nested);
-      }
-    }
-  };
-
-  visit(output);
-  return urls;
-}
-
-function extractSimilarityScore(output) {
-  if (typeof output === "number") return output;
-
-  if (typeof output === "string") {
-    const n = Number(output);
-    return Number.isFinite(n) ? n : null;
-  }
-
-  if (Array.isArray(output)) {
-    for (const item of output) {
-      const value = extractSimilarityScore(item);
-      if (Number.isFinite(value)) return value;
-    }
-    return null;
-  }
-
-  if (output && typeof output === "object") {
-    const possibleKeys = [
-      "similarity",
-      "score",
-      "match_score",
-      "confidence",
-      "distance_score",
-      "face_similarity",
-    ];
-
-    for (const key of possibleKeys) {
-      const value = Number(output[key]);
-      if (Number.isFinite(value)) return value;
-    }
-
-    for (const value of Object.values(output)) {
-      const nested = extractSimilarityScore(value);
-      if (Number.isFinite(nested)) return nested;
-    }
-  }
-
-  return null;
-}
-
-function normalizeSimilarity(score) {
-  const n = Number(score);
-  if (!Number.isFinite(n)) return null;
-
   if (n > 1 && n <= 100) {
     return Math.max(0, Math.min(1, n / 100));
   }
@@ -253,181 +160,6 @@ function normalizeSimilarity(score) {
   }
 
   return null;
-}
-
-function pickBestVerificationReference(character, identityPackage = null, generationRefs = []) {
-  return (
-    identityPackage?.master?.url ||
-    identityPackage?.closeup?.url ||
-    identityPackage?.original?.url ||
-    generationRefs?.[0] ||
-    character?.master_image ||
-    character?.reference_image ||
-    null
-  );
-}
-
-async function verifyFaceMatch({
-  referenceImage,
-  candidateImage,
-  threshold = DEFAULT_IDENTITY_THRESHOLD,
-}) {
-  const normalizedReference = normalizeReferenceImage(referenceImage);
-  const normalizedCandidate = normalizeReferenceImage(candidateImage);
-
-  if (!normalizedReference || !normalizedCandidate) {
-    return {
-      accepted: false,
-      similarity: null,
-      threshold,
-      rawOutput: null,
-      reason: "Missing valid reference or candidate image for verification",
-    };
-  }
-
-  const prediction = await replicate.models.predictions.create(
-    FACE_MATCH_MODEL,
-    {
-      input: {
-        image1: normalizedReference,
-        image2: normalizedCandidate,
-      },
-    }
-  );
-
-  const rawOutput = prediction?.output;
-  const extracted = extractSimilarityScore(rawOutput);
-  const similarity = normalizeSimilarity(extracted);
-
-  return {
-    accepted: Number.isFinite(similarity) ? similarity >= Number(threshold) : false,
-    similarity,
-    threshold: Number(threshold),
-    rawOutput,
-    predictionId: prediction?.id || null,
-    reason: Number.isFinite(similarity)
-      ? null
-      : "Could not parse similarity from face-match output",
-  };
-}
-
-async function createPredictionAndVerify({
-  model,
-  input,
-  characterMode,
-  referenceImage,
-  threshold,
-}) {
- const identityThreshold = Number(
-  character?.identity_threshold ?? DEFAULT_IDENTITY_THRESHOLD
-);
-
-const verificationReferenceImage = characterMode
-  ? pickBestVerificationReference(character, identityPackage, generationRefs)
-  : null;
-
-let finalAttempt = null;
-let finalPrediction = null;
-let finalVerification = null;
-let attemptCount = 0;
-
-for (
-  let attempt = 0;
-  attempt <= (characterMode ? CHARACTER_VERIFY_RETRIES : 0);
-  attempt++
-) {
-  attemptCount = attempt + 1;
-
-  const attemptInput =
-    model === MODELS.CHARACTER_ID
-      ? {
-          ...input,
-          guidance: attempt === 0 ? input.guidance : Math.min((input.guidance || 4.5) + attempt * 0.4, 6.0),
-          num_steps: attempt === 0 ? input.num_steps : Math.min((input.num_steps || 22) + attempt * 2, 28),
-        }
-      : input;
-
-  const attemptResult = await createPredictionAndVerify({
-    model,
-    input: attemptInput,
-    characterMode,
-    referenceImage: verificationReferenceImage,
-    threshold: identityThreshold,
-  });
-
-  finalAttempt = attemptResult;
-  finalPrediction = attemptResult.prediction;
-  finalVerification = attemptResult.verification || null;
-
-  if (!characterMode || attemptResult.accepted) {
-    break;
-  }
-
-  console.warn("Identity verification failed, retrying generation:", {
-    attempt: attempt + 1,
-    similarity: attemptResult?.verification?.similarity ?? null,
-    threshold: identityThreshold,
-    candidateImage: attemptResult?.candidateImage ?? null,
-  });
-}
-
-const prediction = finalPrediction;
-
-if (!prediction) {
-  throw new Error("Failed to create prediction");
-}
-
-if (
-  characterMode &&
-  finalVerification &&
-  !finalVerification.accepted &&
-  !finalAttempt?.candidateImage
-) {
-  throw new Error(
-    finalVerification.reason || "Character generation failed identity verification"
-  );
-}
-  const outputUrls = extractOutputImageUrls(prediction?.output);
-  const candidateImage = outputUrls[0] || null;
-
-  if (!characterMode) {
-    return {
-      prediction,
-      accepted: true,
-      similarity: null,
-      verification: null,
-      candidateImage,
-    };
-  }
-
-  if (!candidateImage) {
-    return {
-      prediction,
-      accepted: false,
-      similarity: null,
-      verification: {
-        accepted: false,
-        similarity: null,
-        threshold,
-        reason: "No candidate image URL found in model output",
-      },
-      candidateImage: null,
-    };
-  }
-
-  const verification = await verifyFaceMatch({
-    referenceImage,
-    candidateImage,
-    threshold,
-  });
-
-  return {
-    prediction,
-    accepted: verification.accepted,
-    similarity: verification.similarity,
-    verification,
-    candidateImage,
-  };
 }
 
 export async function POST(req) {
@@ -471,7 +203,9 @@ export async function POST(req) {
 
     const comparisonThreshold =
       threshold ??
-      Number(resolvedCharacter?.identity_threshold ?? 0.82);
+      Number(
+        resolvedCharacter?.identity_threshold ?? DEFAULT_IDENTITY_THRESHOLD
+      );
 
     const prediction = await replicate.models.predictions.create(
       FACE_MATCH_MODEL,
@@ -482,12 +216,6 @@ export async function POST(req) {
         },
       }
     );
-
-    const FACE_MATCH_MODEL =
-  process.env.FACE_MATCH_MODEL || "apna-mart/face-match";
-
-const CHARACTER_VERIFY_RETRIES = 2;
-const DEFAULT_IDENTITY_THRESHOLD = 0.82;
 
     const rawOutput = prediction?.output;
     const extracted = extractSimilarityScore(rawOutput);
@@ -522,7 +250,10 @@ const DEFAULT_IDENTITY_THRESHOLD = 0.82;
         .eq("prediction_id", saveToGenerationJobId);
 
       if (updateError) {
-        console.error("Failed to update generation job evaluation:", updateError);
+        console.error(
+          "Failed to update generation job evaluation:",
+          updateError
+        );
       }
     }
 
