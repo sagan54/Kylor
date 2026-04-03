@@ -12,7 +12,7 @@ const supabaseAdmin = createClient(
 
 const DEFAULT_IDENTITY_THRESHOLD = 0.82;
 const FACE_MATCH_MODEL =
-  process.env.FACE_MATCH_MODEL || "apna-mart/face-match";
+  process.env.FACE_MATCH_MODEL || "cjwbw/face-similarity";
 
 function normalizeImageUrl(value) {
   const url = String(value || "").trim();
@@ -179,13 +179,27 @@ async function verifyFaceMatch({
     };
   }
 
-  const prediction = await replicate.predictions.create({
+  let prediction;
+
+if (FACE_MATCH_MODEL.includes(":")) {
+  const [, version] = FACE_MATCH_MODEL.split(":");
+
+  prediction = await replicate.predictions.create({
+    version,
+    input: {
+      image1: normalizedReference,
+      image2: normalizedCandidate,
+    },
+  });
+} else {
+  prediction = await replicate.predictions.create({
     model: FACE_MATCH_MODEL,
     input: {
       image1: normalizedReference,
       image2: normalizedCandidate,
     },
   });
+}
 
   const rawOutput = prediction?.output;
   const extracted = extractSimilarityScore(rawOutput);
