@@ -920,11 +920,9 @@ async function createReplicatePrediction({ model, input }) {
     throw new Error("Invalid model target");
   }
 
-  const parts = model.split(":");
-
-  // Community / pinned-version path (DreamO)
-  if (parts.length === 2) {
-    const version = parts[1];
+  // Community pinned version, like DreamO
+  if (model.includes(":")) {
+    const [, version] = model.split(":");
 
     return await replicate.predictions.create({
       version,
@@ -932,10 +930,13 @@ async function createReplicatePrediction({ model, input }) {
     });
   }
 
-  // Official model path (Flux official models)
-  return await replicate.models.predictions.create(model, {
-    input,
-  });
+  // Community slug models you want to run directly
+  if (model === MODELS.INSTANT_ID) {
+    return await replicate.run(model, { input });
+  }
+
+  // Official models
+  return await replicate.run(model, { input });
 }
 
 function sanitizeSensitiveSceneText(text = "") {
