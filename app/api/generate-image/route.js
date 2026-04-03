@@ -409,9 +409,18 @@ function detectSceneType(text = "") {
   return "scene";
 }
 
+function stripPromptLabel(text = "", label = "scene:") {
+  const value = String(text || "").trim();
+  if (!value) return "";
+  if (value.toLowerCase().startsWith(label.toLowerCase())) {
+    return value.slice(label.length).trim();
+  }
+  return value;
+}
+
 function buildSceneBlock({ prompt, scenePrompt }) {
-  const rawScene = normalizeText(scenePrompt);
-  const rawPrompt = normalizeText(prompt);
+  const rawScene = stripPromptLabel(normalizeText(scenePrompt), "scene:");
+  const rawPrompt = stripPromptLabel(normalizeText(prompt), "scene:");
 
   if (rawScene) return rawScene;
   return rawPrompt;
@@ -480,22 +489,29 @@ function buildConditionedIdentityBlock({
   const traits = detectReferenceTraits(identityPackage, character);
 
   const lines = [
-    "Use the supplied reference images as the exact same person.",
-    "Preserve the same facial geometry and overall likeness.",
-    "The facial identity must match the reference images with near-exact similarity. Even small differences in eyes, nose, lips, or bone structure are not acceptable.",
-    "Do not redesign or beautify the face.",
-    "Do not turn the person into a generic actor, model, or cinematic hero.",
+    "Use the supplied reference images as the exact same real person.",
+    "Preserve the same face width, face length, cheek fullness, jaw softness, chin size, lip volume, nose shape, eye shape, eyebrow shape, beard density, skin tone, and hairline.",
+    "Do not make the face thinner.",
+    "Do not sharpen the jawline.",
+    "Do not enlarge or puff the lips.",
+    "Do not beautify, idealize, or improve facial attractiveness.",
+    "Do not make the face more symmetrical than the real person.",
+    "Keep natural asymmetry and natural facial imperfections from the references.",
+    "Do not turn the person into a generic actor, model, cinematic hero, or polished portrait subject.",
+    "The output must feel like a photograph of the same person, not an enhanced reinterpretation.",
   ];
 
   if (traits.wearsGlasses) {
     lines.push(
-      "Keep the glasses present and consistent with the identity references."
+      "Keep the glasses present and consistent with the identity references.",
+      "Do not resize, redesign, or restyle the glasses."
     );
   }
 
   if (actionScene) {
     lines.push(
-      "Even in an action or gym scene, the face must remain the same person."
+      "Even in an action or gym scene, the face must remain the same real person.",
+      "Do not transform the face into a sharper, stronger, more heroic version."
     );
   }
 
@@ -503,10 +519,14 @@ function buildConditionedIdentityBlock({
     lines.push(`Character name: ${character.name}.`);
   }
 
+  if (identityPackage?.dnaText) {
+    lines.push(identityPackage.dnaText);
+  }
+
   return lines.join(" ");
 }
 
-function buildCompositionBlock({ combinedPrompt, ratio }) {
+function buildCompositionBlock({ combinedPrompt, ratio, characterMode = false }) {
   const text = combinedPrompt.toLowerCase();
 
   const wantsCloseup =
@@ -552,33 +572,50 @@ function buildCompositionBlock({ combinedPrompt, ratio }) {
   return [
     "Composition:",
     "Follow the requested framing exactly.",
-    "Use natural cinematic framing.",
+    characterMode
+      ? "Use natural photographic framing."
+      : "Use natural cinematic framing.",
     "Keep the subject clearly readable.",
     "Do not default to an extreme close-up unless explicitly requested.",
   ].join(" ");
 }
 
 // FIX 5 — upgraded realism block with anti-AI-polish instructions
-function buildRealismBlock({ realismMode = "realistic" }) {
+function buildRealismBlock({ realismMode = "realistic", characterMode = false }) {
   const mode = String(realismMode || "realistic").toLowerCase();
 
-  const antiPolish = [
-    "Natural skin with visible pores, subtle texture, and micro-imperfections.",
-    "Asymmetric features as they appear in real life.",
-    "Do NOT apply beauty filtering, skin smoothing, or AI face enhancement.",
-    "Do NOT render this as a studio headshot or polished portrait.",
-    "Film grain quality, not digital perfection.",
-  ].join(" ");
+  if (characterMode) {
+    return [
+      "Realism: Natural real-person photography.",
+      "Natural skin texture with pores, unevenness, and subtle real-life imperfections.",
+      "Keep authentic facial detail.",
+      "Do NOT apply beauty filtering, skin smoothing, glamour lighting, face enhancement, or portrait polishing.",
+      "Do NOT make the subject look prettier, sharper, cleaner, or more symmetrical than the real reference.",
+      "Avoid studio-beauty rendering and avoid cinematic face enhancement.",
+    ].join(" ");
+  }
 
   if (mode === "hyper") {
-    return `Realism: Hyper-photorealistic. ${antiPolish} Analog film quality. Strong subsurface scattering on skin.`;
+    return [
+      "Realism: Hyper-photorealistic.",
+      "Natural texture, believable light, strong realism.",
+      "Avoid waxy skin, fake smoothness, and artificial beauty-filter rendering.",
+    ].join(" ");
   }
 
   if (mode === "standard") {
-    return `Realism: Clean realistic image. ${antiPolish}`;
+    return [
+      "Realism: Clean realistic image.",
+      "Natural texture and believable light.",
+      "Avoid synthetic skin and polished portrait rendering.",
+    ].join(" ");
   }
 
-  return `Realism: Photorealistic. ${antiPolish} Avoid artificial beauty-filter rendering or synthetic skin texture.`;
+  return [
+    "Realism: Photorealistic.",
+    "Natural texture, pores, subtle imperfections, and grounded lighting.",
+    "Avoid artificial beauty-filter rendering or synthetic skin texture.",
+  ].join(" ");
 }
 
 function buildNegativeBlock({ negativePrompt, combinedPrompt, useCharacter }) {
@@ -616,33 +653,68 @@ function buildNegativeBlock({ negativePrompt, combinedPrompt, useCharacter }) {
   ];
 
   if (useCharacter) {
-    baseNegatives.push(
-      "different person",
-      "identity drift",
-      "face change",
-      "different hairstyle",
-      "different beard pattern",
-      "different skin tone",
-      "missing glasses",
-      "removed glasses",
-      "different glasses",
-      "restyled glasses",
-      "generic boxer face",
-      "heroic fighter face",
-      "model-like male face",
-      "cinematic actor face",
-      "beautified male face",
-      "idealized male face",
-      "sharper jawline",
-      "narrower face",
-      "longer face",
-      "different nose shape",
-      "different eye shape",
-      "different lip shape",
-      "different mustache",
-      "different beard density"
-    );
-  }
+  baseNegatives.push(
+    "different person",
+    "identity drift",
+    "face change",
+    "different hairstyle",
+    "different beard pattern",
+    "different skin tone",
+    "missing glasses",
+    "removed glasses",
+    "different glasses",
+    "restyled glasses",
+    "generic boxer face",
+    "heroic fighter face",
+    "model-like male face",
+    "cinematic actor face",
+    "beautified male face",
+    "idealized male face",
+    "sharper jawline",
+    "narrower face",
+    "longer face",
+    "different nose shape",
+    "different eye shape",
+    "different lip shape",
+    "different mustache",
+    "different beard density",
+    "thin face",
+    "slimmer face",
+    "sharp jaw",
+    "sharp jawline",
+    "defined jawline",
+    "puffed lips",
+    "fuller lips",
+    "plump lips",
+    "beautified face",
+    "improved face",
+    "perfect symmetry",
+    "symmetrical face",
+    "airbrushed face",
+    "retouched skin",
+    "glamour portrait",
+    "studio beauty lighting",
+    "handsome model face",
+    "hero face",
+    "refined facial structure",
+    "clean perfect skin",
+    "over-detailed cinematic portrait",
+    "smaller nose",
+    "sharper nose",
+    "cleaner beard",
+    "lighter beard",
+    "thicker beard",
+    "reshaped chin",
+    "pointed chin",
+    "smaller chin",
+    "stronger cheekbones",
+    "hollow cheeks",
+    "face slimming",
+    "beauty retouching",
+    "skin retouching",
+    "instagram face",
+  );
+}
 
   const wantsWide =
     text.includes("wide shot") ||
@@ -764,10 +836,13 @@ const sizeMap = {
   const dims = sizeMap[aspect_ratio] || sizeMap["1:1"];
 
   // FIX 6 — detect if third ref is a body view (less face-reliable)
-  const thirdIsBodyView =
-    identityPackage &&
-    (identityPackage.allProfiles?.find((p) => p.url === thirdRef)?.view === "front" ||
-      identityPackage.allProfiles?.find((p) => p.url === thirdRef)?.view === "back");
+  const thirdProfile = identityPackage?.allProfiles?.find((p) => p.url === thirdRef);
+const thirdView = thirdProfile?.view || "";
+
+const thirdIsBodyView =
+  thirdView === "front" ||
+  thirdView === "back" ||
+  thirdView === "reference";
 
   const input = {
     prompt,
@@ -777,8 +852,8 @@ const sizeMap = {
     width:  dims.width,
     height: dims.height,
     // FIX 1 — raised from guidance:3.0/num_steps:12
-    guidance:      5.5,
-    num_steps:     25,
+    guidance: 4.5,
+    num_steps: 22,
     output_format: "webp",
     output_quality: 90,
   };
@@ -967,14 +1042,16 @@ export async function POST(req) {
           combinedPrompt:  combinedSceneText,
         });
 
-    const compositionBlock = buildCompositionBlock({
-      combinedPrompt: combinedSceneText,
-      ratio,
-    });
+const compositionBlock = buildCompositionBlock({
+  combinedPrompt: combinedSceneText,
+  ratio,
+  characterMode,
+});
 
-    const realismBlock = buildRealismBlock({
-      realismMode,
-    });
+const realismBlock = buildRealismBlock({
+  realismMode,
+  characterMode,
+});
 
     const negativeBlock = buildNegativeBlock({
       negativePrompt: cleanedNegativePrompt,
@@ -982,7 +1059,16 @@ export async function POST(req) {
       useCharacter:   characterMode,
     });
 
-    const qualityBlock = [
+const qualityBlock = characterMode
+  ? [
+      "Quality:",
+      "Strong identity fidelity.",
+      "Accurate anatomy.",
+      "Natural facial detail.",
+      "Follow the prompt exactly.",
+      "Do not replace the requested scene with a beauty shot, glamour portrait, or polished cinematic face.",
+    ].join(" ")
+  : [
       "Quality:",
       "Strong scene fidelity.",
       "Accurate anatomy.",
