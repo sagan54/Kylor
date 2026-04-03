@@ -978,7 +978,7 @@ export async function POST(req) {
   premiumRender = false,
 } = await req.json();
 
-const modelType = "instant";
+const modelType = "dreamo";
 
     console.log("Incoming request:", {
       prompt,
