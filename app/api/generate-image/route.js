@@ -743,17 +743,23 @@ function buildDreamOInput({
   }
 
   // FIX 4 — corrected size map with true aspect ratios
-  const sizeMap = {
-    "1:1":  { width: 1024, height: 1024 },
-    "16:9": { width: 1280, height: 720  },
-    "9:16": { width: 720,  height: 1280 },
-    "3:2":  { width: 1152, height: 768  },
-    "2:3":  { width: 768,  height: 1152 },
-    "4:5":  { width: 819,  height: 1024 },
-    "5:4":  { width: 1024, height: 819  },
-    "4:3":  { width: 1024, height: 768  },
-    "21:9": { width: 1344, height: 576  },
-  };
+const sizeMap = {
+  "1:1":  { width: 1024, height: 1024 },
+
+  // FIXED 16:9 (valid)
+  "16:9": { width: 1024, height: 768 },
+
+  // FIXED vertical
+  "9:16": { width: 768, height: 1024 },
+
+  "3:2":  { width: 1024, height: 682 },
+  "2:3":  { width: 682,  height: 1024 },
+
+  "4:5":  { width: 819,  height: 1024 },
+  "5:4":  { width: 1024, height: 819 },
+
+  "4:3":  { width: 1024, height: 768 },
+};
 
   const dims = sizeMap[aspect_ratio] || sizeMap["1:1"];
 
