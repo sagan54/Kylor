@@ -18,8 +18,8 @@ const MODELS = {
     "zsxkib/dream-o:efe92b897afb0e7da9f83d0f2ee20355c3a48fa5553c46ffbc4c111f5ca87dbb",
 
   // ✅ NEW MODEL
-  INSTANT_ID:
-    "grandlineai/instant-id-photorealistic",
+INSTANT_ID:
+  "grandlineai/instant-id-photorealistic:03914a0c3326bf44383d0cd84b06822618af879229ce5d1d53bef38d93b68279",
 };
 
 async function loadCharacterData(characterId) {
@@ -920,7 +920,6 @@ async function createReplicatePrediction({ model, input }) {
     throw new Error("Invalid model target");
   }
 
-  // Community pinned version, like DreamO
   if (model.includes(":")) {
     const [, version] = model.split(":");
 
@@ -930,13 +929,9 @@ async function createReplicatePrediction({ model, input }) {
     });
   }
 
-  // Community slug models you want to run directly
-  if (model === MODELS.INSTANT_ID) {
-    return await replicate.run(model, { input });
-  }
-
-  // Official models
-  return await replicate.run(model, { input });
+  return await replicate.models.predictions.create(model, {
+    input,
+  });
 }
 
 function sanitizeSensitiveSceneText(text = "") {
