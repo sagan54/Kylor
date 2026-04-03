@@ -312,63 +312,7 @@ export async function GET(req) {
       );
     }
 
-    let identityVerification = null;
-
-if (job?.character_id) {
-  const character = await loadCharacterData(job.character_id);
-  const anchorRows = await loadCharacterAnchorImages(job.character_id);
-  const bestRef = pickBestReferenceImage(character, anchorRows);
-
-  if (bestRef?.url) {
-    const identityThreshold = Number(
-      character?.identity_threshold ?? DEFAULT_IDENTITY_THRESHOLD
-    );
-
-    identityVerification = await verifyFaceMatch({
-      referenceImage: bestRef.url,
-      candidateImage: outputUrl,
-      threshold: identityThreshold,
-    });
-
-    const mergedEvaluation = {
-      ...(job.evaluation || {}),
-      identity_similarity: identityVerification.similarity,
-      identity_threshold: identityVerification.threshold,
-      identity_passed: identityVerification.accepted,
-      verification_prediction_id: identityVerification.predictionId || null,
-      verification_reference_image: bestRef.url,
-      verification_candidate_image: outputUrl,
-      verification_reference_source: bestRef.source || null,
-      verification_reason: identityVerification.reason || null,
-    };
-
-    const nextStatus = identityVerification.accepted
-      ? "succeeded"
-      : "identity_rejected";
-
-    await supabaseAdmin
-      .from("generation_jobs")
-      .update({
-        evaluation: mergedEvaluation,
-        status: nextStatus,
-      })
-      .eq("prediction_id", predictionId);
-
-    if (!identityVerification.accepted) {
-      return Response.json({
-        status: "identity_rejected",
-        predictionId,
-        rejected: true,
-        reason:
-          identityVerification.reason ||
-          "Generated image failed identity verification",
-        similarity: identityVerification.similarity,
-        threshold: identityVerification.threshold,
-        meta: job.meta || {},
-      });
-    }
-  }
-}
+let identityVerification = null;
 
     if (!job?.user_id) {
       return Response.json({
@@ -391,15 +335,15 @@ if (job?.character_id) {
       throw new Error(existingError.message || "Failed to check existing generation");
     }
 
-    if (existingGeneration) {
-return Response.json({
-  status: "succeeded",
-  predictionId,
-  generation: savedRow,
-  identityVerification,
-  meta: job.meta || {},
-});
-    }
+if (existingGeneration) {
+  return Response.json({
+    status: "succeeded",
+    predictionId,
+    generation: existingGeneration,
+    identityVerification,
+    meta: job.meta || {},
+  });
+}
 
     const storedImage = await persistImageToSupabase({
       imageUrl: outputUrl,
