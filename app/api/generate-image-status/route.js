@@ -12,7 +12,7 @@ const supabaseAdmin = createClient(
 
 const DEFAULT_IDENTITY_THRESHOLD = 0.82;
 const FACE_MATCH_MODEL =
-  process.env.FACE_MATCH_MODEL || "cjwbw/face-similarity";
+  process.env.FACE_MATCH_MODEL || "lucataco/face-similarity";
 
 function normalizeImageUrl(value) {
   const url = String(value || "").trim();
