@@ -903,6 +903,93 @@ function buildDisplayFinalPrompt(group) {
   return group.finalPrompt || group.prompt || "";
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function mapApiGenerationToGroup(data) {
+  const row = data?.generation;
+  const meta = data?.meta || {};
+
+  if (!row) return null;
+
+  return {
+  id: row.id,
+  prompt: row.prompt,
+  negativePrompt: row.negative_prompt,
+  ratio: row.ratio,
+  mode: row.mode,
+  style: row.style,
+  createdAt: row.created_at,
+
+  characterId: meta.characterId || null,
+  characterName: meta.characterName || null,
+  usedCharacter: Boolean(meta.characterId),
+
+  characterPrompt: meta.characterPrompt || "",
+  scenePrompt: meta.scenePrompt || "",
+  finalPrompt: meta.finalPrompt || row.prompt || "",
+  stylePrompt: meta.stylePrompt || "",
+  identityPrompt: meta.identityPrompt || "",
+  compositionPrompt: meta.compositionPrompt || "",
+  realismPrompt: meta.realismPrompt || "",
+
+  images: Array.isArray(row.images)
+    ? row.images.map((img) => {
+        if (typeof img === "string") return { url: img, starred: false };
+        if (img && typeof img === "object") {
+          return {
+            url: img.url || null,
+            path: img.path || null,
+            starred: Boolean(img.starred),
+          };
+        }
+        return { url: null, starred: false };
+      })
+    : [],
+};
+}
+
+async function pollPredictionUntilComplete(predictionId, maxAttempts = 120, intervalMs = 2500) {
+  if (!predictionId) {
+    throw new Error("Missing predictionId");
+  }
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+const params = new URLSearchParams({
+  predictionId,
+});
+
+const res = await fetch(`/api/generate-image-status?${params.toString()}`, {
+  method: "GET",
+  cache: "no-store",
+});
+
+    const data = await res.json().catch(() => ({}));
+
+    if (!res.ok) {
+      throw new Error(data?.error || "Failed to check generation status");
+    }
+
+    const status = String(data?.status || "").toLowerCase();
+
+    if (status === "succeeded") {
+      if (!data?.generation) {
+        throw new Error("Generation finished but no saved generation was returned");
+      }
+      return data;
+    }
+
+    if (status === "failed" || status === "canceled" || status === "cancelled") {
+      throw new Error(data?.error || "Generation failed");
+    }
+
+    await sleep(intervalMs);
+  }
+
+  throw new Error("Generation timed out. Please try again.");
+}
+
 // ─── Generation Feed Card ────────────────────────────────────────────────────
 function GenerationCard({
   group,
@@ -1669,7 +1756,7 @@ const hasCharacterControl =
   Boolean(characterPrompt) ||
   uniqueReferenceImages.length > 0;
 const requestedCount = Math.min(outputCount, 4);
-const n = requestedCount > 1 ? 1 : requestedCount;
+const n = requestedCount;
 let lastGenerationError = null;
 
 try {
@@ -1677,7 +1764,7 @@ const results = [];
 
 for (let i = 0; i < n; i++) {
   try {
-    const res = await fetch("/api/generate-image", {
+    const startRes = await fetch("/api/generate-image", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -1700,60 +1787,26 @@ for (let i = 0; i < n; i++) {
       }),
     });
 
-    const data = await res.json().catch(() => ({}));
+    const startData = await startRes.json().catch(() => ({}));
 
-    if (!res.ok) {
-      throw new Error(data?.error || "Generation failed");
+    if (!startRes.ok) {
+      throw new Error(startData?.error || "Failed to start generation");
     }
 
-    results.push(data);
+    if (!startData?.predictionId) {
+      throw new Error("No predictionId returned from API");
+    }
 
-    // 🔥 IMPORTANT: delay between requests
-    await new Promise((r) => setTimeout(r, 1200)); // 1.2 sec gap
-} catch (err) {
-  console.error("Single generation failed:", err);
-  lastGenerationError = err;
+    const finalData = await pollPredictionUntilComplete(startData.predictionId);
+    results.push(finalData);
+
+    await sleep(1200);
+  } catch (err) {
+    console.error("Single generation failed:", err);
+    lastGenerationError = err;
+  }
 }
-}
-const newGroups = results
-  .map((d) => {
-    const row = d?.generation;
-    const meta = d?.meta || {};
-    if (!row) return null;
-
-    return {
-      id: row.id,
-      prompt: row.prompt,
-      negativePrompt: row.negative_prompt,
-      ratio: row.ratio,
-      mode: row.mode,
-      style: row.style,
-      createdAt: row.created_at,
-
-      characterPrompt: meta.characterPrompt || "",
-      scenePrompt: meta.scenePrompt || "",
-      finalPrompt: meta.finalPrompt || row.prompt || "",
-      stylePrompt: meta.stylePrompt || "",
-      identityPrompt: meta.identityPrompt || "",
-      compositionPrompt: meta.compositionPrompt || "",
-      realismPrompt: meta.realismPrompt || "",
-
-      images: Array.isArray(row.images)
-        ? row.images.map((img) => {
-            if (typeof img === "string") return { url: img, starred: false };
-            if (img && typeof img === "object") {
-              return {
-                url: img.url || null,
-                path: img.path || null,
-                starred: Boolean(img.starred),
-              };
-            }
-            return { url: null, starred: false };
-          })
-        : [],
-    };
-  })
-  .filter(Boolean);
+const newGroups = results.map(mapApiGenerationToGroup).filter(Boolean);
 
 if (!newGroups.length) {
   throw lastGenerationError || new Error("No saved generation returned from API");
@@ -1815,69 +1868,45 @@ if (!newGroups.length) {
       .join("\n\n");
 
     try {
-      const res = await fetch("/api/generate-image", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-body: JSON.stringify({
-  userId: effectiveUserId,
-  characterId: selectedCharacter?.id || null,
-  prompt: variationPrompt,
-  scenePrompt: variationPrompt,
-  characterPrompt: selectedCharacter ? prompt.trim() : "",
-  negativePrompt: group.negativePrompt || "",
-  styleLabel: group.style || "",
-  style: selectedStyle,
-  stylePrompt: selectedStyle ? STYLE_PROMPT_MAP[selectedStyle] : "",
-  referenceImages: [],
-  useCharacter: Boolean(selectedCharacter),
-  ratio: group.ratio,
-  size: getApiSize(group.ratio),
-  quality: getApiQuality(group.mode),
-  n: 1,
-  realismMode: group.style === "Photorealistic" ? "hyper" : "realistic",
-}),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(data?.error || "Variation failed");
-      }
-      const row = data?.generation;
-      if (!row) {
-        throw new Error("No saved variation returned from API");
-      }
-const meta = data?.meta || {};
+      const startRes = await fetch("/api/generate-image", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    userId: effectiveUserId,
+    characterId: group.characterId || null,
+    prompt: variationPrompt,
+    scenePrompt: variationPrompt,
+    characterPrompt: group.characterPrompt || "",
+    negativePrompt: group.negativePrompt || "",
+    styleLabel: group.style || "",
+    style: (group.style || "").toLowerCase().replace(/\s+/g, "_") || null,
+    stylePrompt: STYLE_PROMPT_MAP[(group.style || "").toLowerCase().replace(/\s+/g, "_")] || "",
+    referenceImages: [],
+    useCharacter: Boolean(group.usedCharacter),
+    ratio: group.ratio,
+    size: getApiSize(group.ratio),
+    quality: getApiQuality(group.mode),
+    n: 1,
+    realismMode: group.style === "Photorealistic" ? "hyper" : "realistic",
+  }),
+});
 
-const newGroup = {
-  id: row.id,
-  prompt: row.prompt,
-  negativePrompt: row.negative_prompt,
-  ratio: row.ratio,
-  mode: row.mode,
-  style: row.style,
-  createdAt: row.created_at,
+const startData = await startRes.json().catch(() => ({}));
 
-  characterPrompt: meta.characterPrompt || "",
-  scenePrompt: meta.scenePrompt || "",
-  finalPrompt: meta.finalPrompt || row.prompt || "",
-  stylePrompt: meta.stylePrompt || "",
-  identityPrompt: meta.identityPrompt || "",
-  compositionPrompt: meta.compositionPrompt || "",
-  realismPrompt: meta.realismPrompt || "",
+if (!startRes.ok) {
+  throw new Error(startData?.error || "Variation failed");
+}
 
-  images: Array.isArray(row.images)
-    ? row.images.map((img) => {
-        if (typeof img === "string") return { url: img, starred: false };
-        if (img && typeof img === "object") {
-          return {
-            url: img.url || null,
-            path: img.path || null,
-            starred: Boolean(img.starred),
-          };
-        }
-        return { url: null, starred: false };
-      })
-    : [],
-};
+if (!startData?.predictionId) {
+  throw new Error("No predictionId returned for variation");
+}
+
+const finalData = await pollPredictionUntilComplete(startData.predictionId);
+const newGroup = mapApiGenerationToGroup(finalData);
+
+if (!newGroup) {
+  throw new Error("No saved variation returned from API");
+}
       setGroups((p) => {
         const next = [newGroup, ...p];
         syncCache(next);

@@ -75,12 +75,16 @@ async function persistImageToSupabase({
   };
 }
 
-export async function POST(req) {
+export async function GET(req) {
   try {
-    const { predictionId, userId } = await req.json();
+    const { searchParams } = new URL(req.url);
+    const predictionId = searchParams.get("predictionId");
 
     if (!predictionId) {
-      return Response.json({ error: "predictionId is required" }, { status: 400 });
+      return Response.json(
+        { error: "predictionId is required" },
+        { status: 400 }
+      );
     }
 
     const prediction = await replicate.predictions.get(predictionId);
@@ -93,6 +97,16 @@ export async function POST(req) {
       });
     }
 
+    const { data: job, error: jobError } = await supabaseAdmin
+      .from("generation_jobs")
+      .select("*")
+      .eq("prediction_id", predictionId)
+      .maybeSingle();
+
+    if (jobError) {
+      throw new Error(jobError.message || "Failed to load generation job");
+    }
+
     const outputUrl = await fileOutputToUrl(prediction.output);
 
     if (!outputUrl) {
@@ -102,29 +116,76 @@ export async function POST(req) {
       );
     }
 
-    if (!userId) {
+    if (!job?.user_id) {
       return Response.json({
         status: "succeeded",
         predictionId,
         image: outputUrl,
-        images: [{ url: outputUrl }],
+        images: [{ url: outputUrl, starred: false }],
+      });
+    }
+
+    const { data: existingGeneration, error: existingError } = await supabaseAdmin
+      .from("image_generations")
+      .select(
+        "id, prompt, negative_prompt, images, created_at, mode, ratio, style, character_id, prediction_id, evaluation"
+      )
+      .eq("prediction_id", predictionId)
+      .maybeSingle();
+
+    if (existingError) {
+      throw new Error(existingError.message || "Failed to check existing generation");
+    }
+
+    if (existingGeneration) {
+      return Response.json({
+        status: "succeeded",
+        predictionId,
+        generation: existingGeneration,
+        meta: job.meta || {},
       });
     }
 
     const storedImage = await persistImageToSupabase({
       imageUrl: outputUrl,
-      userId: String(userId),
+      userId: String(job.user_id),
       bucket: "generated-images",
     });
+
+    const generationPayload = {
+      user_id: String(job.user_id),
+      character_id: job.character_id || null,
+      prediction_id: predictionId,
+      prompt: job.prompt || "",
+      negative_prompt: job.negative_prompt || "",
+      ratio: job.ratio || "1:1",
+      mode: job.mode || "scene_only",
+      style: job.style || null,
+      images: [storedImage],
+      evaluation: job.evaluation || {},
+    };
+
+    const { data: savedRow, error: saveError } = await supabaseAdmin
+      .from("image_generations")
+      .insert(generationPayload)
+      .select(
+        "id, prompt, negative_prompt, images, created_at, mode, ratio, style, character_id, prediction_id, evaluation"
+      )
+      .single();
+
+    if (saveError) {
+      throw new Error(saveError.message || "Failed to save generation");
+    }
 
     return Response.json({
       status: "succeeded",
       predictionId,
-      image: storedImage.url,
-      images: [storedImage],
+      generation: savedRow,
+      meta: job.meta || {},
     });
   } catch (error) {
     console.error("generate-image-status error:", error);
+
     return Response.json(
       { error: error?.message || "Failed to check prediction status" },
       { status: 500 }

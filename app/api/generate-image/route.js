@@ -1071,6 +1071,41 @@ const model = chooseModel({
       input,
     });
 
+    const jobPayload = {
+  prediction_id: prediction.id,
+  user_id: String(userId),
+  character_id: character?.id || null,
+  prompt: currentPrompt,
+  negative_prompt: currentNegativePrompt,
+  ratio,
+  mode: characterMode ? "character_guided" : "scene_only",
+  style: styleLabel || style || null,
+  meta: {
+    referencePreview: generationRefs,
+    finalPrompt: currentPrompt,
+    negativePrompt: currentNegativePrompt,
+    characterPrompt: cleanedCharacterPrompt,
+    scenePrompt: cleanedScenePrompt,
+    combinedScenePrompt: combinedSceneText,
+    stylePrompt: cleanedStylePrompt,
+    identityPrompt: strictIdentityBlock,
+    compositionPrompt: compositionBlock,
+    realismPrompt: realismBlock,
+    characterLoaded: Boolean(character),
+    characterName: character?.name || null,
+  },
+  evaluation: {},
+  status: prediction.status || "starting",
+};
+
+const { error: jobInsertError } = await supabaseAdmin
+  .from("generation_jobs")
+  .insert(jobPayload);
+
+if (jobInsertError) {
+  throw new Error(jobInsertError.message || "Failed to save generation job");
+}
+
     return Response.json({
       status: prediction.status,
       predictionId: prediction.id,
