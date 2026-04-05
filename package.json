@@ -8,6 +8,7 @@
     "start": "next start"
   },
   "dependencies": {
+    "@fal-ai/client": "^1.9.5",
     "@supabase/supabase-js": "^2.98.0",
     "framer-motion": "^12.35.1",
     "lucide-react": "^0.577.0",
