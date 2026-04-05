@@ -433,6 +433,15 @@ const {
         identityRefs: referenceUrls,
       });
 
+console.log("Seedream request", {
+  model: SEEDREAM_MODEL,
+  characterId,
+  referenceCount: referenceUrls.length,
+  referenceUrls,
+  size: size || ratio,
+  seed,
+});
+
 generatedRemote = await runSeedreamCharacterGeneration({
   prompt: seedreamPrompt,
   imageSize: mapSizeToSeedreamImageSize(size || ratio),
@@ -455,6 +464,12 @@ generatedRemote = await runSeedreamCharacterGeneration({
 
     const buffer = await downloadImageAsBuffer(generatedRemote.url);
 const outputContentType = generatedRemote?.content_type || "image/png";
+console.log("Seedream output", {
+  url: generatedRemote?.url,
+  contentType: generatedRemote?.content_type,
+  width: generatedRemote?.width,
+  height: generatedRemote?.height,
+});
 const uploaded = await uploadGeneratedImage({
   userId,
   buffer,
