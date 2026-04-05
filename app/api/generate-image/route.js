@@ -711,35 +711,52 @@ function buildCompositionBlock({
     ratio === "16:9" ||
     ratio === "21:9";
 
-  if (wantsCloseup) {
-    return [
-      "Composition:",
-      "Use close-up or portrait framing only because the prompt asks for it.",
-      "Keep the face clearly visible.",
-      "Do not beautify or idealize the person.",
-      "Do not crop awkwardly or distort facial proportions.",
-    ].join(" ");
-  }
+  // PRIORITY: sceneType overrides everything
 
-  if (wantsFullBody || wantsWide) {
-    return [
-      "Composition:",
-      "Follow the requested scene exactly.",
-      "Keep the environment clearly visible.",
-      "Use full-body or wider framing only if requested.",
-      "Do not turn this into a face-only portrait unless the prompt explicitly asks for it.",
-    ].join(" ");
-  }
-
+if (
+  sceneType === SCENE_TYPES.CLOSEUP ||
+  sceneType === SCENE_TYPES.PORTRAIT
+) {
   return [
     "Composition:",
-    "Follow the requested framing exactly.",
-    characterMode
-      ? "Use natural photographic framing."
-      : "Use natural cinematic framing.",
-    "Keep the subject clearly readable.",
-    "Do not default to an extreme close-up unless explicitly requested.",
+    "Use close-up or portrait framing.",
+    "Keep the face clearly visible.",
+    "Do not beautify or idealize the person.",
   ].join(" ");
+}
+
+if (
+  sceneType === SCENE_TYPES.FULL_BODY
+) {
+  return [
+    "Composition:",
+    "Use full-body framing.",
+    "Show the entire subject clearly from head to toe.",
+    "Keep proportions natural and undistorted.",
+  ].join(" ");
+}
+
+if (
+  sceneType === SCENE_TYPES.WIDE ||
+  sceneType === SCENE_TYPES.ACTION
+) {
+  return [
+    "Composition:",
+    "Use wide cinematic framing.",
+    "Show environment clearly and prominently.",
+    "Subject should be integrated into the scene, not dominating the frame.",
+    "Do NOT turn this into a portrait or close-up.",
+  ].join(" ");
+}
+
+// fallback
+return [
+  "Composition:",
+  "Follow the requested framing.",
+  characterMode
+    ? "Use natural photographic framing."
+    : "Use cinematic framing.",
+].join(" ");
 }
 
 // FIX 5 — upgraded realism block with anti-AI-polish instructions
