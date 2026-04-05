@@ -1793,12 +1793,11 @@ for (let i = 0; i < n; i++) {
       throw new Error(startData?.error || "Failed to start generation");
     }
 
-    if (!startData?.predictionId) {
-      throw new Error("No predictionId returned from API");
-    }
+if (!startData?.success) {
+  throw new Error(startData?.error || "Generation failed");
+}
 
-    const finalData = await pollPredictionUntilComplete(startData.predictionId);
-    results.push(finalData);
+results.push(startData);
 
     await sleep(1200);
   } catch (err) {
@@ -1900,12 +1899,11 @@ if (!startRes.ok) {
   throw new Error(startData?.error || "Variation failed");
 }
 
-if (!startData?.predictionId) {
-  throw new Error("No predictionId returned for variation");
+if (!startData?.success) {
+  throw new Error(startData?.error || "Variation failed");
 }
 
-const finalData = await pollPredictionUntilComplete(startData.predictionId);
-const newGroup = mapApiGenerationToGroup(finalData);
+const newGroup = mapApiGenerationToGroup(startData);
 
 if (!newGroup) {
   throw new Error("No saved variation returned from API");
