@@ -1793,13 +1793,14 @@ scenePrompt: trimmedScenePrompt,
       throw new Error(startData?.error || "Failed to start generation");
     }
 
-if (!startData?.success) {
-  throw new Error(startData?.error || "Generation failed");
+if (!startData?.predictionId) {
+  throw new Error(startData?.error || "No predictionId returned from API");
 }
 
-results.push(startData);
+const finalData = await pollPredictionUntilComplete(startData.predictionId);
+results.push(finalData);
 
-    await sleep(1200);
+await sleep(1200);
   } catch (err) {
     console.error("Single generation failed:", err);
     lastGenerationError = err;
@@ -1896,11 +1897,12 @@ if (!startRes.ok) {
   throw new Error(startData?.error || "Variation failed");
 }
 
-if (!startData?.success) {
-  throw new Error(startData?.error || "Variation failed");
+if (!startData?.predictionId) {
+  throw new Error(startData?.error || "No predictionId returned for variation");
 }
 
-const newGroup = mapApiGenerationToGroup(startData);
+const finalData = await pollPredictionUntilComplete(startData.predictionId);
+const newGroup = mapApiGenerationToGroup(finalData);
 
 if (!newGroup) {
   throw new Error("No saved variation returned from API");

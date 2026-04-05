@@ -10,6 +10,7 @@
   "dependencies": {
     "@fal-ai/client": "^1.9.5",
     "@supabase/supabase-js": "^2.98.0",
+    "@trigger.dev/sdk": "4.4.3",
     "framer-motion": "^12.35.1",
     "lucide-react": "^0.577.0",
     "next": "latest",
@@ -17,5 +18,8 @@
     "react": "latest",
     "react-dom": "latest",
     "replicate": "^1.4.0"
+  },
+  "devDependencies": {
+    "@trigger.dev/build": "4.4.3"
   }
 }

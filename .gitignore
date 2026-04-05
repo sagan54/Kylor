@@ -35,3 +35,4 @@ Thumbs.db
 .nyc_output/
 coverage/
 .eslintcache
+.trigger
