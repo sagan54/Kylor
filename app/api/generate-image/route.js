@@ -1276,12 +1276,45 @@ const generationRefs = character
           combinedPrompt:  combinedSceneText,
         });
 
-const compositionBlock = buildCompositionBlock({
+let compositionBlock = buildCompositionBlock({
   combinedPrompt: combinedSceneText,
   ratio,
   characterMode,
   sceneType,
 });
+
+// 🚨 HARD OVERRIDE (guaranteed correct behavior)
+if (
+  sceneType === SCENE_TYPES.WIDE ||
+  sceneType === SCENE_TYPES.ACTION
+) {
+  compositionBlock = [
+    "Composition:",
+    "Use wide cinematic framing.",
+    "Show environment clearly and prominently.",
+    "Subject should be part of the scene, not dominating the frame.",
+    "Do NOT turn this into a portrait or close-up.",
+  ].join(" ");
+}
+
+if (sceneType === SCENE_TYPES.FULL_BODY) {
+  compositionBlock = [
+    "Composition:",
+    "Use full-body framing.",
+    "Show the entire subject clearly from head to toe.",
+  ].join(" ");
+}
+
+if (
+  sceneType === SCENE_TYPES.CLOSEUP ||
+  sceneType === SCENE_TYPES.PORTRAIT
+) {
+  compositionBlock = [
+    "Composition:",
+    "Use close-up or portrait framing.",
+    "Keep the face clearly visible.",
+  ].join(" ");
+}
 
 const realismBlock = buildRealismBlock({
   realismMode,
