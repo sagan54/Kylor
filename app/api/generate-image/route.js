@@ -370,6 +370,7 @@ export async function POST(req) {
 const {
   prompt,
   scenePrompt,
+  negativePrompt = "",
   style = "cinematic",
   ratio = "16:9",
   size = "16:9",
@@ -424,14 +425,14 @@ const {
     let provider = null;
 
     if (usingCharacterMode) {
-      const seedreamPrompt = buildSeedreamPrompt({
-        userPrompt: finalPrompt,
-        character,
-        scenePrompt: finalPrompt,
-        style,
-        ratio,
-        identityRefs: referenceUrls,
-      });
+const seedreamPrompt = buildSeedreamPrompt({
+  userPrompt: finalPrompt,
+  character,
+  scenePrompt: scenePrompt || finalPrompt,
+  style,
+  ratio,
+  identityRefs: referenceUrls,
+});
 
 console.log("Seedream request", {
   model: SEEDREAM_MODEL,
@@ -477,56 +478,64 @@ const uploaded = await uploadGeneratedImage({
   fileExt: getFileExtFromContentType(outputContentType),
 });
 
-    const savedRow = saveToHistory
-      ? await saveImageGeneration({
-          userId,
-          prompt: finalPrompt,
-          negativePrompt: "",
-          images: [uploaded.publicUrl].filter(Boolean),
-          mode: "image",
-          ratio,
-          style,
-          characterId: characterId || null,
-          metadata: {
-            provider,
-            model: modelUsed,
-            referenceUrls,
-            generatedRemote,
-            identityMode: usingCharacterMode ? "multi_reference_seedream" : null,
-          },
-        })
-      : null;
+const savedRow = saveToHistory
+  ? await saveImageGeneration({
+      userId,
+      prompt: finalPrompt,
+      negativePrompt: negativePrompt || "",
+      images: [uploaded.publicUrl].filter(Boolean),
+      mode: "image",
+      ratio,
+      style,
+      characterId: characterId || null,
+      metadata: {
+        provider,
+        model: modelUsed,
+        referenceUrls,
+        generatedRemote,
+        identityMode: usingCharacterMode ? "multi_reference_seedream" : null,
+      },
+    })
+  : null;
 
 return Response.json({
   success: true,
+  image: uploaded.publicUrl,
+  images: [uploaded.publicUrl].filter(Boolean),
 
-  generation: {
+  generation: savedRow || {
     id: crypto.randomUUID(),
-    prompt,
-    negative_prompt: negativePrompt,
+    prompt: finalPrompt,
+    negative_prompt: negativePrompt || "",
     ratio,
-    mode: quality,
-    style: styleLabel,
+    mode: "image",
+    style,
     created_at: new Date().toISOString(),
-
-    images: images.map((url) => ({
-      url,
-      starred: false,
-    })),
+    images: [uploaded.publicUrl]
+      .filter(Boolean)
+      .map((url) => ({
+        url,
+        starred: false,
+      })),
   },
 
   meta: {
-    characterId,
-    characterName: null,
-    usedCharacter: useCharacter,
+    characterId: characterId || null,
+    characterName: character?.name || null,
+    usedCharacter: usingCharacterMode,
 
-    characterPrompt,
-    scenePrompt,
-    finalPrompt: prompt,
-    stylePrompt,
+    characterPrompt: "",
+    scenePrompt: scenePrompt || prompt || "",
+    finalPrompt: finalPrompt,
+    stylePrompt: "",
     identityPrompt: "",
     compositionPrompt: "",
     realismPrompt: "",
+    provider,
+    model: modelUsed,
+    referenceCount: referenceUrls.length,
+    referenceUrls,
+    identityMode: usingCharacterMode ? "multi_reference_seedream" : null,
   },
 });
   } catch (error) {

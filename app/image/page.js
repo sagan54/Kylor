@@ -924,7 +924,7 @@ function mapApiGenerationToGroup(data) {
 
   characterId: meta.characterId || null,
   characterName: meta.characterName || null,
-  usedCharacter: Boolean(meta.characterId),
+  usedCharacter: Boolean(meta.usedCharacter),
 
   characterPrompt: meta.characterPrompt || "",
   scenePrompt: meta.scenePrompt || "",
@@ -1770,8 +1770,8 @@ for (let i = 0; i < n; i++) {
       body: JSON.stringify({
         userId: effectiveUserId,
         characterId: selectedCharacter?.id || null,
-        prompt: trimmedScenePrompt,
-        scenePrompt: trimmedScenePrompt,
+prompt: positivePrompt,
+scenePrompt: trimmedScenePrompt,
         characterPrompt: hasCharacterControl ? characterPrompt : "",
         style: selectedStyle,
         styleLabel,
@@ -1873,11 +1873,8 @@ if (!newGroups.length) {
   body: JSON.stringify({
     userId: effectiveUserId,
     characterId: group.characterId || null,
-prompt: group.scenePrompt || group.prompt || "",
-scenePrompt: [
-  group.scenePrompt || group.prompt || "",
-  `Variation ${variationIndex + 1}. Keep the same subject and overall style, but change composition and details slightly.`,
-].filter(Boolean).join(" "),
+prompt: variationPrompt,
+scenePrompt: variationPrompt,
     characterPrompt: group.characterPrompt || "",
     negativePrompt: group.negativePrompt || "",
     styleLabel: group.style || "",
