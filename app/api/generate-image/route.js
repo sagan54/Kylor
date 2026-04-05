@@ -631,51 +631,131 @@ function buildIdentityBlock({
   return lines.join(" ");
 }
 
-function buildConditionedIdentityBlock({
+function buildRouteAwareIdentityBlock({
+  modelRoute,
   character,
   identityPackage = null,
   combinedPrompt = "",
 }) {
+  if (!character && !identityPackage) return "";
+
   const promptText = String(combinedPrompt || "").toLowerCase();
   const actionScene = isGymOrActionScene(promptText);
   const traits = detectReferenceTraits(identityPackage, character);
 
-  const lines = [
-    "Use the supplied reference images as the exact same real person.",
-    "Preserve the same face width, face length, cheek fullness, jaw softness, chin size, lip volume, nose shape, eye shape, eyebrow shape, beard density, skin tone, and hairline.",
-    "Do not make the face thinner.",
-    "Do not sharpen the jawline.",
-    "Do not enlarge or puff the lips.",
-    "Do not beautify, idealize, or improve facial attractiveness.",
-    "Do not make the face more symmetrical than the real person.",
-    "Keep natural asymmetry and natural facial imperfections from the references.",
-    "Do not turn the person into a generic actor, model, cinematic hero, or polished portrait subject.",
-    "The output must feel like a photograph of the same person, not an enhanced reinterpretation.",
-  ];
+  if (modelRoute === MODEL_ROUTES.IDENTITY_FIRST) {
+    const lines = [
+      "Use the supplied reference images as the exact same real person.",
+      "Identity accuracy is the highest priority.",
+      "Keep the same face width, face length, cheek fullness, jaw softness, chin size, lip volume, nose shape, eye shape, eyebrow shape, beard density, skin tone, and hairline.",
+      "Do not beautify, idealize, sharpen, or reinterpret the face.",
+      "Do not make the face thinner.",
+      "Do not sharpen the jawline.",
+      "Do not enlarge or puff the lips.",
+      "Do not turn the person into a generic actor, model, cinematic hero, or polished portrait subject.",
+      "The output must feel like a photograph of the same person, not an enhanced reinterpretation.",
+    ];
 
-  if (traits.wearsGlasses) {
-    lines.push(
-      "Keep the glasses present and consistent with the identity references.",
-      "Do not resize, redesign, or restyle the glasses."
-    );
+    if (traits.wearsGlasses) {
+      lines.push(
+        "Keep the glasses present and consistent with the identity references.",
+        "Do not resize, redesign, or restyle the glasses."
+      );
+    }
+
+    if (actionScene) {
+      lines.push(
+        "Even in an action or gym scene, the face must remain the same real person.",
+        "Do not transform the face into a sharper, stronger, more heroic version."
+      );
+    }
+
+    if (character?.name) {
+      lines.push(`Character name: ${character.name}.`);
+    }
+
+    if (identityPackage?.dnaText) {
+      lines.push(identityPackage.dnaText);
+    }
+
+    return lines.join(" ");
   }
 
-  if (actionScene) {
-    lines.push(
-      "Even in an action or gym scene, the face must remain the same real person.",
-      "Do not transform the face into a sharper, stronger, more heroic version."
-    );
+  if (modelRoute === MODEL_ROUTES.SCENE_FIRST) {
+    const lines = [
+      "The generated person must remain the exact same individual as the supplied reference images.",
+      "Preserve facial identity even in a wide cinematic frame.",
+      "Keep the same recognizable face, hair, skin tone, body proportions, and silhouette.",
+      "Do not replace the person with a generic cinematic character.",
+      "Do not beautify, stylize, sharpen, or redesign the face.",
+      "Even if the person appears smaller in frame, the identity must still match the references.",
+      "Environment, lighting, and cinematic scale must not overwrite identity.",
+    ];
+
+    if (traits.wearsGlasses) {
+      lines.push(
+        "If glasses are part of the character identity, keep them present and consistent."
+      );
+    }
+
+    if (character?.name) {
+      lines.push(`Character name: ${character.name}.`);
+    }
+
+    if (identityPackage?.dnaText) {
+      lines.push(identityPackage.dnaText);
+    }
+
+    return lines.join(" ");
   }
 
-  if (character?.name) {
-    lines.push(`Character name: ${character.name}.`);
+  return "";
+}
+
+function buildRouteAwareQualityBlock({
+  modelRoute,
+  characterMode = false,
+}) {
+  if (!characterMode) {
+    return [
+      "Quality:",
+      "Strong scene fidelity.",
+      "Accurate anatomy.",
+      "Natural detail.",
+      "Follow the prompt exactly.",
+      "Do not replace the requested scene with a generic beauty shot.",
+    ].join(" ");
   }
 
-  if (identityPackage?.dnaText) {
-    lines.push(identityPackage.dnaText);
+  if (modelRoute === MODEL_ROUTES.IDENTITY_FIRST) {
+    return [
+      "Quality:",
+      "Strong identity fidelity.",
+      "Accurate facial anatomy.",
+      "Natural facial detail.",
+      "Real-person realism.",
+      "Follow the prompt exactly.",
+      "Do not replace the requested scene with a beauty shot, glamour portrait, polished cinematic face, or premium editorial portrait.",
+    ].join(" ");
   }
 
-  return lines.join(" ");
+  if (modelRoute === MODEL_ROUTES.SCENE_FIRST) {
+    return [
+      "Quality:",
+      "Strong cinematic scene fidelity.",
+      "Preserve the requested environment, framing, and scale.",
+      "Keep accurate anatomy and believable body proportions.",
+      "Maintain the same real-person identity inside the cinematic scene.",
+      "Do not replace the person with a generic movie character.",
+    ].join(" ");
+  }
+
+  return [
+    "Quality:",
+    "Strong realism.",
+    "Accurate anatomy.",
+    "Follow the prompt exactly.",
+  ].join(" ");
 }
 
 function buildCompositionBlock({
@@ -1121,9 +1201,8 @@ async function createReplicatePrediction({ model, input }) {
     });
   }
 
-  // ✅ fallback (safe)
-  return await replicate.predictions.create({
-    model,
+  // fallback for model slug
+  return await replicate.models.predictions.create(model, {
     input,
   });
 }
@@ -1234,36 +1313,44 @@ const generationRefs = character
     })
   : [...new Set(frontendRefs)].slice(0, 4);
 
-    const characterMode =
-      Boolean(character) || (Boolean(useCharacter) && generationRefs.length > 0);
+const characterMode =
+  Boolean(character) || (Boolean(useCharacter) && generationRefs.length > 0);
 
-    if (Boolean(useCharacter) && generationRefs.length === 0) {
-      return Response.json(
-        {
-          error:
-            "Character mode was requested but no valid character reference images were found.",
-        },
-        { status: 400 }
-      );
-    }
+if (Boolean(useCharacter) && generationRefs.length === 0) {
+  return Response.json(
+    {
+      error:
+        "Character mode was requested but no valid character reference images were found.",
+    },
+    { status: 400 }
+  );
+}
 
-    const hasRefs = generationRefs.length > 0;
-    const cleanedPrompt          = sanitizeSensitiveSceneText(normalizeText(prompt));
-    const cleanedScenePrompt     = sanitizeSensitiveSceneText(normalizeText(scenePrompt));
-    const cleanedCharacterPrompt = normalizeText(characterPrompt);
-    const cleanedStylePrompt     = normalizeText(stylePrompt);
-    const cleanedNegativePrompt  = normalizeText(negativePrompt);
+const modelDecision = chooseModel({
+  characterMode,
+  premiumRender:
+    Boolean(premiumRender) || String(quality).toLowerCase() === "high",
+  sceneType,
+});
+
+const model = modelDecision.model;
+const modelRoute = modelDecision.route;
+
+const hasRefs = generationRefs.length > 0;
+const cleanedPrompt = sanitizeSensitiveSceneText(normalizeText(prompt));
+const cleanedScenePrompt = sanitizeSensitiveSceneText(normalizeText(scenePrompt));
+const cleanedCharacterPrompt = normalizeText(characterPrompt);
+const cleanedStylePrompt = normalizeText(stylePrompt);
+const cleanedNegativePrompt = normalizeText(negativePrompt);
 
     const combinedSceneText = buildSceneBlock({
       prompt:      cleanedPrompt,
       scenePrompt: cleanedScenePrompt,
     });
 
-    // FIX 2 + FIX 3 — single identity block, correct branch per mode
-    // characterMode (DreamO): short conditioned block — visual ref does the heavy lifting
-    // non-character (Flux):   full identity block — text is the only identity signal
     const strictIdentityBlock = characterMode
-      ? buildConditionedIdentityBlock({
+      ? buildRouteAwareIdentityBlock({
+          modelRoute,
           character,
           identityPackage,
           combinedPrompt: combinedSceneText,
@@ -1271,9 +1358,9 @@ const generationRefs = character
       : buildIdentityBlock({
           characterMode: false,
           hasRefs,
-          character:       null,
+          character: null,
           identityPackage: null,
-          combinedPrompt:  combinedSceneText,
+          combinedPrompt: combinedSceneText,
         });
 
 let compositionBlock = buildCompositionBlock({
@@ -1327,24 +1414,10 @@ const realismBlock = buildRealismBlock({
       useCharacter:   characterMode,
     });
 
-const qualityBlock = characterMode
-  ? [
-      "Quality:",
-      "Strong identity fidelity.",
-      "Accurate anatomy.",
-      "Natural facial detail.",
-      "Follow the prompt exactly.",
-      "Preserve real-person texture and realism.",
-      "Do not replace the requested scene with a beauty shot, glamour portrait, polished cinematic face, or premium editorial portrait.",
-    ].join(" ")
-  : [
-      "Quality:",
-      "Strong scene fidelity.",
-      "Accurate anatomy.",
-      "Natural detail.",
-      "Follow the prompt exactly.",
-      "Do not replace the requested scene with a generic beauty shot.",
-    ].join(" ");
+const qualityBlock = buildRouteAwareQualityBlock({
+  modelRoute,
+  characterMode,
+});
 
     // FIX 5 — realism block moved up (position 3) so it hits before style
     const baseFinalPrompt = [
@@ -1373,16 +1446,6 @@ const qualityBlock = characterMode
     });
 
     const aspect_ratio = mapSizeToAspectRatio(size, ratio);
-
-const modelDecision = chooseModel({
-  characterMode,
-  premiumRender:
-    Boolean(premiumRender) || String(quality).toLowerCase() === "high",
-  sceneType,
-});
-
-const model = modelDecision.model;
-const modelRoute = modelDecision.route;
 
     const enablePromptUpsampling = shouldEnablePromptUpsampling({
       characterMode,
