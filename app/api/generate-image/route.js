@@ -1094,6 +1094,7 @@ async function createReplicatePrediction({ model, input }) {
     throw new Error("Invalid model target");
   }
 
+  // ✅ ALWAYS use predictions.create (modern safe way)
   if (model.includes(":")) {
     const [, version] = model.split(":");
 
@@ -1103,7 +1104,9 @@ async function createReplicatePrediction({ model, input }) {
     });
   }
 
-  return await replicate.models.predictions.create(model, {
+  // ✅ fallback (safe)
+  return await replicate.predictions.create({
+    model,
     input,
   });
 }
