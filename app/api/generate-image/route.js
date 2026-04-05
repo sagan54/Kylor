@@ -1217,9 +1217,9 @@ export async function POST(req) {
       ? referenceImages.map(normalizeReferenceImage).filter(Boolean).slice(0, 5)
       : [];
 
-    const sceneType = detectSceneType(
-      `${normalizeText(prompt)} ${normalizeText(scenePrompt)}`
-    );
+const sceneType = detectSceneType(
+  normalizeText(scenePrompt) || normalizeText(prompt)
+);
 
     const identityPackage = character
       ? buildIdentityPackage(character, anchorRows, sceneType)
