@@ -497,21 +497,38 @@ const uploaded = await uploadGeneratedImage({
         })
       : null;
 
-    return Response.json({
-      success: true,
-      image: uploaded.publicUrl,
-      images: [uploaded.publicUrl].filter(Boolean),
-      generation: savedRow,
-      meta: {
-        provider,
-        model: modelUsed,
-        ratio,
-        style,
-        referenceCount: referenceUrls.length,
-        referenceUrls,
-        identityMode: usingCharacterMode ? "multi_reference_seedream" : null,
-      },
-    });
+return Response.json({
+  success: true,
+
+  generation: {
+    id: crypto.randomUUID(),
+    prompt,
+    negative_prompt: negativePrompt,
+    ratio,
+    mode: quality,
+    style: styleLabel,
+    created_at: new Date().toISOString(),
+
+    images: images.map((url) => ({
+      url,
+      starred: false,
+    })),
+  },
+
+  meta: {
+    characterId,
+    characterName: null,
+    usedCharacter: useCharacter,
+
+    characterPrompt,
+    scenePrompt,
+    finalPrompt: prompt,
+    stylePrompt,
+    identityPrompt: "",
+    compositionPrompt: "",
+    realismPrompt: "",
+  },
+});
   } catch (error) {
     console.error("generate-image route failed:", error);
 
