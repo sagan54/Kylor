@@ -79,6 +79,18 @@ function safeJsonParse(value, fallback = null) {
   }
 }
 
+function getFileExtFromContentType(contentType) {
+  switch (contentType) {
+    case "image/jpeg":
+      return "jpg";
+    case "image/webp":
+      return "webp";
+    case "image/png":
+    default:
+      return "png";
+  }
+}
+
 async function loadCharacterData(characterId) {
   if (!characterId) return null;
 
@@ -323,7 +335,10 @@ async function runSeedreamCharacterGeneration({
     throw new Error("No reference images available for Seedream generation.");
   }
 
-  const result = await fal.subscribe(SEEDREAM_MODEL, {
+let result;
+
+try {
+  result = await fal.subscribe(SEEDREAM_MODEL, {
     input: {
       prompt,
       image_urls: referenceUrls,
@@ -335,6 +350,10 @@ async function runSeedreamCharacterGeneration({
     },
     logs: true,
   });
+} catch (err) {
+  console.error("FAL subscribe failed:", err);
+  throw new Error(err?.message || "FAL request failed");
+}
 
   const outputImage = result?.data?.images?.[0];
   if (!outputImage?.url) {
