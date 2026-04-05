@@ -18,8 +18,24 @@ const MODELS = {
     "zsxkib/dream-o:efe92b897afb0e7da9f83d0f2ee20355c3a48fa5553c46ffbc4c111f5ca87dbb",
 
   // ✅ NEW MODEL
-INSTANT_ID:
-  "grandlineai/instant-id-photorealistic:03914a0c3326bf44383d0cd84b06822618af879229ce5d1d53bef38d93b68279",
+  INSTANT_ID:
+    "grandlineai/instant-id-photorealistic:03914a0c3326bf44383d0cd84b06822618af879229ce5d1d53bef38d93b68279",
+};
+
+const SCENE_TYPES = {
+  PORTRAIT: "portrait",
+  CLOSEUP: "closeup",
+  SIDE: "side",
+  FULL_BODY: "full_body",
+  WIDE: "wide",
+  ACTION: "action",
+  SCENE: "scene",
+};
+
+const MODEL_ROUTES = {
+  SCENE_ONLY: "scene_only",
+  IDENTITY_FIRST: "identity_first",
+  SCENE_FIRST: "scene_first",
 };
 
 async function loadCharacterData(characterId) {
@@ -209,18 +225,31 @@ function buildIdentityPackage(character, anchorRows = [], sceneType = "scene") {
     strongRefs.push(item.url);
   };
 
-  if (sceneType === "portrait") {
+  if (sceneType === SCENE_TYPES.CLOSEUP) {
     pushRef(closeup);
     pushRef(master);
     pushRef(original);
-  } else if (sceneType === "side") {
+    pushRef(front);
+  } else if (sceneType === SCENE_TYPES.PORTRAIT) {
+    pushRef(closeup);
+    pushRef(master);
+    pushRef(original);
+  } else if (sceneType === SCENE_TYPES.SIDE) {
     pushRef(closeup);
     pushRef(master);
     pushRef(left || right);
     pushRef(original);
-  } else if (sceneType === "full_body") {
+  } else if (sceneType === SCENE_TYPES.FULL_BODY) {
     pushRef(closeup);
     pushRef(master);
+    pushRef(front);
+    pushRef(original);
+  } else if (
+    sceneType === SCENE_TYPES.WIDE ||
+    sceneType === SCENE_TYPES.ACTION
+  ) {
+    pushRef(master);
+    pushRef(closeup);
     pushRef(front);
     pushRef(original);
   } else {
@@ -269,7 +298,8 @@ function buildIdentityPackage(character, anchorRows = [], sceneType = "scene") {
 function selectGenerationReferenceImages({
   identityPackage = null,
   frontendRefs = [],
-  maxRefs = 3,
+  sceneType = SCENE_TYPES.SCENE,
+  maxRefs = 4,
 }) {
   const refs = [];
 
@@ -280,16 +310,52 @@ function selectGenerationReferenceImages({
     refs.push(normalized);
   };
 
-  // Best face anchors first
-  pushRef(identityPackage?.closeup?.url);
-  pushRef(identityPackage?.master?.url);
-
-  if (refs.length < maxRefs && identityPackage?.front?.url) {
-    pushRef(identityPackage.front.url);
+  if (!identityPackage) {
+    for (const url of frontendRefs || []) {
+      if (refs.length >= maxRefs) break;
+      pushRef(url);
+    }
+    return refs.slice(0, maxRefs);
   }
 
-  if (refs.length < maxRefs && identityPackage?.original?.url) {
-    pushRef(identityPackage.original.url);
+  if (sceneType === SCENE_TYPES.CLOSEUP) {
+    pushRef(identityPackage?.closeup?.url);
+    pushRef(identityPackage?.master?.url);
+    pushRef(identityPackage?.original?.url);
+    pushRef(identityPackage?.front?.url);
+  } else if (sceneType === SCENE_TYPES.PORTRAIT) {
+    pushRef(identityPackage?.closeup?.url);
+    pushRef(identityPackage?.master?.url);
+    pushRef(identityPackage?.front?.url);
+    pushRef(identityPackage?.original?.url);
+  } else if (sceneType === SCENE_TYPES.SIDE) {
+    pushRef(identityPackage?.left?.url);
+    pushRef(identityPackage?.right?.url);
+    pushRef(identityPackage?.closeup?.url);
+    pushRef(identityPackage?.master?.url);
+  } else if (sceneType === SCENE_TYPES.FULL_BODY) {
+    pushRef(identityPackage?.front?.url);
+    pushRef(identityPackage?.closeup?.url);
+    pushRef(identityPackage?.master?.url);
+    pushRef(identityPackage?.original?.url);
+  } else if (
+    sceneType === SCENE_TYPES.WIDE ||
+    sceneType === SCENE_TYPES.ACTION
+  ) {
+    pushRef(identityPackage?.master?.url);
+    pushRef(identityPackage?.closeup?.url);
+    pushRef(identityPackage?.front?.url);
+    pushRef(identityPackage?.original?.url);
+  } else {
+    pushRef(identityPackage?.closeup?.url);
+    pushRef(identityPackage?.master?.url);
+    pushRef(identityPackage?.front?.url);
+    pushRef(identityPackage?.original?.url);
+  }
+
+  for (const item of identityPackage?.allProfiles || []) {
+    if (refs.length >= maxRefs) break;
+    pushRef(item?.url);
   }
 
   for (const url of frontendRefs || []) {
@@ -386,30 +452,113 @@ function normalizeText(value) {
 function detectSceneType(text = "") {
   const t = String(text || "").toLowerCase();
 
-  const isPortrait =
-    t.includes("close-up") ||
-    t.includes("close up") ||
-    t.includes("portrait") ||
-    t.includes("headshot") ||
-    t.includes("face shot");
+  const hasAny = (words = []) => words.some((word) => t.includes(word));
 
-  const isSideAngle =
-    t.includes("side angle") ||
-    t.includes("side profile") ||
-    t.includes("profile view") ||
-    t.includes("looking sideways") ||
-    t.includes("from the side");
+  const closeupWords = [
+    "close up",
+    "close-up",
+    "extreme close up",
+    "extreme close-up",
+    "face shot",
+    "headshot",
+    "head shot",
+    "tight portrait",
+    "only face",
+    "face only",
+    "facial shot",
+  ];
 
-  const isFullBody =
-    t.includes("full body") ||
-    t.includes("full-body") ||
-    t.includes("head to toe") ||
-    t.includes("head-to-toe");
+  const portraitWords = [
+    "portrait",
+    "waist up",
+    "chest up",
+    "bust shot",
+    "upper body",
+    "medium close",
+    "medium-close",
+    "shoulders up",
+    "beauty shot",
+  ];
 
-  if (isPortrait) return "portrait";
-  if (isSideAngle) return "side";
-  if (isFullBody) return "full_body";
-  return "scene";
+  const sideWords = [
+    "side profile",
+    "profile shot",
+    "left profile",
+    "right profile",
+    "side view",
+    "from the side",
+    "90 degree profile",
+    "profile angle",
+    "side angle",
+    "profile view",
+    "looking sideways",
+  ];
+
+  const fullBodyWords = [
+    "full body",
+    "full-body",
+    "head to toe",
+    "head-to-toe",
+    "standing full",
+    "entire body",
+    "whole body",
+  ];
+
+  const wideWords = [
+    "wide shot",
+    "wide frame",
+    "wide cinematic",
+    "epic wide",
+    "environment shot",
+    "establishing shot",
+    "landscape frame",
+    "long shot",
+    "distant shot",
+    "cinematic scene",
+    "movie still",
+  ];
+
+  const actionWords = [
+    "action scene",
+    "running through",
+    "explosion",
+    "fight scene",
+    "chasing",
+    "jumping",
+    "dramatic motion",
+    "combat",
+    "battle",
+    "car chase",
+    "sprinting",
+    "falling",
+    "dynamic pose",
+    "boxing",
+    "fight",
+    "training",
+    "gym",
+    "workout",
+  ];
+
+  if (hasAny(closeupWords)) return SCENE_TYPES.CLOSEUP;
+  if (hasAny(sideWords)) return SCENE_TYPES.SIDE;
+  if (hasAny(actionWords)) return SCENE_TYPES.ACTION;
+  if (hasAny(fullBodyWords)) return SCENE_TYPES.FULL_BODY;
+  if (hasAny(wideWords)) return SCENE_TYPES.WIDE;
+  if (hasAny(portraitWords)) return SCENE_TYPES.PORTRAIT;
+
+  if (t.includes("close") && (t.includes("face") || t.includes("eyes"))) {
+    return SCENE_TYPES.CLOSEUP;
+  }
+
+  if (t.includes("full") && (t.includes("body") || t.includes("standing"))) {
+    return SCENE_TYPES.FULL_BODY;
+  }
+
+  if (t.includes("wide") || t.includes("cinematic") || t.includes("environment")) {
+    return SCENE_TYPES.WIDE;
+  }
+
+  return SCENE_TYPES.SCENE;
 }
 
 function stripPromptLabel(text = "", label = "scene:") {
@@ -529,10 +678,17 @@ function buildConditionedIdentityBlock({
   return lines.join(" ");
 }
 
-function buildCompositionBlock({ combinedPrompt, ratio, characterMode = false }) {
+function buildCompositionBlock({
+  combinedPrompt,
+  ratio,
+  characterMode = false,
+  sceneType = SCENE_TYPES.SCENE,
+}) {
   const text = combinedPrompt.toLowerCase();
 
   const wantsCloseup =
+    sceneType === SCENE_TYPES.CLOSEUP ||
+    sceneType === SCENE_TYPES.PORTRAIT ||
     text.includes("close-up") ||
     text.includes("close up") ||
     text.includes("portrait") ||
@@ -540,12 +696,15 @@ function buildCompositionBlock({ combinedPrompt, ratio, characterMode = false })
     text.includes("face shot");
 
   const wantsFullBody =
+    sceneType === SCENE_TYPES.FULL_BODY ||
     text.includes("full body") ||
     text.includes("full-body") ||
     text.includes("head to toe") ||
     text.includes("head-to-toe");
 
   const wantsWide =
+    sceneType === SCENE_TYPES.WIDE ||
+    sceneType === SCENE_TYPES.ACTION ||
     text.includes("wide shot") ||
     text.includes("wide-angle") ||
     text.includes("environment visible") ||
@@ -755,15 +914,30 @@ function buildNegativeBlock({ negativePrompt, combinedPrompt, useCharacter }) {
 function chooseModel({
   characterMode,
   premiumRender,
-  modelType,
+  sceneType,
 }) {
-  if (characterMode) {
-    if (modelType === "instant") return MODELS.INSTANT_ID;
-    return MODELS.CHARACTER_ID; // fallback DreamO
+  if (!characterMode) {
+    return {
+      model: premiumRender ? MODELS.SCENE_PREMIUM : MODELS.SCENE,
+      route: MODEL_ROUTES.SCENE_ONLY,
+    };
   }
 
-  if (premiumRender) return MODELS.SCENE_PREMIUM;
-  return MODELS.SCENE;
+  if (
+    sceneType === SCENE_TYPES.CLOSEUP ||
+    sceneType === SCENE_TYPES.PORTRAIT ||
+    sceneType === SCENE_TYPES.SIDE
+  ) {
+    return {
+      model: MODELS.CHARACTER_ID,
+      route: MODEL_ROUTES.IDENTITY_FIRST,
+    };
+  }
+
+  return {
+    model: premiumRender ? MODELS.SCENE_PREMIUM : MODELS.SCENE,
+    route: MODEL_ROUTES.SCENE_FIRST,
+  };
 }
 
 function shouldEnablePromptUpsampling({
@@ -978,8 +1152,6 @@ export async function POST(req) {
   premiumRender = false,
 } = await req.json();
 
-const modelType = "dreamo";
-
     console.log("Incoming request:", {
       prompt,
       scenePrompt,
@@ -1033,13 +1205,14 @@ const modelType = "dreamo";
       ? buildIdentityPackage(character, anchorRows, sceneType)
       : null;
 
-    const generationRefs = character
-      ? selectGenerationReferenceImages({
-          identityPackage,
-          frontendRefs,
-          maxRefs: 4,
-        })
-      : [...new Set(frontendRefs)].slice(0, 4);
+const generationRefs = character
+  ? selectGenerationReferenceImages({
+      identityPackage,
+      frontendRefs,
+      sceneType,
+      maxRefs: 4,
+    })
+  : [...new Set(frontendRefs)].slice(0, 4);
 
     const characterMode =
       Boolean(character) || (Boolean(useCharacter) && generationRefs.length > 0);
@@ -1087,6 +1260,7 @@ const compositionBlock = buildCompositionBlock({
   combinedPrompt: combinedSceneText,
   ratio,
   characterMode,
+  sceneType,
 });
 
 const realismBlock = buildRealismBlock({
@@ -1147,12 +1321,15 @@ const qualityBlock = characterMode
 
     const aspect_ratio = mapSizeToAspectRatio(size, ratio);
 
-const model = chooseModel({
+const modelDecision = chooseModel({
   characterMode,
   premiumRender:
     Boolean(premiumRender) || String(quality).toLowerCase() === "high",
-  modelType,
+  sceneType,
 });
+
+const model = modelDecision.model;
+const modelRoute = modelDecision.route;
 
     const enablePromptUpsampling = shouldEnablePromptUpsampling({
       characterMode,
@@ -1190,7 +1367,13 @@ const input =
         referenceImages: generationRefs,
       });
 
-    console.log("Replicate model:", model);
+    console.log("Replicate routing:", {
+  model,
+  modelRoute,
+  sceneType,
+  characterMode,
+  referenceCount: generationRefs.length,
+});
     console.log("Replicate input:", JSON.stringify(input, null, 2));
 
 const prediction = await createReplicatePrediction({
@@ -1224,6 +1407,10 @@ const jobPayload = {
     realismPrompt: realismBlock,
     characterLoaded: Boolean(character),
     characterName: character?.name || null,
+    sceneType,
+    modelRoute,
+    modelUsed: model,
+    referenceCount: generationRefs.length,
   },
   evaluation: {},
   status: prediction.status || "starting",
@@ -1246,6 +1433,9 @@ return Response.json({
     referencePreview: generationRefs,
     finalPrompt: currentPrompt,
     negativePrompt: currentNegativePrompt,
+    sceneType,
+    modelRoute,
+    referenceCount: generationRefs.length,
   },
 });
   } catch (error) {
