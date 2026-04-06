@@ -381,21 +381,19 @@ async function verifyIdentitySimilarity({
   referenceImageUrl: string;
   candidateImageUrl: string;
 }) {
-  const prediction = await replicate.models.predictions.create(FACE_MATCH_MODEL, {
+  const rawOutput = await replicate.run(FACE_MATCH_MODEL, {
     input: {
       image1: referenceImageUrl,
       image2: candidateImageUrl,
     },
   });
 
-  const similarity = normalizeSimilarity(
-    extractSimilarityScore(prediction?.output)
-  );
+  const similarity = normalizeSimilarity(extractSimilarityScore(rawOutput));
 
   return {
     similarity,
-    rawOutput: prediction?.output || null,
-    predictionId: prediction?.id || null,
+    rawOutput: rawOutput || null,
+    predictionId: null,
     accepted:
       Number.isFinite(Number(similarity)) &&
       Number(similarity) >= DEFAULT_IDENTITY_THRESHOLD,
