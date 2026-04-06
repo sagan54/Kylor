@@ -1,13 +1,10 @@
 import { task } from "@trigger.dev/sdk/v3";
 import { createClient } from "@supabase/supabase-js";
 import { fal } from "@fal-ai/client";
-import Replicate from "replicate";
-import OpenAI from "openai";
 import {
   buildPrompt,
   buildCorrectionPrompt,
   adjustSceneForIdentity,
-  getModelForTask,
 } from "../lib/image-generation-rules";
 
 type GenerateImagePayload = {
@@ -32,22 +29,14 @@ const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
-const replicate = new Replicate({
-  auth: process.env.REPLICATE_API_TOKEN,
-});
-const openai = process.env.OPENAI_API_KEY
-  ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
-  : null;
 
 fal.config({
   credentials: process.env.FAL_KEY!,
 });
 
 const GENERATED_BUCKET = "generated-images";
-const FACE_MATCH_MODEL = process.env.FACE_MATCH_MODEL || "apna-mart/face-match";
-const EVALUATOR_MODEL = process.env.EVALUATOR_MODEL || "gpt-4.1-mini";
-const DEFAULT_IDENTITY_THRESHOLD = 0.82;
-const MAX_CHARACTER_ATTEMPTS = 2;
+const DREAMO_MODEL = "fal-ai/dreamo";
+const MAX_CHARACTER_ATTEMPTS = 1;
 
 function normalizeImageUrl(value: unknown) {
   const url = String(value || "").trim();
@@ -194,36 +183,6 @@ function extractImageOutput(result: any) {
   };
 }
 
-async function fileOutputToUrl(output: any): Promise<string | null> {
-  if (!output) return null;
-
-  if (typeof output === "string") return output;
-
-  if (Array.isArray(output)) {
-    for (const item of output) {
-      const url = await fileOutputToUrl(item);
-      if (url) return url;
-    }
-    return null;
-  }
-
-  if (typeof output?.url === "function") {
-    const url = await output.url();
-    return typeof url === "string" ? url : String(url || "");
-  }
-
-  if (typeof output?.url === "string") return output.url;
-  if (typeof output?.href === "string") return output.href;
-  if (output?.output) return fileOutputToUrl(output.output);
-
-  const asString = String(output || "").trim();
-  if (asString.startsWith("http://") || asString.startsWith("https://")) {
-    return asString;
-  }
-
-  return null;
-}
-
 async function runDreamoGeneration({
   prompt,
   referenceUrls,
@@ -247,7 +206,7 @@ async function runDreamoGeneration({
 
   const dimensions = mapSizeToIdentityDimensions(size, ratio);
 
-  const result = (await fal.subscribe("fal-ai/dreamo", {
+  const result = (await fal.subscribe(DREAMO_MODEL, {
     input: {
       prompt,
       first_reference_image_url: cleanedRefs[0],
@@ -257,6 +216,9 @@ async function runDreamoGeneration({
       width: dimensions.width,
       height: dimensions.height,
       num_images: 1,
+      num_inference_steps: 12,
+      guidance_scale: 3.5,
+      sync_mode: true,
       seed: typeof seed === "number" ? seed : undefined,
     },
     logs: true,
@@ -269,298 +231,24 @@ async function runDreamoGeneration({
 
   return image;
 }
-
-async function runInstantIdGeneration({
-  prompt,
-  referenceUrls,
-  ratio,
-  size,
-  seed,
-}: {
-  prompt: string;
-  referenceUrls: string[];
-  ratio?: string | null;
-  size?: string | null;
-  seed?: number | null;
-}) {
-  const primaryReference = normalizeImageUrl(referenceUrls?.[0]);
-  if (!primaryReference) {
-    throw new Error("No valid primary reference image was provided to InstantID.");
-  }
-
-  const modelName =
-    process.env.REPLICATE_INSTANTID_MODEL ||
-    "grandlineai/instant-id-photorealistic";
-
-  const output = await replicate.run(modelName, {
-    input: {
-      image: primaryReference,
-      prompt,
-      aspect_ratio: String(ratio || size || "16:9"),
-      output_format: "png",
-      ip_adapter_scale: 0.85,
-      controlnet_conditioning_scale: 0.8,
-      seed: typeof seed === "number" ? seed : undefined,
-    },
-  });
-
-  const imageUrl = await fileOutputToUrl(output);
-
-  if (!imageUrl) {
-    throw new Error("InstantID returned no image URL.");
-  }
-
-  return {
-    url: imageUrl,
-    width: null,
-    height: null,
-    content_type: "image/png",
-    raw: output,
-  };
-}
-
-function extractSimilarityScore(output: any): number | null {
-  if (typeof output === "number") return output;
-
-  if (typeof output === "string") {
-    const n = Number(output);
-    return Number.isFinite(n) ? n : null;
-  }
-
-  if (Array.isArray(output)) {
-    for (const item of output) {
-      const value = extractSimilarityScore(item);
-      if (Number.isFinite(value)) return value;
-    }
-    return null;
-  }
-
-  if (output && typeof output === "object") {
-    const possibleKeys = [
-      "similarity",
-      "score",
-      "match_score",
-      "confidence",
-      "distance_score",
-      "face_similarity",
-    ];
-
-    for (const key of possibleKeys) {
-      const value = Number(output[key]);
-      if (Number.isFinite(value)) return value;
-    }
-
-    for (const value of Object.values(output)) {
-      const nested = extractSimilarityScore(value);
-      if (Number.isFinite(nested)) return nested;
-    }
-  }
-
-  return null;
-}
-
-function normalizeSimilarity(score: number | null) {
-  const n = Number(score);
-  if (!Number.isFinite(n)) return null;
-
-  if (n > 1 && n <= 100) {
-    return Math.max(0, Math.min(1, n / 100));
-  }
-
-  if (n >= 0 && n <= 1) {
-    return n;
-  }
-
-  return null;
-}
-
-async function verifyIdentitySimilarity({
-  referenceImageUrl,
-  candidateImageUrl,
-}: {
-  referenceImageUrl: string;
-  candidateImageUrl: string;
-}) {
-  const rawOutput = await replicate.run(FACE_MATCH_MODEL, {
-    input: {
-      image1: referenceImageUrl,
-      image2: candidateImageUrl,
-    },
-  });
-
-  const similarity = normalizeSimilarity(extractSimilarityScore(rawOutput));
-
-  return {
-    similarity,
-    rawOutput: rawOutput || null,
-    predictionId: null,
-    accepted:
-      Number.isFinite(Number(similarity)) &&
-      Number(similarity) >= DEFAULT_IDENTITY_THRESHOLD,
-  };
-}
-
-async function evaluateFaceVisibility({
-  candidateImageUrl,
-  characterName,
-}: {
-  candidateImageUrl: string;
-  characterName?: string | null;
-}) {
-  if (!openai || typeof (openai as any)?.responses?.create !== "function") {
-    return {
-      accepted: true,
-      faceVisible: true,
-      frontalOrThreeQuarter: true,
-      severeBacklighting: false,
-      heavyFogOnFace: false,
-      silhouette: false,
-      identityUsable: true,
-      reason:
-        "Vision evaluator disabled because the OpenAI Responses API is unavailable in this runtime.",
-    };
-  }
-
-  try {
-    const response: any = await openai.responses.create({
-      model: EVALUATOR_MODEL,
-      input: [
-        {
-          role: "user",
-          content: [
-            {
-              type: "input_text",
-              text: [
-                "Evaluate this generated image for character identity usability.",
-                `Character name: ${characterName || "selected character"}.`,
-                "Return JSON only.",
-                "Reject if the face is not clearly visible, if the subject is mostly silhouette, if the face is heavily obscured by fog/shadow/hair, if strong backlighting destroys facial readability, or if the subject is back-facing.",
-                "Accept only if the face is clearly visible, well-lit enough for identity recognition, and framed front-facing or slight 3/4.",
-              ].join(" "),
-            },
-            {
-              type: "input_image",
-              image_url: candidateImageUrl,
-              detail: "high",
-            },
-          ],
-        },
-      ],
-      text: {
-        format: {
-          type: "json_schema",
-          name: "identity_visibility_evaluation",
-          strict: true,
-          schema: {
-            type: "object",
-            additionalProperties: false,
-            properties: {
-              accepted: { type: "boolean" },
-              faceVisible: { type: "boolean" },
-              frontalOrThreeQuarter: { type: "boolean" },
-              severeBacklighting: { type: "boolean" },
-              heavyFogOnFace: { type: "boolean" },
-              silhouette: { type: "boolean" },
-              identityUsable: { type: "boolean" },
-              reason: { type: "string" },
-            },
-            required: [
-              "accepted",
-              "faceVisible",
-              "frontalOrThreeQuarter",
-              "severeBacklighting",
-              "heavyFogOnFace",
-              "silhouette",
-              "identityUsable",
-              "reason",
-            ],
-          },
-        },
-      },
-    });
-
-    const parsed =
-      response?.output_parsed ||
-      JSON.parse(response?.output_text || "{}");
-
-    return parsed;
-  } catch (error: any) {
-    console.error("Face visibility evaluator unavailable:", error);
-
-    return {
-      accepted: true,
-      faceVisible: true,
-      frontalOrThreeQuarter: true,
-      severeBacklighting: false,
-      heavyFogOnFace: false,
-      silhouette: false,
-      identityUsable: true,
-      reason:
-        error?.message ||
-        "Vision evaluator failed, continuing with identity score validation only.",
-    };
-  }
-}
-
-async function validateOutput({
-  candidateImageUrl,
-  referenceImageUrl,
-  characterName,
-}: {
-  candidateImageUrl: string;
-  referenceImageUrl: string;
-  characterName?: string | null;
-}) {
-  const [visibility, identity] = await Promise.all([
-    evaluateFaceVisibility({ candidateImageUrl, characterName }),
-    verifyIdentitySimilarity({ referenceImageUrl, candidateImageUrl }),
-  ]);
-
-  const accepted =
-    Boolean(visibility?.accepted) &&
-    Boolean(visibility?.identityUsable) &&
-    Boolean(identity?.accepted);
-
-  return {
-    accepted,
-    visibility,
-    identity,
-    correctionPrompt: buildCorrectionPrompt(
-      "Make the face clearly visible and well-lit, preserve identity."
-    ),
-  };
-}
-
 async function runCharacterModel({
-  modelConfig,
   prompt,
   referenceUrls,
-  ratio,
   size,
+  ratio,
   seed,
 }: {
-  modelConfig: { provider: string; model: string; identityMode: string };
   prompt: string;
   referenceUrls: string[];
-  ratio?: string | null;
   size?: string | null;
+  ratio?: string | null;
   seed?: number | null;
 }) {
-  if (modelConfig.provider === "fal") {
-    return runDreamoGeneration({
-      prompt,
-      referenceUrls,
-      ratio,
-      size,
-      seed,
-    });
-  }
-
-  return runInstantIdGeneration({
+  return runDreamoGeneration({
     prompt,
     referenceUrls,
-    ratio,
     size,
+    ratio,
     seed,
   });
 }
@@ -602,11 +290,6 @@ export const generateImageTask = task({
       let lastError: any = null;
 
       for (let attempt = 0; attempt < MAX_CHARACTER_ATTEMPTS; attempt += 1) {
-        const modelConfig = getModelForTask({
-          hasCharacter: true,
-          attempt,
-        }) as { provider: string; model: string; identityMode: string };
-
         const resolvedPrompt = buildPrompt({
           scene:
             attempt === 0
@@ -629,9 +312,9 @@ export const generateImageTask = task({
             characterName: characterName || null,
             referenceCount: referenceUrls.length,
             referenceUrls,
-            provider: modelConfig.provider,
-            model: modelConfig.model,
-            identityMode: modelConfig.identityMode,
+            provider: "fal",
+            model: DREAMO_MODEL,
+            identityMode: "dreamo_identity",
             attempt: attempt + 1,
             resolvedPrompt,
           },
@@ -646,44 +329,12 @@ export const generateImageTask = task({
           });
 
           const generatedRemote = await runCharacterModel({
-            modelConfig,
             prompt: resolvedPrompt,
             referenceUrls,
-            ratio,
             size,
+            ratio,
             seed,
           });
-
-          await updateGenerationRow(generationId, {
-            metadata: {
-              lastProgressAt: new Date().toISOString(),
-              progressStage: "validating_output",
-            },
-          });
-
-          const validation = await validateOutput({
-            candidateImageUrl: generatedRemote.url,
-            referenceImageUrl: referenceUrls[0],
-            characterName,
-          });
-
-          lastValidation = validation;
-
-          if (!validation.accepted) {
-            await updateGenerationRow(generationId, {
-              metadata: {
-                lastProgressAt: new Date().toISOString(),
-                progressStage: "retrying_after_validation_failure",
-                lastValidation: validation,
-              },
-            });
-
-            lastError = new Error(
-              validation?.visibility?.reason ||
-                "Generated image failed identity visibility validation."
-            );
-            continue;
-          }
 
           const outputContentType = generatedRemote?.content_type || "image/png";
           const downloaded = await downloadImage(generatedRemote.url);
@@ -705,15 +356,20 @@ export const generateImageTask = task({
               completedAt: new Date().toISOString(),
               lastProgressAt: new Date().toISOString(),
               progressStage: "completed",
-              provider: modelConfig.provider,
-              model: modelConfig.model,
+              provider: "fal",
+              model: DREAMO_MODEL,
               referenceUrls,
               referenceCount: referenceUrls.length,
               generatedRemote,
               storagePath: uploaded.storagePath,
-              identityMode: modelConfig.identityMode,
+              identityMode: "dreamo_identity",
               negativePrompt: negativePrompt || "",
-              validation,
+              validation: {
+                accepted: true,
+                mode: "prompt_enforced",
+                reason:
+                  "Accepted from the primary DreamO identity generation path.",
+              },
             },
           });
 

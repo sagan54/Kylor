@@ -950,20 +950,33 @@ function mapApiGenerationToGroup(data) {
 };
 }
 
-async function pollPredictionUntilComplete(predictionId, maxAttempts = 120, intervalMs = 2500) {
+async function pollPredictionUntilComplete(predictionId, maxAttempts = 180, intervalMs = 2500) {
   if (!predictionId) {
     throw new Error("Missing predictionId");
   }
+
+  let consecutiveNetworkErrors = 0;
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
 const params = new URLSearchParams({
   predictionId,
 });
 
-const res = await fetch(`/api/generate-image-status?${params.toString()}`, {
-  method: "GET",
-  cache: "no-store",
-});
+let res;
+try {
+  res = await fetch(`/api/generate-image-status?${params.toString()}`, {
+    method: "GET",
+    cache: "no-store",
+  });
+  consecutiveNetworkErrors = 0;
+} catch (error) {
+  consecutiveNetworkErrors += 1;
+  if (consecutiveNetworkErrors >= 5) {
+    throw new Error("Network connection was interrupted while checking generation status. Please try again.");
+  }
+  await sleep(intervalMs);
+  continue;
+}
 
     const data = await res.json().catch(() => ({}));
 
