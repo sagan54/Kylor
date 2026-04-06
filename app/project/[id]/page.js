@@ -256,7 +256,27 @@ export default function ProjectPage({ params }) {
       const res = await fetch("/api/generate-image", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt: imagePrompt }) });
       const data = await res.json();
       if (!data.error) {
-        setGeneratedImage(data.image || data?.generation?.images?.[0] || null);
+        if (data.image || data?.generation?.images?.[0]) {
+          setGeneratedImage(data.image || data?.generation?.images?.[0] || null);
+        } else if (data?.predictionId) {
+          for (let attempt = 0; attempt < 120; attempt += 1) {
+            await new Promise((resolve) => setTimeout(resolve, 2500));
+            const statusRes = await fetch(`/api/generate-image-status?predictionId=${encodeURIComponent(data.predictionId)}`, {
+              method: "GET",
+              cache: "no-store",
+            });
+            const statusData = await statusRes.json().catch(() => ({}));
+            if (!statusRes.ok) break;
+            const status = String(statusData?.status || "").toLowerCase();
+            if (status === "succeeded") {
+              setGeneratedImage(statusData?.generation?.images?.[0] || null);
+              break;
+            }
+            if (status === "failed") {
+              break;
+            }
+          }
+        }
       }
     } catch (e) { console.error(e); }
     setImageLoading(false);

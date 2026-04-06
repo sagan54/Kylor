@@ -1,10 +1,7 @@
 import { tasks } from "@trigger.dev/sdk/v3";
 import { createClient } from "@supabase/supabase-js";
 import Replicate from "replicate";
-import {
-  FLUX_MODEL,
-  buildPrompt,
-} from "../../../lib/image-generation-rules";
+import { FLUX_MODEL, buildPrompt } from "../../../lib/image-generation-rules";
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -14,9 +11,48 @@ const replicate = new Replicate({
   auth: process.env.REPLICATE_API_TOKEN,
 });
 
-const GENERATED_BUCKET = "generated-images";
 const MAX_REFERENCE_IMAGES = 5;
 const SEEDREAM_MODEL = "fal-ai/bytedance/seedream/v4.5/edit";
+const MAX_PROMPT_LENGTH = 12000;
+const MAX_NEGATIVE_PROMPT_LENGTH = 6000;
+
+function logStep(step, details = {}) {
+  console.info(`generate-image route: ${step}`, details);
+}
+
+function buildErrorDetails({
+  error,
+  promptLength,
+  negativePromptLength,
+  hasCharacter,
+  requestKeys,
+}) {
+  return {
+    message: error?.message || "Unknown route error",
+    stack: error?.stack || null,
+    promptLength,
+    negativePromptLength,
+    hasCharacter,
+    requestKeys,
+  };
+}
+
+function logEarlyReturn(reason, details = {}) {
+  console.warn(`generate-image route: early return - ${reason}`, details);
+}
+
+function sanitizeText(value) {
+  return String(value ?? "").trim();
+}
+
+function sanitizeOptionalId(value) {
+  const text = sanitizeText(value);
+  return text || null;
+}
+
+function sanitizeSeed(value) {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
 
 function normalizeImageUrl(value) {
   const url = String(value || "").trim();
@@ -39,8 +75,7 @@ function dedupeUrls(urls = []) {
 
   for (const raw of urls) {
     const url = normalizeImageUrl(raw);
-    if (!url) continue;
-    if (seen.has(url)) continue;
+    if (!url || seen.has(url)) continue;
     seen.add(url);
     output.push(url);
   }
@@ -56,94 +91,6 @@ function safeJsonParse(value, fallback = null) {
   } catch {
     return fallback;
   }
-}
-
-async function fileOutputToUrl(output) {
-  if (!output) return null;
-
-  if (typeof output === "string") return output;
-
-  if (Array.isArray(output)) {
-    for (const item of output) {
-      const url = await fileOutputToUrl(item);
-      if (url) return url;
-    }
-    return null;
-  }
-
-  if (typeof output?.url === "function") {
-    const url = await output.url();
-    return typeof url === "string" ? url : String(url || "");
-  }
-
-  if (typeof output?.url === "string") return output.url;
-  if (typeof output?.href === "string") return output.href;
-
-  if (output?.output) {
-    return await fileOutputToUrl(output.output);
-  }
-
-  const asString = String(output || "").trim();
-  if (asString.startsWith("http://") || asString.startsWith("https://")) {
-    return asString;
-  }
-
-  return null;
-}
-
-function getFileExtFromContentType(contentType = "") {
-  const value = String(contentType).toLowerCase();
-
-  if (value.includes("jpeg") || value.includes("jpg")) return "jpg";
-  if (value.includes("webp")) return "webp";
-  return "png";
-}
-
-async function downloadImageAsBuffer(imageUrl) {
-  const response = await fetch(imageUrl);
-
-  if (!response.ok) {
-    throw new Error(`Failed to download generated image: ${response.status}`);
-  }
-
-  const contentType = response.headers.get("content-type") || "image/png";
-  const arrayBuffer = await response.arrayBuffer();
-
-  return {
-    buffer: Buffer.from(arrayBuffer),
-    contentType,
-  };
-}
-
-async function uploadGeneratedImage({
-  userId,
-  buffer,
-  contentType,
-  fileExt,
-  generationId,
-}) {
-  const safeUserId = userId || "anonymous";
-  const filePath = `${safeUserId}/${generationId}.${fileExt}`;
-
-  const { error: uploadError } = await supabaseAdmin.storage
-    .from(GENERATED_BUCKET)
-    .upload(filePath, buffer, {
-      contentType,
-      upsert: true,
-    });
-
-  if (uploadError) {
-    throw new Error(`Supabase upload failed: ${uploadError.message}`);
-  }
-
-  const { data } = supabaseAdmin.storage
-    .from(GENERATED_BUCKET)
-    .getPublicUrl(filePath);
-
-  return {
-    publicUrl: data.publicUrl,
-    storagePath: filePath,
-  };
 }
 
 function mapSizeToAspectRatio(size = "", ratio = "1:1") {
@@ -193,85 +140,6 @@ async function updateGenerationRow(generationId, patch) {
   if (error) {
     throw new Error(error.message || "Failed to update generation row");
   }
-}
-
-async function runDirectFluxGeneration({
-  generationId,
-  userId,
-  prompt,
-  scenePrompt,
-  negativePrompt,
-  style,
-  ratio,
-  size,
-  seed,
-}) {
-  await updateGenerationRow(generationId, {
-    metadata: {
-      state: "processing",
-      startedAt: new Date().toISOString(),
-      provider: "replicate",
-      model: FLUX_MODEL,
-      identityMode: "prompt_only_flux",
-    },
-  });
-
-  const output = await replicate.run(FLUX_MODEL, {
-    input: {
-      prompt: buildPrompt({
-        scene: scenePrompt || prompt || "",
-        style,
-        negativePrompt,
-        mode: "freeform",
-      }),
-      aspect_ratio: mapSizeToAspectRatio(size, ratio),
-      output_format: "png",
-      seed: typeof seed === "number" ? seed : undefined,
-    },
-  });
-
-  const tempUrl = await fileOutputToUrl(output);
-
-  if (!tempUrl) {
-    throw new Error("No image URL returned from Replicate");
-  }
-
-  const downloaded = await downloadImageAsBuffer(tempUrl);
-  const uploaded = await uploadGeneratedImage({
-    userId,
-    buffer: downloaded.buffer,
-    contentType: downloaded.contentType,
-    fileExt: getFileExtFromContentType(downloaded.contentType),
-    generationId,
-  });
-
-  await updateGenerationRow(generationId, {
-    images: [uploaded.publicUrl].filter(Boolean),
-    style: style || "cinematic",
-    mode: "image",
-    metadata: {
-      state: "succeeded",
-      completedAt: new Date().toISOString(),
-      provider: "replicate",
-      model: FLUX_MODEL,
-      storagePath: uploaded.storagePath,
-      remoteUrl: tempUrl,
-      negativePrompt: negativePrompt || "",
-      identityMode: "prompt_only_flux",
-    },
-  });
-
-  const { data: savedGeneration, error } = await supabaseAdmin
-    .from("image_generations")
-    .select("*")
-    .eq("id", generationId)
-    .single();
-
-  if (error || !savedGeneration) {
-    throw new Error("Image was generated but the saved record could not be loaded");
-  }
-
-  return savedGeneration;
 }
 
 async function loadCharacterData(characterId) {
@@ -420,31 +288,136 @@ async function createPendingGeneration({
   return data;
 }
 
+function buildFluxPredictionInput({
+  prompt,
+  scenePrompt,
+  negativePrompt,
+  style,
+  ratio,
+  size,
+  seed,
+}) {
+  return {
+    prompt: buildPrompt({
+      scene: scenePrompt || prompt || "",
+      style,
+      negativePrompt,
+      mode: "freeform",
+    }),
+    aspect_ratio: mapSizeToAspectRatio(size, ratio),
+    output_format: "png",
+    seed: sanitizeSeed(seed),
+  };
+}
+
 export async function POST(req) {
+  let rawBody = null;
+  let requestKeys = [];
+  let promptLength = 0;
+  let negativePromptLength = 0;
+  let hasCharacter = false;
+
   try {
-    const body = await req.json();
+    logStep("STEP 1 request received");
 
-    const {
-      prompt,
-      scenePrompt,
-      characterPrompt = "",
-      negativePrompt = "",
-      style = "cinematic",
-      ratio = "16:9",
-      size = "16:9",
-      userId,
+    try {
+      rawBody = await req.json();
+    } catch (parseError) {
+      logEarlyReturn("invalid_json", {
+        message: parseError?.message || "Failed to parse request JSON",
+      });
+      return Response.json(
+        { success: false, error: "Malformed JSON request body." },
+        { status: 400 }
+      );
+    }
+
+    if (!rawBody || typeof rawBody !== "object" || Array.isArray(rawBody)) {
+      logEarlyReturn("invalid_payload_shape", {
+        requestType: typeof rawBody,
+      });
+      return Response.json(
+        { success: false, error: "Request body must be a JSON object." },
+        { status: 400 }
+      );
+    }
+
+    requestKeys = Object.keys(rawBody).sort();
+
+    const prompt = sanitizeText(rawBody.prompt);
+    const scenePrompt = sanitizeText(rawBody.scenePrompt);
+    const characterPrompt = sanitizeText(rawBody.characterPrompt);
+    const negativePrompt = sanitizeText(rawBody.negativePrompt);
+    const style = sanitizeText(rawBody.style) || "cinematic";
+    const ratio = sanitizeText(rawBody.ratio) || "16:9";
+    const size = sanitizeText(rawBody.size) || "16:9";
+    const userId = sanitizeOptionalId(rawBody.userId);
+    const characterId = sanitizeOptionalId(rawBody.characterId);
+    const seed = sanitizeSeed(rawBody.seed);
+    const finalPrompt = prompt || scenePrompt;
+
+    promptLength = finalPrompt.length;
+    negativePromptLength = negativePrompt.length;
+    hasCharacter = Boolean(characterId);
+
+    logStep("STEP 2 parsed body", {
+      requestKeys,
+      promptLength,
+      negativePromptLength,
+      hasCharacter,
+      hasNegativePrompt: Boolean(negativePrompt),
       characterId,
-      seed,
-    } = body || {};
-
-    const finalPrompt = String(prompt || scenePrompt || "").trim();
+      mode: characterId ? "character" : "prompt_only",
+    });
 
     if (!finalPrompt) {
+      logEarlyReturn("missing_prompt", {
+        promptLength,
+        negativePromptLength,
+        requestKeys,
+      });
       return Response.json(
         { success: false, error: "Prompt is required." },
         { status: 400 }
       );
     }
+
+    if (promptLength > MAX_PROMPT_LENGTH) {
+      logEarlyReturn("prompt_too_long", {
+        promptLength,
+        maxPromptLength: MAX_PROMPT_LENGTH,
+      });
+      return Response.json(
+        {
+          success: false,
+          error: `Prompt is too long. Maximum length is ${MAX_PROMPT_LENGTH} characters.`,
+        },
+        { status: 400 }
+      );
+    }
+
+    if (negativePromptLength > MAX_NEGATIVE_PROMPT_LENGTH) {
+      logEarlyReturn("negative_prompt_too_long", {
+        negativePromptLength,
+        maxNegativePromptLength: MAX_NEGATIVE_PROMPT_LENGTH,
+      });
+      return Response.json(
+        {
+          success: false,
+          error: `Negative prompt is too long. Maximum length is ${MAX_NEGATIVE_PROMPT_LENGTH} characters.`,
+        },
+        { status: 400 }
+      );
+    }
+
+    logStep("STEP 3 validated inputs", {
+      promptLength,
+      negativePromptLength,
+      characterId,
+      hasCharacter,
+      hasNegativePrompt: Boolean(negativePrompt),
+      mode: characterId ? "character" : "prompt_only",
+    });
 
     let character = null;
     let characterRows = [];
@@ -454,6 +427,11 @@ export async function POST(req) {
       character = await loadCharacterData(characterId);
 
       if (!character) {
+        logEarlyReturn("character_not_found", {
+          characterId,
+          promptLength,
+          negativePromptLength,
+        });
         return Response.json(
           { success: false, error: "Selected character not found." },
           { status: 404 }
@@ -464,6 +442,11 @@ export async function POST(req) {
       referenceUrls = pickBestIdentityReferences(character, characterRows);
 
       if (!referenceUrls.length) {
+        logEarlyReturn("missing_character_references", {
+          characterId,
+          promptLength,
+          negativePromptLength,
+        });
         return Response.json(
           {
             success: false,
@@ -491,62 +474,118 @@ export async function POST(req) {
         usedCharacter: usingCharacterMode,
         referenceCount: referenceUrls.length,
         referenceUrls,
-        identityMode: usingCharacterMode ? "multi_reference_seedream" : null,
+        identityMode: usingCharacterMode
+          ? "multi_reference_seedream"
+          : "prompt_only_flux",
         provider: usingCharacterMode ? "fal" : "replicate",
         model: usingCharacterMode ? SEEDREAM_MODEL : FLUX_MODEL,
+        remotePredictionId: null,
+        remoteStatus: usingCharacterMode ? null : "starting",
+        hasNegativePrompt: Boolean(negativePrompt),
       },
     });
 
+    logStep("STEP 6 DB insert/update success", {
+      generationId: pendingRow.id,
+      promptLength,
+      negativePromptLength,
+      characterId,
+      hasCharacter: usingCharacterMode,
+      mode: usingCharacterMode ? "character" : "prompt_only",
+    });
+
     if (!usingCharacterMode) {
-      try {
-        const savedGeneration = await runDirectFluxGeneration({
-          generationId: pendingRow.id,
-          userId,
-          prompt: finalPrompt,
-          scenePrompt: scenePrompt || finalPrompt,
-          negativePrompt: negativePrompt || "",
-          style,
-          ratio,
-          size,
-          seed,
-        });
+      const predictionInput = buildFluxPredictionInput({
+        prompt: finalPrompt,
+        scenePrompt: scenePrompt || finalPrompt,
+        negativePrompt,
+        style,
+        ratio,
+        size,
+        seed,
+      });
 
-        return Response.json({
-          success: true,
-          status: "succeeded",
-          predictionId: pendingRow.id,
-          image: savedGeneration.images?.[0] || null,
-          generation: savedGeneration,
-          meta: {
-            characterId: null,
-            characterName: null,
-            usedCharacter: false,
-            scenePrompt: scenePrompt || prompt || "",
-            finalPrompt,
-            provider: "replicate",
-            model: FLUX_MODEL,
-            referenceCount: 0,
-            referenceUrls: [],
-            identityMode: "prompt_only_flux",
-          },
-        });
-      } catch (generationError) {
-        await updateGenerationRow(pendingRow.id, {
+      logStep("STEP 4 before Trigger enqueue", {
+        generationId: pendingRow.id,
+        dispatchTarget: "replicate.predictions.create",
+        promptLength,
+        negativePromptLength,
+        hasNegativePrompt: Boolean(negativePrompt),
+        characterId: null,
+        mode: "prompt_only",
+      });
+
+      const prediction = await replicate.predictions.create({
+        model: FLUX_MODEL,
+        input: predictionInput,
+      });
+
+      await updateGenerationRow(pendingRow.id, {
+        metadata: {
+          startedAt: new Date().toISOString(),
+          remotePredictionId: prediction?.id || null,
+          remoteStatus: prediction?.status || "starting",
+          provider: "replicate",
+          model: FLUX_MODEL,
+          identityMode: "prompt_only_flux",
+          hasNegativePrompt: Boolean(negativePrompt),
+        },
+      });
+
+      logStep("STEP 5 after Trigger enqueue", {
+        generationId: pendingRow.id,
+        dispatchTarget: "replicate.predictions.create",
+        remotePredictionId: prediction?.id || null,
+        remoteStatus: prediction?.status || "starting",
+      });
+
+      return Response.json({
+        success: true,
+        status: "processing",
+        predictionId: pendingRow.id,
+        generation: {
+          id: pendingRow.id,
+          prompt: pendingRow.prompt,
+          negative_prompt: pendingRow.negative_prompt,
+          ratio: pendingRow.ratio,
+          mode: pendingRow.mode,
+          style: pendingRow.style,
+          created_at: pendingRow.created_at,
+          images: [],
           metadata: {
-            state: "failed",
-            failedAt: new Date().toISOString(),
-            error:
-              generationError?.message ||
-              "Prompt-only generation failed.",
-            provider: "replicate",
-            model: FLUX_MODEL,
-            identityMode: "prompt_only_flux",
+            ...(pendingRow.metadata || {}),
+            state: "processing",
+            startedAt: new Date().toISOString(),
+            remotePredictionId: prediction?.id || null,
+            remoteStatus: prediction?.status || "starting",
           },
-        });
-
-        throw generationError;
-      }
+        },
+        meta: {
+          characterId: null,
+          characterName: null,
+          usedCharacter: false,
+          scenePrompt: scenePrompt || prompt || "",
+          finalPrompt,
+          characterPrompt: "",
+          provider: "replicate",
+          model: FLUX_MODEL,
+          referenceCount: 0,
+          referenceUrls: [],
+          identityMode: "prompt_only_flux",
+          hasNegativePrompt: Boolean(negativePrompt),
+        },
+      });
     }
+
+    logStep("STEP 4 before Trigger enqueue", {
+      generationId: pendingRow.id,
+      dispatchTarget: "tasks.trigger(generate-image)",
+      promptLength,
+      negativePromptLength,
+      hasNegativePrompt: Boolean(negativePrompt),
+      characterId,
+      mode: "character",
+    });
 
     await tasks.trigger("generate-image", {
       generationId: pendingRow.id,
@@ -563,6 +602,12 @@ export async function POST(req) {
       seed,
       referenceUrls,
       usingCharacterMode,
+    });
+
+    logStep("STEP 5 after Trigger enqueue", {
+      generationId: pendingRow.id,
+      dispatchTarget: "tasks.trigger(generate-image)",
+      referenceCount: referenceUrls.length,
     });
 
     return Response.json({
@@ -589,15 +634,26 @@ export async function POST(req) {
         usedCharacter: usingCharacterMode,
         scenePrompt: scenePrompt || prompt || "",
         finalPrompt,
+        characterPrompt,
         provider: "fal",
         model: SEEDREAM_MODEL,
         referenceCount: referenceUrls.length,
         referenceUrls,
         identityMode: "multi_reference_seedream",
+        hasNegativePrompt: Boolean(negativePrompt),
       },
     });
   } catch (error) {
-    console.error("generate-image route failed:", error);
+    console.error(
+      "generate-image route failed:",
+      buildErrorDetails({
+        error,
+        promptLength,
+        negativePromptLength,
+        hasCharacter,
+        requestKeys,
+      })
+    );
 
     return Response.json(
       {

@@ -1,9 +1,13 @@
 import { createClient } from "@supabase/supabase-js";
+import Replicate from "replicate";
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
+const replicate = new Replicate({
+  auth: process.env.REPLICATE_API_TOKEN,
+});
 
 const STALE_JOB_MS = 5 * 60 * 1000;
 const UNSTARTED_JOB_MS = 45 * 1000;
@@ -37,6 +41,93 @@ function isRecoverableSyncError(message) {
     text.includes("db sync") ||
     text.includes("canceling statement")
   );
+}
+
+async function fileOutputToUrl(output) {
+  if (!output) return null;
+
+  if (typeof output === "string") return output;
+
+  if (Array.isArray(output)) {
+    for (const item of output) {
+      const url = await fileOutputToUrl(item);
+      if (url) return url;
+    }
+    return null;
+  }
+
+  if (typeof output?.url === "function") {
+    const url = await output.url();
+    return typeof url === "string" ? url : String(url || "");
+  }
+
+  if (typeof output?.url === "string") return output.url;
+  if (typeof output?.href === "string") return output.href;
+
+  if (output?.output) {
+    return await fileOutputToUrl(output.output);
+  }
+
+  const asString = String(output || "").trim();
+  if (asString.startsWith("http://") || asString.startsWith("https://")) {
+    return asString;
+  }
+
+  return null;
+}
+
+function getFileExtFromContentType(contentType = "") {
+  const value = String(contentType).toLowerCase();
+  if (value.includes("jpeg") || value.includes("jpg")) return "jpg";
+  if (value.includes("webp")) return "webp";
+  return "png";
+}
+
+async function downloadImageAsBuffer(imageUrl) {
+  const response = await fetch(imageUrl);
+
+  if (!response.ok) {
+    throw new Error(`Failed to download generated image: ${response.status}`);
+  }
+
+  const contentType = response.headers.get("content-type") || "image/png";
+  const arrayBuffer = await response.arrayBuffer();
+
+  return {
+    buffer: Buffer.from(arrayBuffer),
+    contentType,
+  };
+}
+
+async function uploadGeneratedImage({
+  userId,
+  buffer,
+  contentType,
+  fileExt,
+  generationId,
+}) {
+  const safeUserId = userId || "anonymous";
+  const filePath = `${safeUserId}/${generationId}.${fileExt}`;
+
+  const { error: uploadError } = await supabaseAdmin.storage
+    .from(GENERATED_BUCKET)
+    .upload(filePath, buffer, {
+      contentType,
+      upsert: true,
+    });
+
+  if (uploadError) {
+    throw new Error(`Supabase upload failed: ${uploadError.message}`);
+  }
+
+  const { data } = supabaseAdmin.storage
+    .from(GENERATED_BUCKET)
+    .getPublicUrl(filePath);
+
+  return {
+    publicUrl: data.publicUrl,
+    storagePath: filePath,
+  };
 }
 
 async function updateGenerationRow(generationId, patch) {
@@ -138,6 +229,124 @@ async function reconcileStoredImage(data) {
   };
 }
 
+async function finalizeReplicatePrediction(data) {
+  const remotePredictionId = data?.metadata?.remotePredictionId;
+  if (!remotePredictionId) return null;
+
+  let prediction;
+  try {
+    prediction = await replicate.predictions.get(remotePredictionId);
+  } catch (error) {
+    console.warn("generate-image-status: replicate status fetch failed", {
+      generationId: data?.id,
+      remotePredictionId,
+      error: error?.message || "Unknown Replicate status error",
+    });
+    return null;
+  }
+
+  const remoteStatus = String(prediction?.status || "").toLowerCase();
+  const errorMessage = prediction?.error || null;
+
+  if (remoteStatus === "succeeded") {
+    const remoteUrl = await fileOutputToUrl(prediction?.output);
+    if (!remoteUrl) {
+      console.warn("generate-image-status: replicate succeeded without output URL", {
+        generationId: data?.id,
+        remotePredictionId,
+      });
+      return null;
+    }
+
+    console.info("generate-image-status: finalizing replicate prediction", {
+      generationId: data.id,
+      remotePredictionId,
+      remoteStatus,
+    });
+
+    const downloaded = await downloadImageAsBuffer(remoteUrl);
+    const uploaded = await uploadGeneratedImage({
+      userId: data?.user_id || null,
+      buffer: downloaded.buffer,
+      contentType: downloaded.contentType,
+      fileExt: getFileExtFromContentType(downloaded.contentType),
+      generationId: data.id,
+    });
+
+    await updateGenerationRow(data.id, {
+      images: [uploaded.publicUrl],
+      mode: data.mode || "image",
+      style: data.style || "cinematic",
+      metadata: {
+        state: "succeeded",
+        completedAt: new Date().toISOString(),
+        provider: "replicate",
+        remotePredictionId,
+        remoteStatus,
+        remoteUrl,
+        storagePath: uploaded.storagePath,
+        progressStage: "completed",
+        error: null,
+      },
+    });
+
+    return {
+      ...data,
+      images: [uploaded.publicUrl],
+      metadata: {
+        ...(data.metadata || {}),
+        state: "succeeded",
+        completedAt: new Date().toISOString(),
+        provider: "replicate",
+        remotePredictionId,
+        remoteStatus,
+        remoteUrl,
+        storagePath: uploaded.storagePath,
+        progressStage: "completed",
+        error: null,
+      },
+    };
+  }
+
+  if (remoteStatus === "failed" || remoteStatus === "canceled" || remoteStatus === "cancelled") {
+    await updateGenerationRow(data.id, {
+      metadata: {
+        state: "failed",
+        failedAt: new Date().toISOString(),
+        provider: "replicate",
+        remotePredictionId,
+        remoteStatus,
+        error: errorMessage || "Replicate prediction failed.",
+        errorType: "generation_failure",
+      },
+    });
+
+    return {
+      ...data,
+      metadata: {
+        ...(data.metadata || {}),
+        state: "failed",
+        failedAt: new Date().toISOString(),
+        provider: "replicate",
+        remotePredictionId,
+        remoteStatus,
+        error: errorMessage || "Replicate prediction failed.",
+        errorType: "generation_failure",
+      },
+    };
+  }
+
+  return {
+    ...data,
+    metadata: {
+      ...(data.metadata || {}),
+      remotePredictionId,
+      remoteStatus: remoteStatus || "processing",
+      lastRemoteCheckAt: new Date().toISOString(),
+    },
+  };
+}
+
 export async function GET(req) {
   try {
     const { searchParams } = new URL(req.url);
@@ -150,7 +359,7 @@ export async function GET(req) {
       );
     }
 
-    const { data, error } = await supabaseAdmin
+    let { data, error } = await supabaseAdmin
       .from("image_generations")
       .select("*")
       .eq("id", predictionId)
@@ -182,6 +391,33 @@ export async function GET(req) {
         status: "succeeded",
         generation: buildGenerationPayload(data),
       });
+    }
+
+    if (String(metadata?.provider || "").toLowerCase() === "replicate") {
+      const replicateResult = await finalizeReplicatePrediction(data);
+      if (replicateResult?.images?.length) {
+        return Response.json({
+          success: true,
+          status: "succeeded",
+          generation: buildGenerationPayload(replicateResult),
+          syncState: "replicate_finalized",
+        });
+      }
+
+      if (String(replicateResult?.metadata?.state || "").toLowerCase() === "failed") {
+        return Response.json({
+          success: false,
+          status: "failed",
+          error: replicateResult?.metadata?.error || "Generation failed",
+          errorType:
+            replicateResult?.metadata?.errorType || "generation_failure",
+          generation: buildGenerationPayload(replicateResult),
+        });
+      }
+
+      if (replicateResult) {
+        data = replicateResult;
+      }
     }
 
     const reconciled = await reconcileStoredImage(data);

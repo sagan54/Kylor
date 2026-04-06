@@ -156,13 +156,22 @@ const payload = {
 }
 
 async function sbDeleteGroup(id, userId) {
-  if (!userId) return;
-  const { error } = await supabase
+  const query = supabase
     .from("image_generations")
     .delete()
-    .eq("id", id)
-    .eq("user_id", userId);
-  if (error) console.error("sbDeleteGroup:", error.message);
+    .eq("id", id);
+
+  if (userId) {
+    query.eq("user_id", userId);
+  }
+
+  const { error } = await query;
+  if (error) {
+    console.error("sbDeleteGroup:", { id, userId, message: error.message });
+    return false;
+  }
+
+  return true;
 }
 
 async function sbClearAll(userId) {
@@ -1692,20 +1701,6 @@ const characterPrompt = [
   }, []);
 
   useEffect(() => {
-    if (!authReady) return;
-    const pending = loadPendingGenerations();
-    pending.forEach((item) => {
-      const startedAt = new Date(item?.startedAt || 0).getTime();
-      const isRecent = Number.isFinite(startedAt)
-        ? Date.now() - startedAt < 24 * 60 * 60 * 1000
-        : true;
-      if (isRecent) {
-        resumePendingGeneration(item);
-      }
-    });
-  }, [authReady, resumePendingGeneration]);
-
-  useEffect(() => {
     function handleOutside(e) {
       if (panelRef.current && !panelRef.current.contains(e.target)) {
         setSettingsOpen(false);
@@ -1762,6 +1757,20 @@ const characterPrompt = [
     }
   }, []);
 
+  useEffect(() => {
+    if (!authReady) return;
+    const pending = loadPendingGenerations();
+    pending.forEach((item) => {
+      const startedAt = new Date(item?.startedAt || 0).getTime();
+      const isRecent = Number.isFinite(startedAt)
+        ? Date.now() - startedAt < 24 * 60 * 60 * 1000
+        : true;
+      if (isRecent) {
+        resumePendingGeneration(item);
+      }
+    });
+  }, [authReady, resumePendingGeneration]);
+
   const activeStyle = STYLES.find((s) => s.id === selectedStyle);
 
   async function handleAllowNotifications() {
@@ -1782,13 +1791,38 @@ const characterPrompt = [
     const next = groups.filter((g) => g.id !== groupId);
     setGroups(next);
     syncCache(next);
+    removePendingGeneration(groupId);
     if (lightboxItem?.groupId === groupId) setLightboxItem(null);
-    await sbDeleteGroup(groupId, userId);
-    if (group && userId) {
+    let effectiveUserId = userId;
+    if (!effectiveUserId) {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      effectiveUserId = user?.id ?? null;
+      if (effectiveUserId) {
+        setUserId(effectiveUserId);
+      }
+    }
+
+    const deleted = await sbDeleteGroup(groupId, effectiveUserId);
+    if (!deleted) {
+      setGroups((prev) => {
+        const restored = group ? [group, ...prev.filter((g) => g.id !== groupId)] : prev;
+        syncCache(restored);
+        return restored;
+      });
+      return;
+    }
+
+    if (group && effectiveUserId) {
       const storageImages = group.images.filter(
         (img) => typeof img?.url === "string" && img.url.includes("/storage/v1/object/public/")
       );
-      await Promise.all(storageImages.map((_, i) => deleteImageFromStorage(userId, `${groupId}-${i}`)));
+      await Promise.all(
+        storageImages.map((_, i) =>
+          deleteImageFromStorage(effectiveUserId, `${groupId}-${i}`)
+        )
+      );
     }
   }
 
