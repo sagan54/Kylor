@@ -1,6 +1,11 @@
 import { tasks } from "@trigger.dev/sdk/v3";
 import { createClient } from "@supabase/supabase-js";
 import Replicate from "replicate";
+import {
+  FLUX_MODEL,
+  buildPrompt,
+  getModelForTask,
+} from "../../../lib/image-generation-rules";
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -10,8 +15,6 @@ const replicate = new Replicate({
   auth: process.env.REPLICATE_API_TOKEN,
 });
 
-const SEEDREAM_MODEL = "fal-ai/bytedance/seedream/v4.5/edit";
-const FLUX_MODEL = "black-forest-labs/flux-2-pro";
 const GENERATED_BUCKET = "generated-images";
 const MAX_REFERENCE_IMAGES = 5;
 
@@ -164,17 +167,6 @@ function mapSizeToAspectRatio(size = "", ratio = "1:1") {
   }
 }
 
-function buildFluxPrompt({ prompt, scenePrompt, style, negativePrompt }) {
-  return [
-    String(scenePrompt || prompt || "").trim(),
-    style ? `Style: ${style}` : "",
-    "Photorealistic, cinematic composition, natural lighting, detailed subject, no text, no watermark.",
-    negativePrompt ? `Avoid: ${negativePrompt}` : "",
-  ]
-    .filter(Boolean)
-    .join("\n\n");
-}
-
 async function updateGenerationRow(generationId, patch) {
   const { data: existing } = await supabaseAdmin
     .from("image_generations")
@@ -226,7 +218,12 @@ async function runDirectFluxGeneration({
 
   const output = await replicate.run(FLUX_MODEL, {
     input: {
-      prompt: buildFluxPrompt({ prompt, scenePrompt, style, negativePrompt }),
+      prompt: buildPrompt({
+        scene: scenePrompt || prompt || "",
+        style,
+        negativePrompt,
+        mode: "freeform",
+      }),
       aspect_ratio: mapSizeToAspectRatio(size, ratio),
       output_format: "png",
       seed: typeof seed === "number" ? seed : undefined,
@@ -478,6 +475,7 @@ export async function POST(req) {
     }
 
     const usingCharacterMode = Boolean(characterId && referenceUrls.length > 0);
+    const routedModel = getModelForTask({ hasCharacter: usingCharacterMode });
 
     const pendingRow = await createPendingGeneration({
       userId,
@@ -492,7 +490,9 @@ export async function POST(req) {
         usedCharacter: usingCharacterMode,
         referenceCount: referenceUrls.length,
         referenceUrls,
-        identityMode: usingCharacterMode ? "multi_reference_seedream" : null,
+        identityMode: routedModel.identityMode || null,
+        provider: routedModel.provider,
+        model: routedModel.model,
       },
     });
 
@@ -587,11 +587,11 @@ export async function POST(req) {
         usedCharacter: usingCharacterMode,
         scenePrompt: scenePrompt || prompt || "",
         finalPrompt,
-        provider: "fal",
-        model: SEEDREAM_MODEL,
+        provider: routedModel.provider,
+        model: routedModel.model,
         referenceCount: referenceUrls.length,
         referenceUrls,
-        identityMode: usingCharacterMode ? "multi_reference_seedream" : null,
+        identityMode: routedModel.identityMode || null,
       },
     });
   } catch (error) {
