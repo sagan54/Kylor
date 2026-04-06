@@ -433,7 +433,11 @@ export async function POST(req) {
           negativePromptLength,
         });
         return Response.json(
-          { success: false, error: "Selected character not found." },
+          {
+            success: false,
+            error: "Selected character not found.",
+            code: "CHARACTER_NOT_FOUND",
+          },
           { status: 404 }
         );
       }

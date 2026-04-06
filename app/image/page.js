@@ -1576,6 +1576,11 @@ export default function ImagePage() {
     } catch {}
   }
 
+  async function clearMissingSelectedCharacter() {
+    clearSelectedCharacter();
+    await loadSavedCharacters();
+  }
+
   useEffect(() => {
     loadSavedCharacters();
   }, []);
@@ -1997,6 +2002,9 @@ if (!newGroups.length) {
   alert("You're hitting rate limits. Wait a few seconds or reduce outputs.");
 } else if (err?.message?.includes("credit")) {
   alert("Replicate credit is low. Add credits for better performance.");
+} else if (err?.message?.includes("Selected character not found")) {
+  await clearMissingSelectedCharacter();
+  alert("Your selected character no longer exists. Please select it again.");
 } else if (err?.recoverable || err?.message?.toLowerCase().includes("still processing")) {
   alert("Generation is still processing. Refreshing status...");
 } else {
@@ -2108,6 +2116,10 @@ if (!newGroup) {
         removePendingGeneration(activePredictionId);
       }
       console.error("Variation failed:", err);
+      if (err?.message?.includes("Selected character not found")) {
+        await clearMissingSelectedCharacter();
+        alert("Your selected character no longer exists. Please select it again.");
+      } else
       if (err?.recoverable || err?.message?.toLowerCase().includes("still processing")) {
         alert("Generation is still processing. Refreshing status...");
       } else {
