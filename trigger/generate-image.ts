@@ -288,7 +288,11 @@ async function runInstantIdGeneration({
     throw new Error("No valid primary reference image was provided to InstantID.");
   }
 
-  const output = await replicate.run("grandlineai/instant-id-photorealistic", {
+  const modelName =
+    process.env.REPLICATE_INSTANTID_MODEL ||
+    "grandlineai/instant-id-photorealistic";
+
+  const output = await replicate.run(modelName, {
     input: {
       image: primaryReference,
       prompt,
