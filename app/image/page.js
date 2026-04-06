@@ -1521,22 +1521,16 @@ export default function ImagePage() {
         .order("created_at", { ascending: false });
       if (error || !data) {
         console.error("Failed to load saved characters:", error?.message);
-        if (payloadCharacter) {
-          setSavedCharacters([payloadCharacter]);
-          setSelectedCharacter(payloadCharacter);
-        } else {
-          setSavedCharacters([]);
-        }
+        setSavedCharacters([]);
+        setSelectedCharacter(null);
+        try {
+          sessionStorage.removeItem("kylor_selected_character_id");
+          sessionStorage.removeItem("kylor_selected_character_payload");
+        } catch {}
         return;
       }
       const mapped = data.map(mapCharacterRow);
       let finalCharacters = mapped;
-      if (payloadCharacter) {
-        const exists = mapped.some((c) => String(c.id) === String(payloadCharacter.id));
-        if (!exists) {
-          finalCharacters = [payloadCharacter, ...mapped];
-        }
-      }
       setSavedCharacters(finalCharacters);
       try {
         localStorage.setItem(CHAR_SESSION_KEY, JSON.stringify(data));
@@ -1546,13 +1540,20 @@ export default function ImagePage() {
         const found = finalCharacters.find((c) => String(c.id) === String(selectedId));
         if (found) {
           setSelectedCharacter(found);
+        } else {
+          setSelectedCharacter(null);
+          try {
+            sessionStorage.removeItem("kylor_selected_character_id");
+            sessionStorage.removeItem("kylor_selected_character_payload");
+          } catch {}
         }
-      } else if (payloadCharacter) {
-        setSelectedCharacter(payloadCharacter);
+      } else {
+        setSelectedCharacter(null);
       }
     } catch (err) {
       console.error("loadSavedCharacters error:", err);
       setSavedCharacters([]);
+      setSelectedCharacter(null);
     } finally {
       setLoadingCharacters(false);
     }
