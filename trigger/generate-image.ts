@@ -84,9 +84,26 @@ async function updateGenerationRow(
   generationId: string,
   patch: Record<string, any>
 ) {
+  const { data: existing } = await supabaseAdmin
+    .from("image_generations")
+    .select("metadata")
+    .eq("id", generationId)
+    .single();
+
+  const nextPatch =
+    patch?.metadata && typeof patch.metadata === "object"
+      ? {
+          ...patch,
+          metadata: {
+            ...(existing?.metadata || {}),
+            ...patch.metadata,
+          },
+        }
+      : patch;
+
   const { error } = await supabaseAdmin
     .from("image_generations")
-    .update(patch)
+    .update(nextPatch)
     .eq("id", generationId);
 
   if (error) {

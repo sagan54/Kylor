@@ -1,12 +1,18 @@
 import { tasks } from "@trigger.dev/sdk/v3";
 import { createClient } from "@supabase/supabase-js";
+import Replicate from "replicate";
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
+const replicate = new Replicate({
+  auth: process.env.REPLICATE_API_TOKEN,
+});
 
 const SEEDREAM_MODEL = "fal-ai/bytedance/seedream/v4.5/edit";
+const FLUX_MODEL = "black-forest-labs/flux-2-pro";
+const GENERATED_BUCKET = "generated-images";
 const MAX_REFERENCE_IMAGES = 5;
 
 function normalizeImageUrl(value) {
@@ -47,6 +53,228 @@ function safeJsonParse(value, fallback = null) {
   } catch {
     return fallback;
   }
+}
+
+async function fileOutputToUrl(output) {
+  if (!output) return null;
+
+  if (typeof output === "string") return output;
+
+  if (Array.isArray(output)) {
+    for (const item of output) {
+      const url = await fileOutputToUrl(item);
+      if (url) return url;
+    }
+    return null;
+  }
+
+  if (typeof output?.url === "function") {
+    const url = await output.url();
+    return typeof url === "string" ? url : String(url || "");
+  }
+
+  if (typeof output?.url === "string") return output.url;
+  if (typeof output?.href === "string") return output.href;
+
+  if (output?.output) {
+    return await fileOutputToUrl(output.output);
+  }
+
+  const asString = String(output || "").trim();
+  if (asString.startsWith("http://") || asString.startsWith("https://")) {
+    return asString;
+  }
+
+  return null;
+}
+
+function getFileExtFromContentType(contentType = "") {
+  const value = String(contentType).toLowerCase();
+
+  if (value.includes("jpeg") || value.includes("jpg")) return "jpg";
+  if (value.includes("webp")) return "webp";
+  return "png";
+}
+
+async function downloadImageAsBuffer(imageUrl) {
+  const response = await fetch(imageUrl);
+
+  if (!response.ok) {
+    throw new Error(`Failed to download generated image: ${response.status}`);
+  }
+
+  const contentType = response.headers.get("content-type") || "image/png";
+  const arrayBuffer = await response.arrayBuffer();
+
+  return {
+    buffer: Buffer.from(arrayBuffer),
+    contentType,
+  };
+}
+
+async function uploadGeneratedImage({
+  userId,
+  buffer,
+  contentType,
+  fileExt,
+  generationId,
+}) {
+  const safeUserId = userId || "anonymous";
+  const filePath = `${safeUserId}/${generationId}.${fileExt}`;
+
+  const { error: uploadError } = await supabaseAdmin.storage
+    .from(GENERATED_BUCKET)
+    .upload(filePath, buffer, {
+      contentType,
+      upsert: true,
+    });
+
+  if (uploadError) {
+    throw new Error(`Supabase upload failed: ${uploadError.message}`);
+  }
+
+  const { data } = supabaseAdmin.storage
+    .from(GENERATED_BUCKET)
+    .getPublicUrl(filePath);
+
+  return {
+    publicUrl: data.publicUrl,
+    storagePath: filePath,
+  };
+}
+
+function mapSizeToAspectRatio(size = "", ratio = "1:1") {
+  switch (String(size || ratio).toLowerCase()) {
+    case "1024x1536":
+    case "portrait":
+    case "4:5":
+    case "3:4":
+      return "2:3";
+    case "1536x1024":
+    case "16:9":
+      return "16:9";
+    case "4:3":
+      return "4:3";
+    case "9:16":
+      return "9:16";
+    case "square":
+    case "1:1":
+    default:
+      return "1:1";
+  }
+}
+
+function buildFluxPrompt({ prompt, scenePrompt, style, negativePrompt }) {
+  return [
+    String(scenePrompt || prompt || "").trim(),
+    style ? `Style: ${style}` : "",
+    "Photorealistic, cinematic composition, natural lighting, detailed subject, no text, no watermark.",
+    negativePrompt ? `Avoid: ${negativePrompt}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+async function updateGenerationRow(generationId, patch) {
+  const { data: existing } = await supabaseAdmin
+    .from("image_generations")
+    .select("metadata")
+    .eq("id", generationId)
+    .single();
+
+  const nextPatch =
+    patch?.metadata && typeof patch.metadata === "object"
+      ? {
+          ...patch,
+          metadata: {
+            ...(existing?.metadata || {}),
+            ...patch.metadata,
+          },
+        }
+      : patch;
+
+  const { error } = await supabaseAdmin
+    .from("image_generations")
+    .update(nextPatch)
+    .eq("id", generationId);
+
+  if (error) {
+    throw new Error(error.message || "Failed to update generation row");
+  }
+}
+
+async function runDirectFluxGeneration({
+  generationId,
+  userId,
+  prompt,
+  scenePrompt,
+  negativePrompt,
+  style,
+  ratio,
+  size,
+  seed,
+}) {
+  await updateGenerationRow(generationId, {
+    metadata: {
+      state: "processing",
+      startedAt: new Date().toISOString(),
+      provider: "replicate",
+      model: FLUX_MODEL,
+      identityMode: "prompt_only_flux",
+    },
+  });
+
+  const output = await replicate.run(FLUX_MODEL, {
+    input: {
+      prompt: buildFluxPrompt({ prompt, scenePrompt, style, negativePrompt }),
+      aspect_ratio: mapSizeToAspectRatio(size, ratio),
+      output_format: "png",
+      seed: typeof seed === "number" ? seed : undefined,
+    },
+  });
+
+  const tempUrl = await fileOutputToUrl(output);
+
+  if (!tempUrl) {
+    throw new Error("No image URL returned from Replicate");
+  }
+
+  const downloaded = await downloadImageAsBuffer(tempUrl);
+  const uploaded = await uploadGeneratedImage({
+    userId,
+    buffer: downloaded.buffer,
+    contentType: downloaded.contentType,
+    fileExt: getFileExtFromContentType(downloaded.contentType),
+    generationId,
+  });
+
+  await updateGenerationRow(generationId, {
+    images: [uploaded.publicUrl].filter(Boolean),
+    style: style || "cinematic",
+    mode: "image",
+    metadata: {
+      state: "succeeded",
+      completedAt: new Date().toISOString(),
+      provider: "replicate",
+      model: FLUX_MODEL,
+      storagePath: uploaded.storagePath,
+      remoteUrl: tempUrl,
+      negativePrompt: negativePrompt || "",
+      identityMode: "prompt_only_flux",
+    },
+  });
+
+  const { data: savedGeneration, error } = await supabaseAdmin
+    .from("image_generations")
+    .select("*")
+    .eq("id", generationId)
+    .single();
+
+  if (error || !savedGeneration) {
+    throw new Error("Image was generated but the saved record could not be loaded");
+  }
+
+  return savedGeneration;
 }
 
 async function loadCharacterData(characterId) {
@@ -267,6 +495,57 @@ export async function POST(req) {
         identityMode: usingCharacterMode ? "multi_reference_seedream" : null,
       },
     });
+
+    if (!usingCharacterMode) {
+      try {
+        const savedGeneration = await runDirectFluxGeneration({
+          generationId: pendingRow.id,
+          userId,
+          prompt: finalPrompt,
+          scenePrompt: scenePrompt || finalPrompt,
+          negativePrompt: negativePrompt || "",
+          style,
+          ratio,
+          size,
+          seed,
+        });
+
+        return Response.json({
+          success: true,
+          status: "succeeded",
+          predictionId: pendingRow.id,
+          image: savedGeneration.images?.[0] || null,
+          generation: savedGeneration,
+          meta: {
+            characterId: null,
+            characterName: null,
+            usedCharacter: false,
+            scenePrompt: scenePrompt || prompt || "",
+            finalPrompt,
+            provider: "replicate",
+            model: FLUX_MODEL,
+            referenceCount: 0,
+            referenceUrls: [],
+            identityMode: "prompt_only_flux",
+          },
+        });
+      } catch (generationError) {
+        await updateGenerationRow(pendingRow.id, {
+          metadata: {
+            state: "failed",
+            failedAt: new Date().toISOString(),
+            error:
+              generationError?.message ||
+              "Prompt-only generation failed.",
+            provider: "replicate",
+            model: FLUX_MODEL,
+            identityMode: "prompt_only_flux",
+          },
+        });
+
+        throw generationError;
+      }
+    }
 
     await tasks.trigger("generate-image", {
       generationId: pendingRow.id,

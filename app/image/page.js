@@ -1797,7 +1797,11 @@ if (!startData?.predictionId) {
   throw new Error(startData?.error || "No predictionId returned from API");
 }
 
-const finalData = await pollPredictionUntilComplete(startData.predictionId);
+const finalData =
+  String(startData?.status || "").toLowerCase() === "succeeded" &&
+  startData?.generation
+    ? startData
+    : await pollPredictionUntilComplete(startData.predictionId);
 results.push(finalData);
 
 await sleep(1200);
@@ -1901,7 +1905,11 @@ if (!startData?.predictionId) {
   throw new Error(startData?.error || "No predictionId returned for variation");
 }
 
-const finalData = await pollPredictionUntilComplete(startData.predictionId);
+const finalData =
+  String(startData?.status || "").toLowerCase() === "succeeded" &&
+  startData?.generation
+    ? startData
+    : await pollPredictionUntilComplete(startData.predictionId);
 const newGroup = mapApiGenerationToGroup(finalData);
 
 if (!newGroup) {

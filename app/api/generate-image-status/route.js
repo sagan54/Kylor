@@ -5,6 +5,15 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
+const STALE_JOB_MS = 5 * 60 * 1000;
+const UNSTARTED_JOB_MS = 45 * 1000;
+
+function getTimeMs(value) {
+  if (!value) return null;
+  const time = new Date(value).getTime();
+  return Number.isFinite(time) ? time : null;
+}
+
 export async function GET(req) {
   try {
     const { searchParams } = new URL(req.url);
@@ -30,25 +39,59 @@ export async function GET(req) {
       );
     }
 
-    const state = data?.metadata?.state || "processing";
+    const metadata = data?.metadata || {};
+    const state = String(metadata?.state || "").toLowerCase() || "processing";
+    const hasImages = Array.isArray(data?.images) && data.images.length > 0;
+    const createdAtMs = getTimeMs(data?.created_at);
+    const startedAtMs = getTimeMs(metadata?.startedAt);
+    const completedAtMs = getTimeMs(metadata?.completedAt);
+    const now = Date.now();
+    const ageMs = createdAtMs ? now - createdAtMs : null;
+    const runtimeMs =
+      (startedAtMs ? now - startedAtMs : null) ??
+      (createdAtMs ? now - createdAtMs : null);
+
+    if (hasImages || completedAtMs) {
+      return Response.json({
+        success: true,
+        status: "succeeded",
+        generation: data,
+      });
+    }
 
     if (state === "failed") {
       return Response.json({
         success: false,
         status: "failed",
-        error: data?.metadata?.error || "Generation failed",
+        error: metadata?.error || "Generation failed",
         generation: data,
       });
     }
 
-    if (
-      state === "succeeded" &&
-      Array.isArray(data.images) &&
-      data.images.length > 0
-    ) {
+    if (state === "succeeded" && hasImages) {
       return Response.json({
         success: true,
         status: "succeeded",
+        generation: data,
+      });
+    }
+
+    if (!startedAtMs && ageMs !== null && ageMs > UNSTARTED_JOB_MS) {
+      return Response.json({
+        success: false,
+        status: "failed",
+        error:
+          "Generation did not start in time. The background worker may be offline. Please try again.",
+        generation: data,
+      });
+    }
+
+    if (runtimeMs !== null && runtimeMs > STALE_JOB_MS) {
+      return Response.json({
+        success: false,
+        status: "failed",
+        error:
+          "Generation is taking longer than expected and appears stalled. Please try again.",
         generation: data,
       });
     }
