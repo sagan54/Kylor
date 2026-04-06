@@ -601,7 +601,10 @@ export const generateImageTask = task({
         await updateGenerationRow(generationId, {
           metadata: {
             state: "processing",
-            startedAt: new Date().toISOString(),
+            ...(attempt === 0
+              ? { startedAt: new Date().toISOString() }
+              : {}),
+            lastProgressAt: new Date().toISOString(),
             characterId: characterId || null,
             characterName: characterName || null,
             referenceCount: referenceUrls.length,
@@ -615,6 +618,13 @@ export const generateImageTask = task({
         });
 
         try {
+          await updateGenerationRow(generationId, {
+            metadata: {
+              lastProgressAt: new Date().toISOString(),
+              progressStage: "generating_image",
+            },
+          });
+
           const generatedRemote = await runCharacterModel({
             modelConfig,
             prompt: resolvedPrompt,
@@ -622,6 +632,13 @@ export const generateImageTask = task({
             ratio,
             size,
             seed,
+          });
+
+          await updateGenerationRow(generationId, {
+            metadata: {
+              lastProgressAt: new Date().toISOString(),
+              progressStage: "validating_output",
+            },
           });
 
           const validation = await validateOutput({
@@ -633,6 +650,14 @@ export const generateImageTask = task({
           lastValidation = validation;
 
           if (!validation.accepted) {
+            await updateGenerationRow(generationId, {
+              metadata: {
+                lastProgressAt: new Date().toISOString(),
+                progressStage: "retrying_after_validation_failure",
+                lastValidation: validation,
+              },
+            });
+
             lastError = new Error(
               validation?.visibility?.reason ||
                 "Generated image failed identity visibility validation."
@@ -658,6 +683,8 @@ export const generateImageTask = task({
             metadata: {
               state: "succeeded",
               completedAt: new Date().toISOString(),
+              lastProgressAt: new Date().toISOString(),
+              progressStage: "completed",
               provider: modelConfig.provider,
               model: modelConfig.model,
               referenceUrls,
@@ -676,6 +703,15 @@ export const generateImageTask = task({
             imageUrl: uploaded.publicUrl,
           };
         } catch (attemptError: any) {
+          await updateGenerationRow(generationId, {
+            metadata: {
+              lastProgressAt: new Date().toISOString(),
+              progressStage: "attempt_failed",
+              lastAttemptError:
+                attemptError?.message || "Unknown attempt error",
+            },
+          });
+
           lastError = attemptError;
         }
       }
@@ -692,6 +728,8 @@ export const generateImageTask = task({
         metadata: {
           state: "failed",
           failedAt: new Date().toISOString(),
+          lastProgressAt: new Date().toISOString(),
+          progressStage: "failed",
           error: error?.message || "Unknown generation error",
         },
       });

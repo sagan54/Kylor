@@ -6,6 +6,7 @@ const supabaseAdmin = createClient(
 );
 
 const STALE_JOB_MS = 5 * 60 * 1000;
+const CHARACTER_STALE_JOB_MS = 18 * 60 * 1000;
 const UNSTARTED_JOB_MS = 45 * 1000;
 
 function getTimeMs(value) {
@@ -42,14 +43,22 @@ export async function GET(req) {
     const metadata = data?.metadata || {};
     const state = String(metadata?.state || "").toLowerCase() || "processing";
     const hasImages = Array.isArray(data?.images) && data.images.length > 0;
+    const usingCharacterMode = Boolean(
+      data?.character_id || metadata?.usedCharacter || metadata?.referenceCount > 0
+    );
     const createdAtMs = getTimeMs(data?.created_at);
     const startedAtMs = getTimeMs(metadata?.startedAt);
+    const lastProgressAtMs = getTimeMs(metadata?.lastProgressAt);
     const completedAtMs = getTimeMs(metadata?.completedAt);
     const now = Date.now();
     const ageMs = createdAtMs ? now - createdAtMs : null;
     const runtimeMs =
+      (lastProgressAtMs ? now - lastProgressAtMs : null) ??
       (startedAtMs ? now - startedAtMs : null) ??
       (createdAtMs ? now - createdAtMs : null);
+    const staleThresholdMs = usingCharacterMode
+      ? CHARACTER_STALE_JOB_MS
+      : STALE_JOB_MS;
 
     if (hasImages || completedAtMs) {
       return Response.json({
@@ -86,7 +95,7 @@ export async function GET(req) {
       });
     }
 
-    if (runtimeMs !== null && runtimeMs > STALE_JOB_MS) {
+    if (runtimeMs !== null && runtimeMs > staleThresholdMs) {
       return Response.json({
         success: false,
         status: "failed",
