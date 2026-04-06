@@ -427,6 +427,7 @@ export async function POST(req) {
     const {
       prompt,
       scenePrompt,
+      characterPrompt = "",
       negativePrompt = "",
       style = "cinematic",
       ratio = "16:9",
@@ -487,6 +488,7 @@ export async function POST(req) {
       metadata: {
         characterId: characterId || null,
         characterName: character?.name || null,
+        characterPrompt: characterPrompt || "",
         usedCharacter: usingCharacterMode,
         referenceCount: referenceUrls.length,
         referenceUrls,
@@ -552,6 +554,7 @@ export async function POST(req) {
       userId,
       characterId,
       characterName: character?.name || null,
+      characterPrompt: characterPrompt || "",
       finalPrompt,
       scenePrompt: scenePrompt || finalPrompt,
       negativePrompt: negativePrompt || "",

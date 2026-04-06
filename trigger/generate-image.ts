@@ -12,6 +12,7 @@ type GenerateImagePayload = {
   userId?: string | null;
   characterId?: string | null;
   characterName?: string | null;
+  characterPrompt?: string | null;
   prompt?: string | null;
   finalPrompt?: string | null;
   scenePrompt?: string | null;
@@ -261,6 +262,7 @@ export const generateImageTask = task({
       userId,
       characterId,
       characterName,
+      characterPrompt,
       prompt,
       finalPrompt,
       scenePrompt,
@@ -285,6 +287,10 @@ export const generateImageTask = task({
       const safeScene = adjustSceneForIdentity(
         scenePrompt || finalPrompt || prompt || ""
       );
+      const resolvedCharacterPrompt = String(
+        characterPrompt ||
+          `Exact identity lock for ${characterName || "the same exact character"}.`
+      ).trim();
 
       let lastValidation: any = null;
       let lastError: any = null;
@@ -295,7 +301,7 @@ export const generateImageTask = task({
             attempt === 0
               ? safeScene
               : buildCorrectionPrompt(safeScene),
-          character: characterName || "the same exact character",
+          character: resolvedCharacterPrompt,
           mode: "character",
           style: style || "cinematic photorealistic still frame",
           negativePrompt: negativePrompt || "",
@@ -310,6 +316,7 @@ export const generateImageTask = task({
             lastProgressAt: new Date().toISOString(),
             characterId: characterId || null,
             characterName: characterName || null,
+            characterPrompt: resolvedCharacterPrompt,
             referenceCount: referenceUrls.length,
             referenceUrls,
             provider: "fal",
