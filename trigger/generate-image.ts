@@ -47,7 +47,7 @@ const GENERATED_BUCKET = "generated-images";
 const FACE_MATCH_MODEL = process.env.FACE_MATCH_MODEL || "apna-mart/face-match";
 const EVALUATOR_MODEL = process.env.EVALUATOR_MODEL || "gpt-4.1-mini";
 const DEFAULT_IDENTITY_THRESHOLD = 0.82;
-const MAX_CHARACTER_ATTEMPTS = 3;
+const MAX_CHARACTER_ATTEMPTS = 2;
 
 function normalizeImageUrl(value: unknown) {
   const url = String(value || "").trim();
@@ -409,7 +409,7 @@ async function evaluateFaceVisibility({
   candidateImageUrl: string;
   characterName?: string | null;
 }) {
-  if (!openai) {
+  if (!openai || typeof (openai as any)?.responses?.create !== "function") {
     return {
       accepted: true,
       faceVisible: true,
@@ -418,72 +418,90 @@ async function evaluateFaceVisibility({
       heavyFogOnFace: false,
       silhouette: false,
       identityUsable: true,
-      reason: "Vision evaluator disabled because OPENAI_API_KEY is missing.",
+      reason:
+        "Vision evaluator disabled because the OpenAI Responses API is unavailable in this runtime.",
     };
   }
 
-  const response: any = await openai.responses.create({
-    model: EVALUATOR_MODEL,
-    input: [
-      {
-        role: "user",
-        content: [
-          {
-            type: "input_text",
-            text: [
-              "Evaluate this generated image for character identity usability.",
-              `Character name: ${characterName || "selected character"}.`,
-              "Return JSON only.",
-              "Reject if the face is not clearly visible, if the subject is mostly silhouette, if the face is heavily obscured by fog/shadow/hair, if strong backlighting destroys facial readability, or if the subject is back-facing.",
-              "Accept only if the face is clearly visible, well-lit enough for identity recognition, and framed front-facing or slight 3/4.",
-            ].join(" "),
-          },
-          {
-            type: "input_image",
-            image_url: candidateImageUrl,
-            detail: "high",
-          },
-        ],
-      },
-    ],
-    text: {
-      format: {
-        type: "json_schema",
-        name: "identity_visibility_evaluation",
-        strict: true,
-        schema: {
-          type: "object",
-          additionalProperties: false,
-          properties: {
-            accepted: { type: "boolean" },
-            faceVisible: { type: "boolean" },
-            frontalOrThreeQuarter: { type: "boolean" },
-            severeBacklighting: { type: "boolean" },
-            heavyFogOnFace: { type: "boolean" },
-            silhouette: { type: "boolean" },
-            identityUsable: { type: "boolean" },
-            reason: { type: "string" },
-          },
-          required: [
-            "accepted",
-            "faceVisible",
-            "frontalOrThreeQuarter",
-            "severeBacklighting",
-            "heavyFogOnFace",
-            "silhouette",
-            "identityUsable",
-            "reason",
+  try {
+    const response: any = await openai.responses.create({
+      model: EVALUATOR_MODEL,
+      input: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "input_text",
+              text: [
+                "Evaluate this generated image for character identity usability.",
+                `Character name: ${characterName || "selected character"}.`,
+                "Return JSON only.",
+                "Reject if the face is not clearly visible, if the subject is mostly silhouette, if the face is heavily obscured by fog/shadow/hair, if strong backlighting destroys facial readability, or if the subject is back-facing.",
+                "Accept only if the face is clearly visible, well-lit enough for identity recognition, and framed front-facing or slight 3/4.",
+              ].join(" "),
+            },
+            {
+              type: "input_image",
+              image_url: candidateImageUrl,
+              detail: "high",
+            },
           ],
         },
+      ],
+      text: {
+        format: {
+          type: "json_schema",
+          name: "identity_visibility_evaluation",
+          strict: true,
+          schema: {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+              accepted: { type: "boolean" },
+              faceVisible: { type: "boolean" },
+              frontalOrThreeQuarter: { type: "boolean" },
+              severeBacklighting: { type: "boolean" },
+              heavyFogOnFace: { type: "boolean" },
+              silhouette: { type: "boolean" },
+              identityUsable: { type: "boolean" },
+              reason: { type: "string" },
+            },
+            required: [
+              "accepted",
+              "faceVisible",
+              "frontalOrThreeQuarter",
+              "severeBacklighting",
+              "heavyFogOnFace",
+              "silhouette",
+              "identityUsable",
+              "reason",
+            ],
+          },
+        },
       },
-    },
-  });
+    });
 
-  const parsed =
-    response?.output_parsed ||
-    JSON.parse(response?.output_text || "{}");
+    const parsed =
+      response?.output_parsed ||
+      JSON.parse(response?.output_text || "{}");
 
-  return parsed;
+    return parsed;
+  } catch (error: any) {
+    console.error("Face visibility evaluator unavailable:", error);
+
+    return {
+      accepted: true,
+      faceVisible: true,
+      frontalOrThreeQuarter: true,
+      severeBacklighting: false,
+      heavyFogOnFace: false,
+      silhouette: false,
+      identityUsable: true,
+      reason:
+        error?.message ||
+        "Vision evaluator failed, continuing with identity score validation only.",
+    };
+  }
 }
 
 async function validateOutput({
