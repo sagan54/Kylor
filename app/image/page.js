@@ -38,6 +38,40 @@ import { supabase } from "../../lib/supabase";
 // ─── Cache keys ──────────────────────────────────────────────────────────────
 const SESSION_KEY = "kylor_img_cache_v2";
 const CHAR_SESSION_KEY = "kylor_img_chars_cache_v2";
+const PENDING_GENERATIONS_KEY = "kylor_pending_generations_v1";
+
+function loadPendingGenerations() {
+  try {
+    const raw = localStorage.getItem(PENDING_GENERATIONS_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function savePendingGenerations(items) {
+  try {
+    localStorage.setItem(PENDING_GENERATIONS_KEY, JSON.stringify(items));
+  } catch {}
+}
+
+function upsertPendingGeneration(item) {
+  const current = loadPendingGenerations();
+  const next = [
+    item,
+    ...current.filter((entry) => String(entry?.predictionId) !== String(item?.predictionId)),
+  ].slice(0, 12);
+  savePendingGenerations(next);
+}
+
+function removePendingGeneration(predictionId) {
+  const current = loadPendingGenerations();
+  const next = current.filter(
+    (entry) => String(entry?.predictionId) !== String(predictionId)
+  );
+  savePendingGenerations(next);
+}
 
 // ─── Supabase helpers ───────────────────────────────────────────────────────
 async function sbLoadAll(userId) {
@@ -981,6 +1015,14 @@ try {
     const data = await res.json().catch(() => ({}));
 
     if (!res.ok) {
+      if (res.status >= 500) {
+        consecutiveNetworkErrors += 1;
+        if (consecutiveNetworkErrors >= 5) {
+          throw new Error(data?.error || "Status check is still syncing. Please wait a moment.");
+        }
+        await sleep(intervalMs);
+        continue;
+      }
       throw new Error(data?.error || "Failed to check generation status");
     }
 
@@ -997,10 +1039,23 @@ try {
       throw new Error(data?.error || "Generation failed");
     }
 
+    if (data?.recoverable) {
+      console.info("pollPredictionUntilComplete: recoverable status", {
+        predictionId,
+        status,
+        syncState: data?.syncState || null,
+        message: data?.message || null,
+      });
+    }
+
     await sleep(intervalMs);
   }
 
-  throw new Error("Generation timed out. Please try again.");
+  const timeoutError = new Error(
+    "Generation is still processing. Refreshing status may complete it shortly."
+  );
+  timeoutError.recoverable = true;
+  throw timeoutError;
 }
 
 // ─── Generation Feed Card ────────────────────────────────────────────────────
@@ -1387,6 +1442,7 @@ export default function ImagePage() {
   const [groups, setGroups] = useState([]);
   const [dbLoaded, setDbLoaded] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const pendingPollsRef = useRef(new Set());
   const [lightboxItem, setLightboxItem] = useState(null);
   const panelRef = useRef(null);
   const stylesRef = useRef(null);
@@ -1636,6 +1692,20 @@ const characterPrompt = [
   }, []);
 
   useEffect(() => {
+    if (!authReady) return;
+    const pending = loadPendingGenerations();
+    pending.forEach((item) => {
+      const startedAt = new Date(item?.startedAt || 0).getTime();
+      const isRecent = Number.isFinite(startedAt)
+        ? Date.now() - startedAt < 24 * 60 * 60 * 1000
+        : true;
+      if (isRecent) {
+        resumePendingGeneration(item);
+      }
+    });
+  }, [authReady, resumePendingGeneration]);
+
+  useEffect(() => {
     function handleOutside(e) {
       if (panelRef.current && !panelRef.current.contains(e.target)) {
         setSettingsOpen(false);
@@ -1653,6 +1723,44 @@ const characterPrompt = [
       localStorage.setItem(SESSION_KEY, JSON.stringify(updatedGroups));
     } catch {}
   }
+
+  function mergeGenerationGroup(group) {
+    if (!group?.id) return;
+    setGroups((prev) => {
+      const exists = prev.some((item) => String(item.id) === String(group.id));
+      const next = exists
+        ? prev.map((item) => (String(item.id) === String(group.id) ? group : item))
+        : [group, ...prev];
+      syncCache(next);
+      return next;
+    });
+  }
+
+  const resumePendingGeneration = useCallback(async (pendingItem) => {
+    const predictionId = pendingItem?.predictionId;
+    if (!predictionId) return;
+    if (pendingPollsRef.current.has(predictionId)) return;
+
+    pendingPollsRef.current.add(predictionId);
+    try {
+      const finalData = await pollPredictionUntilComplete(predictionId, 240, 2500);
+      const newGroup = mapApiGenerationToGroup(finalData);
+      if (newGroup) mergeGenerationGroup(newGroup);
+      removePendingGeneration(predictionId);
+    } catch (err) {
+      if (err?.recoverable) {
+        console.info("resumePendingGeneration: keeping pending generation active", {
+          predictionId,
+          error: err?.message || "Recoverable polling timeout",
+        });
+      } else {
+        removePendingGeneration(predictionId);
+        console.error("resumePendingGeneration failed:", err);
+      }
+    } finally {
+      pendingPollsRef.current.delete(predictionId);
+    }
+  }, []);
 
   const activeStyle = STYLES.find((s) => s.id === selectedStyle);
 
@@ -1776,6 +1884,7 @@ try {
 const results = [];
 
 for (let i = 0; i < n; i++) {
+  let activePredictionId = null;
   try {
     const startRes = await fetch("/api/generate-image", {
       method: "POST",
@@ -1810,15 +1919,27 @@ if (!startData?.predictionId) {
   throw new Error(startData?.error || "No predictionId returned from API");
 }
 
+activePredictionId = startData.predictionId;
+
+upsertPendingGeneration({
+  predictionId: startData.predictionId,
+  startedAt: new Date().toISOString(),
+  type: "generate",
+});
+
 const finalData =
   String(startData?.status || "").toLowerCase() === "succeeded" &&
   startData?.generation
     ? startData
     : await pollPredictionUntilComplete(startData.predictionId);
+removePendingGeneration(startData.predictionId);
 results.push(finalData);
 
 await sleep(1200);
   } catch (err) {
+    if (activePredictionId && !err?.recoverable) {
+      removePendingGeneration(activePredictionId);
+    }
     console.error("Single generation failed:", err);
     lastGenerationError = err;
   }
@@ -1842,6 +1963,8 @@ if (!newGroups.length) {
   alert("You're hitting rate limits. Wait a few seconds or reduce outputs.");
 } else if (err?.message?.includes("credit")) {
   alert("Replicate credit is low. Add credits for better performance.");
+} else if (err?.recoverable || err?.message?.toLowerCase().includes("still processing")) {
+  alert("Generation is still processing. Refreshing status...");
 } else {
   alert(err?.message || "Generation failed");
 }
@@ -1885,6 +2008,7 @@ if (!newGroups.length) {
       .join("\n\n");
 
     try {
+      let activePredictionId = null;
       const startRes = await fetch("/api/generate-image", {
   method: "POST",
   headers: { "Content-Type": "application/json" },
@@ -1918,11 +2042,20 @@ if (!startData?.predictionId) {
   throw new Error(startData?.error || "No predictionId returned for variation");
 }
 
+activePredictionId = startData.predictionId;
+
+upsertPendingGeneration({
+  predictionId: startData.predictionId,
+  startedAt: new Date().toISOString(),
+  type: "variation",
+});
+
 const finalData =
   String(startData?.status || "").toLowerCase() === "succeeded" &&
   startData?.generation
     ? startData
     : await pollPredictionUntilComplete(startData.predictionId);
+removePendingGeneration(startData.predictionId);
 const newGroup = mapApiGenerationToGroup(finalData);
 
 if (!newGroup) {
@@ -1937,8 +2070,15 @@ if (!newGroup) {
         new Notification("Kylor", { body: `Variation V${variationIndex + 1} is ready.` });
       }
     } catch (err) {
+      if (activePredictionId && !err?.recoverable) {
+        removePendingGeneration(activePredictionId);
+      }
       console.error("Variation failed:", err);
-      alert(err?.message || "Variation failed");
+      if (err?.recoverable || err?.message?.toLowerCase().includes("still processing")) {
+        alert("Generation is still processing. Refreshing status...");
+      } else {
+        alert(err?.message || "Variation failed");
+      }
     } finally {
       setGenerating(false);
     }

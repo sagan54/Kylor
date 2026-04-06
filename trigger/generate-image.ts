@@ -78,33 +78,64 @@ function mapSizeToSeedreamImageSize(size?: string | null) {
 
 async function updateGenerationRow(
   generationId: string,
-  patch: Record<string, any>
+  patch: Record<string, any>,
+  cachedMetadata?: Record<string, any> | null
 ) {
-  const { data: existing } = await supabaseAdmin
-    .from("image_generations")
-    .select("metadata")
-    .eq("id", generationId)
-    .single();
+  const needsMetadataMerge =
+    patch?.metadata && typeof patch.metadata === "object";
 
-  const nextPatch =
-    patch?.metadata && typeof patch.metadata === "object"
-      ? {
-          ...patch,
-          metadata: {
-            ...(existing?.metadata || {}),
-            ...patch.metadata,
-          },
-        }
-      : patch;
+  let baseMetadata = cachedMetadata || null;
 
-  const { error } = await supabaseAdmin
-    .from("image_generations")
-    .update(nextPatch)
-    .eq("id", generationId);
+  if (needsMetadataMerge && !baseMetadata) {
+    const { data: existing, error: loadError } = await supabaseAdmin
+      .from("image_generations")
+      .select("metadata")
+      .eq("id", generationId)
+      .single();
 
-  if (error) {
-    throw new Error(`Failed to update generation row: ${error.message}`);
+    if (loadError) {
+      throw new Error(
+        `Failed to load generation metadata: ${loadError.message}`
+      );
+    }
+
+    baseMetadata = existing?.metadata || {};
   }
+
+  const nextPatch = needsMetadataMerge
+    ? {
+        ...patch,
+        metadata: {
+          ...(baseMetadata || {}),
+          ...patch.metadata,
+        },
+      }
+    : patch;
+
+  let lastError: any = null;
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const { error } = await supabaseAdmin
+      .from("image_generations")
+      .update(nextPatch)
+      .eq("id", generationId);
+
+    if (!error) {
+      return nextPatch?.metadata || null;
+    }
+
+    lastError = error;
+
+    if (!String(error.message || "").toLowerCase().includes("statement timeout")) {
+      break;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 300 * (attempt + 1)));
+  }
+
+  throw new Error(
+    `Failed to update generation row: ${lastError?.message || "Unknown database error"}`
+  );
 }
 
 async function downloadImage(imageUrl: string) {
@@ -325,8 +356,23 @@ export const generateImageTask = task({
       usingCharacterMode,
     } = payload;
 
+    let metadataCache: Record<string, any> = {};
+    let currentStage = "initializing";
+    const persistGenerationRow = async (patch: Record<string, any>) => {
+      const nextMetadata = await updateGenerationRow(
+        generationId,
+        patch,
+        metadataCache
+      );
+
+      if (nextMetadata && typeof nextMetadata === "object") {
+        metadataCache = nextMetadata;
+      }
+    };
+
     try {
-      await updateGenerationRow(generationId, {
+      currentStage = "marking_processing";
+      await persistGenerationRow({
         metadata: {
           state: "processing",
           startedAt: new Date().toISOString(),
@@ -362,12 +408,20 @@ export const generateImageTask = task({
         referenceUrls,
       });
 
-      await updateGenerationRow(generationId, {
+      currentStage = "generating_image";
+      await persistGenerationRow({
         metadata: {
           lastProgressAt: new Date().toISOString(),
           progressStage: "generating_image",
           resolvedPrompt: seedreamPrompt,
         },
+      });
+
+      console.info("generate-image: generation started", {
+        generationId,
+        stage: currentStage,
+        model: SEEDREAM_MODEL,
+        referenceCount: referenceUrls.length,
       });
 
       const generatedRemote = await runCharacterModel({
@@ -378,9 +432,11 @@ export const generateImageTask = task({
       });
 
       const outputContentType = generatedRemote?.content_type || "image/png";
+      currentStage = "downloading_image";
       const downloaded = await downloadImage(generatedRemote.url);
 
-      await updateGenerationRow(generationId, {
+      currentStage = "uploading_image";
+      await persistGenerationRow({
         metadata: {
           lastProgressAt: new Date().toISOString(),
           progressStage: "uploading_image",
@@ -395,24 +451,48 @@ export const generateImageTask = task({
         generationId,
       });
 
-      await updateGenerationRow(generationId, {
-        images: [uploaded.publicUrl].filter(Boolean),
-        style: style || "cinematic",
-        mode: "image",
-        metadata: {
-          state: "succeeded",
-          completedAt: new Date().toISOString(),
-          lastProgressAt: new Date().toISOString(),
-          progressStage: "completed",
-          provider: "fal",
-          model: SEEDREAM_MODEL,
-          referenceUrls,
-          referenceCount: referenceUrls.length,
-          generatedRemote,
+      currentStage = "finalizing_database";
+      try {
+        await persistGenerationRow({
+          images: [uploaded.publicUrl].filter(Boolean),
+          style: style || "cinematic",
+          mode: "image",
+          metadata: {
+            state: "succeeded",
+            completedAt: new Date().toISOString(),
+            lastProgressAt: new Date().toISOString(),
+            progressStage: "completed",
+            provider: "fal",
+            model: SEEDREAM_MODEL,
+            referenceUrls,
+            referenceCount: referenceUrls.length,
+            generatedRemote,
+            storagePath: uploaded.storagePath,
+            identityMode: "multi_reference_seedream",
+            negativePrompt: negativePrompt || "",
+          },
+        });
+      } catch (syncError: any) {
+        console.warn("generate-image: db sync delayed after successful upload", {
+          generationId,
+          stage: currentStage,
           storagePath: uploaded.storagePath,
-          identityMode: "multi_reference_seedream",
-          negativePrompt: negativePrompt || "",
-        },
+          imageUrl: uploaded.publicUrl,
+          error: syncError?.message || "Unknown database sync error",
+        });
+
+        return {
+          success: true,
+          generationId,
+          imageUrl: uploaded.publicUrl,
+          syncPending: true,
+        };
+      }
+
+      console.info("generate-image: generation completed", {
+        generationId,
+        stage: currentStage,
+        storagePath: uploaded.storagePath,
       });
 
       return {
@@ -421,17 +501,39 @@ export const generateImageTask = task({
         imageUrl: uploaded.publicUrl,
       };
     } catch (error: any) {
-      await updateGenerationRow(generationId, {
-        metadata: {
-          state: "failed",
-          failedAt: new Date().toISOString(),
-          lastProgressAt: new Date().toISOString(),
-          progressStage: "failed",
-          error: error?.message || "Unknown generation error",
-          provider: "fal",
-          model: SEEDREAM_MODEL,
-        },
+      console.error("generate-image: task failed", {
+        generationId,
+        stage: currentStage,
+        error: error?.message || "Unknown generation error",
       });
+
+      try {
+        await persistGenerationRow({
+          metadata: {
+            state: "failed",
+            failedAt: new Date().toISOString(),
+            lastProgressAt: new Date().toISOString(),
+            progressStage: "failed",
+            error: error?.message || "Unknown generation error",
+            errorType:
+              currentStage === "uploading_image"
+                ? "upload_failure"
+                : currentStage === "finalizing_database"
+                ? "db_sync_failure"
+                : "generation_failure",
+            provider: "fal",
+            model: SEEDREAM_MODEL,
+          },
+        });
+      } catch (persistError: any) {
+        console.error("generate-image: failed to persist terminal state", {
+          generationId,
+          stage: currentStage,
+          error:
+            persistError?.message ||
+            "Unknown terminal-state persistence error",
+        });
+      }
 
       throw error;
     }
