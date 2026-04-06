@@ -4,7 +4,6 @@ import Replicate from "replicate";
 import {
   FLUX_MODEL,
   buildPrompt,
-  getModelForTask,
 } from "../../../lib/image-generation-rules";
 
 const supabaseAdmin = createClient(
@@ -17,6 +16,7 @@ const replicate = new Replicate({
 
 const GENERATED_BUCKET = "generated-images";
 const MAX_REFERENCE_IMAGES = 5;
+const SEEDREAM_MODEL = "fal-ai/bytedance/seedream/v4.5/edit";
 
 function normalizeImageUrl(value) {
   const url = String(value || "").trim();
@@ -476,7 +476,6 @@ export async function POST(req) {
     }
 
     const usingCharacterMode = Boolean(characterId && referenceUrls.length > 0);
-    const routedModel = getModelForTask({ hasCharacter: usingCharacterMode });
 
     const pendingRow = await createPendingGeneration({
       userId,
@@ -492,9 +491,9 @@ export async function POST(req) {
         usedCharacter: usingCharacterMode,
         referenceCount: referenceUrls.length,
         referenceUrls,
-        identityMode: routedModel.identityMode || null,
-        provider: routedModel.provider,
-        model: routedModel.model,
+        identityMode: usingCharacterMode ? "multi_reference_seedream" : null,
+        provider: usingCharacterMode ? "fal" : "replicate",
+        model: usingCharacterMode ? SEEDREAM_MODEL : FLUX_MODEL,
       },
     });
 
@@ -590,11 +589,11 @@ export async function POST(req) {
         usedCharacter: usingCharacterMode,
         scenePrompt: scenePrompt || prompt || "",
         finalPrompt,
-        provider: routedModel.provider,
-        model: routedModel.model,
+        provider: "fal",
+        model: SEEDREAM_MODEL,
         referenceCount: referenceUrls.length,
         referenceUrls,
-        identityMode: routedModel.identityMode || null,
+        identityMode: "multi_reference_seedream",
       },
     });
   } catch (error) {

@@ -1,11 +1,6 @@
 import { task } from "@trigger.dev/sdk/v3";
 import { createClient } from "@supabase/supabase-js";
 import { fal } from "@fal-ai/client";
-import {
-  buildPrompt,
-  buildCorrectionPrompt,
-  adjustSceneForIdentity,
-} from "../lib/image-generation-rules";
 
 type GenerateImagePayload = {
   generationId: string;
@@ -36,8 +31,7 @@ fal.config({
 });
 
 const GENERATED_BUCKET = "generated-images";
-const DREAMO_MODEL = "fal-ai/dreamo";
-const MAX_CHARACTER_ATTEMPTS = 1;
+const SEEDREAM_MODEL = "fal-ai/bytedance/seedream/v4.5/edit";
 
 function normalizeImageUrl(value: unknown) {
   const url = String(value || "").trim();
@@ -62,24 +56,23 @@ function getFileExtFromContentType(contentType?: string | null) {
   return "png";
 }
 
-function mapSizeToIdentityDimensions(size?: string | null, ratio?: string | null) {
-  switch (String(size || ratio || "").toLowerCase()) {
-    case "1024x1536":
+function mapSizeToSeedreamImageSize(size?: string | null) {
+  switch (String(size || "").toLowerCase()) {
+    case "square":
+    case "1:1":
+      return "square_hd";
     case "portrait":
     case "4:5":
     case "3:4":
-      return { width: 896, height: 1152 };
-    case "1024x1024":
-    case "square":
-    case "1:1":
-      return { width: 1024, height: 1024 };
-    case "4:3":
-      return { width: 1152, height: 896 };
+      return "portrait_4_3";
     case "9:16":
-      return { width: 896, height: 1536 };
+      return "portrait_16_9";
     case "16:9":
+      return "landscape_16_9";
+    case "4:3":
+      return "landscape_4_3";
     default:
-      return { width: 1344, height: 768 };
+      return "landscape_16_9";
   }
 }
 
@@ -184,17 +177,85 @@ function extractImageOutput(result: any) {
   };
 }
 
-async function runDreamoGeneration({
+function buildSeedreamPrompt({
+  finalPrompt,
+  scenePrompt,
+  characterName,
+  characterPrompt,
+  style,
+  ratio,
+  referenceUrls = [],
+}: {
+  finalPrompt?: string | null;
+  scenePrompt?: string | null;
+  characterName?: string | null;
+  characterPrompt?: string | null;
+  style?: string | null;
+  ratio?: string | null;
+  referenceUrls?: string[];
+}) {
+  const charName = characterName || "the same character";
+  const figureGuide =
+    referenceUrls.length > 0
+      ? referenceUrls.map((_, idx) => `Figure ${idx + 1}`).join(", ")
+      : "the provided reference images";
+  const resolvedCharacterPrompt = String(
+    characterPrompt || `Exact identity lock for ${charName}.`
+  ).trim();
+
+  return `
+Use ${figureGuide} as reference images of the SAME real person.
+
+Highest priority:
+Keep the exact same facial identity of ${charName}.
+Do not create a different person.
+Do not beautify or alter facial structure.
+Keep the same face shape, eyes, nose, lips, jawline, hairline, hairstyle, skin tone, age impression, facial hair pattern, and recognizable likeness.
+
+Identity anchor:
+${resolvedCharacterPrompt}
+
+Reference rules:
+- Figure 1 is the primary identity anchor.
+- All other figures are supporting views of the same person.
+- Keep identity locked even if angle, lighting, camera distance, pose, wardrobe, or environment changes.
+
+Face visibility rules:
+- Face must remain clearly visible and readable.
+- Eyes, nose, mouth, jawline, and full facial structure must remain unobstructed.
+- No silhouette and no back-facing angle.
+- No heavy fog, smoke, rain streaks, hair, props, or shadows covering the face.
+- Prefer front-facing or slight 3/4 view.
+- Use eye-level framing.
+- Use medium shot or medium close-up framing.
+- Keep the face well-lit while preserving cinematic mood.
+
+Scene:
+${scenePrompt || finalPrompt || "Create a cinematic photorealistic scene."}
+
+Style:
+${style || "cinematic photorealistic still frame"}
+
+Aspect ratio:
+${ratio || "16:9"}
+
+Quality:
+photorealistic, natural skin texture, realistic lighting, realistic eyes, cinematic composition, grounded atmosphere, one main subject only, no plastic skin, no beauty filter.
+
+Avoid:
+different person, identity drift, silhouette, hidden face, fog covering face, backlit face, face in shadow, rear view, extreme side profile, tiny face, distant subject.
+`.trim();
+}
+
+async function runSeedreamCharacterGeneration({
   prompt,
   referenceUrls,
   size,
-  ratio,
   seed,
 }: {
   prompt: string;
   referenceUrls: string[];
   size?: string | null;
-  ratio?: string | null;
   seed?: number | null;
 }) {
   const cleanedRefs = (referenceUrls || [])
@@ -202,32 +263,24 @@ async function runDreamoGeneration({
     .filter(Boolean) as string[];
 
   if (!cleanedRefs.length) {
-    throw new Error("No valid reference URLs were provided to DreamO.");
+    throw new Error("No valid reference URLs were provided to Seedream.");
   }
 
-  const dimensions = mapSizeToIdentityDimensions(size, ratio);
-
-  const result = (await fal.subscribe(DREAMO_MODEL, {
+  const result = (await fal.subscribe(SEEDREAM_MODEL, {
     input: {
       prompt,
-      first_reference_image_url: cleanedRefs[0],
-      first_reference_task: "ip",
-      second_reference_image_url: cleanedRefs[1],
-      second_reference_task: cleanedRefs[1] ? "ip" : undefined,
-      width: dimensions.width,
-      height: dimensions.height,
+      image_size: mapSizeToSeedreamImageSize(size),
       num_images: 1,
-      num_inference_steps: 12,
-      guidance_scale: 3.5,
-      sync_mode: true,
+      image_urls: cleanedRefs,
       seed: typeof seed === "number" ? seed : undefined,
+      sync_mode: true,
     },
     logs: true,
   })) as any;
 
   const image = extractImageOutput(result);
   if (!image.url) {
-    throw new Error("DreamO returned no image URL.");
+    throw new Error("Seedream returned no image URL.");
   }
 
   return image;
@@ -236,20 +289,17 @@ async function runCharacterModel({
   prompt,
   referenceUrls,
   size,
-  ratio,
   seed,
 }: {
   prompt: string;
   referenceUrls: string[];
   size?: string | null;
-  ratio?: string | null;
   seed?: number | null;
 }) {
-  return runDreamoGeneration({
+  return runSeedreamCharacterGeneration({
     prompt,
     referenceUrls,
     size,
-    ratio,
     seed,
   });
 }
@@ -276,136 +326,100 @@ export const generateImageTask = task({
     } = payload;
 
     try {
+      await updateGenerationRow(generationId, {
+        metadata: {
+          state: "processing",
+          startedAt: new Date().toISOString(),
+          lastProgressAt: new Date().toISOString(),
+          characterId: characterId || null,
+          characterName: characterName || null,
+          characterPrompt: characterPrompt || "",
+          referenceCount: referenceUrls.length,
+          referenceUrls,
+          provider: "fal",
+          model: SEEDREAM_MODEL,
+          identityMode: "multi_reference_seedream",
+        },
+      });
+
       if (!usingCharacterMode) {
-        throw new Error("Character generation task was triggered without a character.");
+        throw new Error(
+          "Character generation task was triggered without a character."
+        );
       }
 
       if (!referenceUrls.length) {
         throw new Error("No reference images available for this character.");
       }
 
-      const safeScene = adjustSceneForIdentity(
-        scenePrompt || finalPrompt || prompt || ""
-      );
-      const resolvedCharacterPrompt = String(
-        characterPrompt ||
-          `Exact identity lock for ${characterName || "the same exact character"}.`
-      ).trim();
+      const seedreamPrompt = buildSeedreamPrompt({
+        finalPrompt: finalPrompt || prompt || "",
+        scenePrompt: scenePrompt || finalPrompt || prompt || "",
+        characterName,
+        characterPrompt,
+        style,
+        ratio,
+        referenceUrls,
+      });
 
-      let lastValidation: any = null;
-      let lastError: any = null;
+      await updateGenerationRow(generationId, {
+        metadata: {
+          lastProgressAt: new Date().toISOString(),
+          progressStage: "generating_image",
+          resolvedPrompt: seedreamPrompt,
+        },
+      });
 
-      for (let attempt = 0; attempt < MAX_CHARACTER_ATTEMPTS; attempt += 1) {
-        const resolvedPrompt = buildPrompt({
-          scene:
-            attempt === 0
-              ? safeScene
-              : buildCorrectionPrompt(safeScene),
-          character: resolvedCharacterPrompt,
-          mode: "character",
-          style: style || "cinematic photorealistic still frame",
+      const generatedRemote = await runCharacterModel({
+        prompt: seedreamPrompt,
+        referenceUrls,
+        size: size || ratio,
+        seed,
+      });
+
+      const outputContentType = generatedRemote?.content_type || "image/png";
+      const downloaded = await downloadImage(generatedRemote.url);
+
+      await updateGenerationRow(generationId, {
+        metadata: {
+          lastProgressAt: new Date().toISOString(),
+          progressStage: "uploading_image",
+        },
+      });
+
+      const uploaded = await uploadGeneratedImage({
+        userId,
+        buffer: downloaded.buffer,
+        contentType: outputContentType,
+        fileExt: getFileExtFromContentType(outputContentType),
+        generationId,
+      });
+
+      await updateGenerationRow(generationId, {
+        images: [uploaded.publicUrl].filter(Boolean),
+        style: style || "cinematic",
+        mode: "image",
+        metadata: {
+          state: "succeeded",
+          completedAt: new Date().toISOString(),
+          lastProgressAt: new Date().toISOString(),
+          progressStage: "completed",
+          provider: "fal",
+          model: SEEDREAM_MODEL,
+          referenceUrls,
+          referenceCount: referenceUrls.length,
+          generatedRemote,
+          storagePath: uploaded.storagePath,
+          identityMode: "multi_reference_seedream",
           negativePrompt: negativePrompt || "",
-        });
+        },
+      });
 
-        await updateGenerationRow(generationId, {
-          metadata: {
-            state: "processing",
-            ...(attempt === 0
-              ? { startedAt: new Date().toISOString() }
-              : {}),
-            lastProgressAt: new Date().toISOString(),
-            characterId: characterId || null,
-            characterName: characterName || null,
-            characterPrompt: resolvedCharacterPrompt,
-            referenceCount: referenceUrls.length,
-            referenceUrls,
-            provider: "fal",
-            model: DREAMO_MODEL,
-            identityMode: "dreamo_identity",
-            attempt: attempt + 1,
-            resolvedPrompt,
-          },
-        });
-
-        try {
-          await updateGenerationRow(generationId, {
-            metadata: {
-              lastProgressAt: new Date().toISOString(),
-              progressStage: "generating_image",
-            },
-          });
-
-          const generatedRemote = await runCharacterModel({
-            prompt: resolvedPrompt,
-            referenceUrls,
-            size,
-            ratio,
-            seed,
-          });
-
-          const outputContentType = generatedRemote?.content_type || "image/png";
-          const downloaded = await downloadImage(generatedRemote.url);
-
-          const uploaded = await uploadGeneratedImage({
-            userId,
-            buffer: downloaded.buffer,
-            contentType: outputContentType,
-            fileExt: getFileExtFromContentType(outputContentType),
-            generationId,
-          });
-
-          await updateGenerationRow(generationId, {
-            images: [uploaded.publicUrl].filter(Boolean),
-            style: style || "cinematic",
-            mode: "image",
-            metadata: {
-              state: "succeeded",
-              completedAt: new Date().toISOString(),
-              lastProgressAt: new Date().toISOString(),
-              progressStage: "completed",
-              provider: "fal",
-              model: DREAMO_MODEL,
-              referenceUrls,
-              referenceCount: referenceUrls.length,
-              generatedRemote,
-              storagePath: uploaded.storagePath,
-              identityMode: "dreamo_identity",
-              negativePrompt: negativePrompt || "",
-              validation: {
-                accepted: true,
-                mode: "prompt_enforced",
-                reason:
-                  "Accepted from the primary DreamO identity generation path.",
-              },
-            },
-          });
-
-          return {
-            success: true,
-            generationId,
-            imageUrl: uploaded.publicUrl,
-          };
-        } catch (attemptError: any) {
-          await updateGenerationRow(generationId, {
-            metadata: {
-              lastProgressAt: new Date().toISOString(),
-              progressStage: "attempt_failed",
-              lastAttemptError:
-                attemptError?.message || "Unknown attempt error",
-            },
-          });
-
-          lastError = attemptError;
-        }
-      }
-
-      throw (
-        lastError ||
-        new Error(
-          lastValidation?.visibility?.reason ||
-            "Character generation failed validation after retries."
-        )
-      );
+      return {
+        success: true,
+        generationId,
+        imageUrl: uploaded.publicUrl,
+      };
     } catch (error: any) {
       await updateGenerationRow(generationId, {
         metadata: {
@@ -414,6 +428,8 @@ export const generateImageTask = task({
           lastProgressAt: new Date().toISOString(),
           progressStage: "failed",
           error: error?.message || "Unknown generation error",
+          provider: "fal",
+          model: SEEDREAM_MODEL,
         },
       });
 
