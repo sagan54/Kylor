@@ -85,7 +85,7 @@ async function sbLoadAll(userId) {
 
   if (error) {
     console.error("sbLoadAll failed:", error);
-    return [];
+    return null;
   }
 
   console.log("sbLoadAll result:", data);
@@ -1469,6 +1469,7 @@ export default function ImagePage() {
   }
 
   async function loadSavedCharacters() {
+    let cachedCharacters = [];
     try {
       setLoadingCharacters(true);
       const payloadCharacter = loadCharacterFromSessionPayload();
@@ -1477,7 +1478,7 @@ export default function ImagePage() {
         if (raw) {
           const cached = JSON.parse(raw);
           if (Array.isArray(cached) && cached.length > 0) {
-            let cachedCharacters = cached.map(mapCharacterRow);
+            cachedCharacters = cached.map(mapCharacterRow);
             if (payloadCharacter) {
               const exists = cachedCharacters.some((c) => String(c.id) === String(payloadCharacter.id));
               if (!exists) cachedCharacters = [payloadCharacter, ...cachedCharacters];
@@ -1521,12 +1522,12 @@ export default function ImagePage() {
         .order("created_at", { ascending: false });
       if (error || !data) {
         console.error("Failed to load saved characters:", error?.message);
-        setSavedCharacters([]);
-        setSelectedCharacter(null);
-        try {
-          sessionStorage.removeItem("kylor_selected_character_id");
-          sessionStorage.removeItem("kylor_selected_character_payload");
-        } catch {}
+        if (cachedCharacters.length > 0) {
+          setSavedCharacters(cachedCharacters);
+        } else if (payloadCharacter) {
+          setSavedCharacters([payloadCharacter]);
+          setSelectedCharacter(payloadCharacter);
+        }
         return;
       }
       const mapped = data.map(mapCharacterRow);
@@ -1552,8 +1553,9 @@ export default function ImagePage() {
       }
     } catch (err) {
       console.error("loadSavedCharacters error:", err);
-      setSavedCharacters([]);
-      setSelectedCharacter(null);
+      if (cachedCharacters.length > 0) {
+        setSavedCharacters(cachedCharacters);
+      }
     } finally {
       setLoadingCharacters(false);
     }
@@ -1671,11 +1673,15 @@ const characterPrompt = [
       }
       const fresh = await sbLoadAll(uid);
       if (!mounted) return;
-      setGroups(fresh);
+      if (Array.isArray(fresh)) {
+        setGroups(fresh);
+      }
       setDbLoaded(true);
-      try {
-        localStorage.setItem(SESSION_KEY, JSON.stringify(fresh));
-      } catch {}
+      if (Array.isArray(fresh)) {
+        try {
+          localStorage.setItem(SESSION_KEY, JSON.stringify(fresh));
+        } catch {}
+      }
     }
     init();
     const {
@@ -1694,11 +1700,15 @@ const characterPrompt = [
       if (!uid) return;
       const fresh = await sbLoadAll(uid);
       if (!mounted) return;
-      setGroups(fresh);
+      if (Array.isArray(fresh)) {
+        setGroups(fresh);
+      }
       setDbLoaded(true);
-      try {
-        localStorage.setItem(SESSION_KEY, JSON.stringify(fresh));
-      } catch {}
+      if (Array.isArray(fresh)) {
+        try {
+          localStorage.setItem(SESSION_KEY, JSON.stringify(fresh));
+        } catch {}
+      }
     });
     return () => {
       mounted = false;
