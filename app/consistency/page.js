@@ -285,6 +285,10 @@ function outputsFromCharacter(char) {
 function extractGeneratedUrl(data) {
   if (!data) return null;
 
+  if (Array.isArray(data?.generation?.images) && data.generation.images.length > 0) {
+    return data.generation.images[0];
+  }
+
   if (typeof data.image === "string" && data.image) return data.image;
 
   if (Array.isArray(data.images) && data.images.length > 0) {
@@ -373,6 +377,20 @@ function buildLockedCharacterPrompt({
 function extractGeneratedUrls(data) {
   if (!data) return [];
 
+  if (Array.isArray(data?.generation?.images) && data.generation.images.length > 0) {
+    return data.generation.images
+      .map((url, i) =>
+        typeof url === "string"
+          ? {
+              id: `img-${i}`,
+              url,
+              attempt: i + 1,
+            }
+          : null
+      )
+      .filter(Boolean);
+  }
+
   if (Array.isArray(data.images)) {
     return data.images
       .map((item, i) => {
@@ -402,6 +420,42 @@ function extractGeneratedUrls(data) {
   }
 
   return [];
+}
+
+function extractPackResults(data) {
+  const pack = data?.generation?.metadata?.pack;
+  return Array.isArray(pack) ? pack.filter((item) => item?.url) : [];
+}
+
+async function pollGenerationJob(predictionId, { intervalMs = 2500, timeoutMs = 180000 } = {}) {
+  const startedAt = Date.now();
+
+  while (Date.now() - startedAt < timeoutMs) {
+    const res = await fetch(
+      `/api/generate-image-status?predictionId=${encodeURIComponent(predictionId)}`,
+      { cache: "no-store" }
+    );
+
+    const data = await res.json().catch(() => ({}));
+
+    if (!res.ok) {
+      throw new Error(data?.error || "Failed to check generation status");
+    }
+
+    const status = String(data?.status || data?.generation?.status || "").toLowerCase();
+
+    if (status === "completed" || status === "succeeded") {
+      return data;
+    }
+
+    if (status === "failed") {
+      throw new Error(data?.error || data?.generation?.error || "Generation failed");
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  }
+
+  throw new Error("Generation timed out while waiting for completion.");
 }
 
 function getMasterImageForCharacter(char) {
@@ -2070,6 +2124,16 @@ if (!res.ok || !data?.success) {
   throw new Error(data?.error || "Character pack generation failed");
 }
 
+const predictionId = data?.predictionId;
+if (!predictionId) {
+  throw new Error("Character pack job did not return a predictionId.");
+}
+
+const completedData = await pollGenerationJob(predictionId, {
+  intervalMs: 2500,
+  timeoutMs: 240000,
+});
+
 fetch("/api/process-character-dna", {
   method: "POST",
   headers: {
@@ -2102,7 +2166,7 @@ fetch("/api/process-character-dna", {
     console.error("Failed to trigger DNA processing:", err);
   });
 
-const pack = Array.isArray(data?.pack) ? data.pack : [];
+const pack = extractPackResults(completedData);
 
 const nextOutputs = pack
   .filter((item) => item?.url)
@@ -2238,9 +2302,18 @@ await refreshCharacterPackState(activeChar, masterRef);
         });
 
         const data = await res.json();
-        console.log("PROFILE RESPONSE:", data);
+        const predictionId = data?.predictionId;
+        if (!res.ok || !data?.success || !predictionId) {
+          throw new Error(data?.error || "Profile generation failed");
+        }
 
-const savedUrl = extractGeneratedUrl(data);
+        const completedData = await pollGenerationJob(predictionId, {
+          intervalMs: 2500,
+          timeoutMs: 180000,
+        });
+        console.log("PROFILE RESPONSE:", completedData);
+
+const savedUrl = extractGeneratedUrl(completedData);
 setOutputs(prev =>
   prev.map(o =>
     o.id === placeholder.id ? { ...o, url: savedUrl || "__FAILED__" } : o
@@ -2348,9 +2421,18 @@ const hasRefs = finalRefs.length > 0;
         clearTimeout(timeout);
       }
 
-      console.log("GEN RESPONSE:", data);
+      if (!data?.success || !data?.predictionId) {
+        throw new Error(data?.error || "Front generation failed");
+      }
 
-const savedUrl = extractGeneratedUrl(data);
+      const completedData = await pollGenerationJob(data.predictionId, {
+        intervalMs: 2500,
+        timeoutMs: 180000,
+      });
+
+      console.log("GEN RESPONSE:", completedData);
+
+const savedUrl = extractGeneratedUrl(completedData);
 
 setOutputs(prev =>
   prev.map(o =>

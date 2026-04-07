@@ -1,6 +1,7 @@
 import Replicate from "replicate";
 import { IMAGE_TYPES, IMAGE_ORDER, PACK_VIEWS } from "../../../lib/character-constants";
 import { createClient } from "@supabase/supabase-js";
+import { after } from "next/server";
 
 const replicate = new Replicate({
   auth: process.env.REPLICATE_API_TOKEN,
@@ -13,6 +14,7 @@ const supabase = createClient(
 
 const MODEL = "black-forest-labs/flux-2-pro";
 const STORAGE_BUCKET = "character-refs";
+const JOB_TIMEOUT_MS = 90 * 1000;
 
 function normalizeReferenceImage(image) {
   if (!image || typeof image !== "string") return null;
@@ -432,33 +434,112 @@ function dedupeResults(results) {
   }));
 }
 
-export async function POST(req) {
+async function createPendingGeneration({
+  userId = "anonymous",
+  prompt,
+  negativePrompt = "",
+  size = "1024x1024",
+  metadata = {},
+}) {
+  const payload = {
+    user_id: userId || "anonymous",
+    prompt: String(prompt || "").trim(),
+    negative_prompt: String(negativePrompt || "").trim(),
+    images: [],
+    mode: "consistency",
+    ratio: mapSizeToAspectRatio(size),
+    style: "photorealistic",
+    status: "processing",
+    metadata: {
+      state: "processing",
+      progressStage: "queued",
+      startedAt: new Date().toISOString(),
+      ...metadata,
+    },
+  };
+
+  const { data, error } = await supabase
+    .from("image_generations")
+    .insert(payload)
+    .select("*")
+    .single();
+
+  if (error) {
+    throw new Error(error.message || "Failed to create generation job");
+  }
+
+  return data;
+}
+
+async function updateGenerationJob(generationId, patch) {
+  const { data: existing } = await supabase
+    .from("image_generations")
+    .select("metadata")
+    .eq("id", generationId)
+    .single();
+
+  const nextPatch =
+    patch?.metadata && typeof patch.metadata === "object"
+      ? {
+          ...patch,
+          metadata: {
+            ...(existing?.metadata || {}),
+            ...patch.metadata,
+          },
+        }
+      : patch;
+
+  const { error } = await supabase
+    .from("image_generations")
+    .update(nextPatch)
+    .eq("id", generationId);
+
+  if (error) {
+    throw new Error(error.message || "Failed to update generation job");
+  }
+}
+
+function isTimedOut(startedAtMs) {
+  return Date.now() - startedAtMs >= JOB_TIMEOUT_MS;
+}
+
+async function runGenerationJob(generationId, payload) {
+  const startedAtMs = Date.now();
+  const {
+    prompt,
+    size = "1024x1024",
+    referenceImages = [],
+    negativePrompt = "",
+    strictIdentity = true,
+    attempts = 2,
+    userId = "anonymous",
+  } = payload || {};
+
   try {
-    const {
-      prompt,
-      size = "1024x1024",
-      referenceImages = [],
-      negativePrompt = "",
-      strictIdentity = true,
-      attempts = 2,
-      userId = "anonymous",
-    } = await req.json();
-
-    if (!prompt || !String(prompt).trim()) {
-      return Response.json({ error: "Prompt is required" }, { status: 400 });
-    }
-
     const refs = Array.isArray(referenceImages)
       ? referenceImages.map(normalizeReferenceImage).filter(Boolean).slice(0, 8)
       : [];
 
     const safeAttempts = Math.min(Math.max(Number(attempts) || 1, 1), 4);
-
-    let results = [];
+    const results = [];
     let lastError = null;
     let debug = null;
 
+    await updateGenerationJob(generationId, {
+      status: "processing",
+      metadata: {
+        state: "processing",
+        progressStage: "running",
+        startedAt: new Date(startedAtMs).toISOString(),
+        strictIdentity: Boolean(strictIdentity),
+        requestedAttempts: safeAttempts,
+        referenceCount: refs.length,
+      },
+    });
+
     for (let i = 0; i < safeAttempts; i += 1) {
+      if (isTimedOut(startedAtMs)) break;
+
       try {
         const generated = await runSingleGeneration({
           prompt,
@@ -489,30 +570,99 @@ export async function POST(req) {
       }
     }
 
-    results = dedupeResults(results);
+    const dedupedResults = dedupeResults(results);
+    const timedOut = isTimedOut(startedAtMs);
 
-    if (!results.length) {
-      return Response.json(
-        {
-          error: lastError?.message || "No image returned from Replicate",
-        },
-        { status: 500 }
+    if (!dedupedResults.length) {
+      throw new Error(
+        timedOut
+          ? "Generation timed out before any completed image was produced."
+          : lastError?.message || "No image returned from Replicate"
       );
     }
 
-    return Response.json({
-      image: results[0].url,
-      images: results,
-      meta: {
+    await updateGenerationJob(generationId, {
+      status: "completed",
+      images: dedupedResults.map((item) => item.url).filter(Boolean),
+      metadata: {
+        state: "completed",
+        progressStage: timedOut ? "completed_partial_timeout" : "completed",
+        completedAt: new Date().toISOString(),
+        timedOut,
         model: MODEL,
         referenceCount: refs.length,
         usedReferences: refs.length > 0,
         strictIdentity: Boolean(strictIdentity),
         attempts: safeAttempts,
-        returnedCount: results.length,
+        returnedCount: dedupedResults.length,
         viewType: debug?.viewType || detectViewType(prompt),
         aspectRatio: debug?.aspect_ratio || mapSizeToAspectRatio(size),
+        finalPrompt: debug?.finalPrompt || null,
+        error: null,
       },
+    });
+  } catch (error) {
+    console.error("Consistency background job error:", error);
+
+    await updateGenerationJob(generationId, {
+      status: "failed",
+      metadata: {
+        state: "failed",
+        progressStage: "failed",
+        failedAt: new Date().toISOString(),
+        error: error?.message || "Failed to generate consistency image",
+      },
+    });
+  }
+}
+
+export async function POST(req) {
+  try {
+    const {
+      prompt,
+      size = "1024x1024",
+      referenceImages = [],
+      negativePrompt = "",
+      strictIdentity = true,
+      attempts = 2,
+      userId = "anonymous",
+    } = await req.json();
+
+    if (!prompt || !String(prompt).trim()) {
+      return Response.json({ error: "Prompt is required" }, { status: 400 });
+    }
+
+    const pending = await createPendingGeneration({
+      userId,
+      prompt,
+      negativePrompt,
+      size,
+      metadata: {
+        route: "generate-consistency",
+        strictIdentity: Boolean(strictIdentity),
+        attempts: Math.min(Math.max(Number(attempts) || 1, 1), 4),
+        referenceCount: Array.isArray(referenceImages)
+          ? referenceImages.filter(Boolean).length
+          : 0,
+      },
+    });
+
+    after(() =>
+      runGenerationJob(pending.id, {
+        prompt,
+        size,
+        referenceImages,
+        negativePrompt,
+        strictIdentity,
+        attempts,
+        userId,
+      }).catch(console.error)
+    );
+
+    return Response.json({
+      success: true,
+      predictionId: pending.id,
+      status: "processing",
     });
   } catch (error) {
     console.error("Consistency generation error:", error);

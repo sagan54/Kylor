@@ -1,6 +1,7 @@
 import Replicate from "replicate";
 import { createClient } from "@supabase/supabase-js";
 import { IMAGE_TYPES, IMAGE_ORDER, PACK_VIEWS } from "../../../lib/character-constants";
+import { after } from "next/server";
 
 const replicate = new Replicate({
   auth: process.env.REPLICATE_API_TOKEN,
@@ -12,6 +13,7 @@ const supabase = createClient(
 );
 
 const MODEL = "black-forest-labs/flux-2-pro";
+const JOB_TIMEOUT_MS = 90 * 1000;
 
 function getModelForView(viewType) {
   switch (viewType) {
@@ -2740,34 +2742,111 @@ async function deleteExistingPackImages(characterId, userId) {
   }
 }
 
-export async function POST(req) {
+async function createPendingGeneration({
+  userId,
+  characterId,
+  prompt,
+  negativePrompt = "",
+  metadata = {},
+}) {
+  const payload = {
+    user_id: userId || null,
+    character_id: characterId || null,
+    prompt: String(prompt || "").trim(),
+    negative_prompt: String(negativePrompt || "").trim(),
+    images: [],
+    mode: "character_pack",
+    ratio: "2:3",
+    style: "photorealistic",
+    status: "processing",
+    metadata: {
+      state: "processing",
+      progressStage: "queued",
+      startedAt: new Date().toISOString(),
+      ...metadata,
+    },
+  };
+
+  const { data, error } = await supabase
+    .from("image_generations")
+    .insert(payload)
+    .select("*")
+    .single();
+
+  if (error) {
+    throw new Error(error.message || "Failed to create character pack job");
+  }
+
+  return data;
+}
+
+async function updateGenerationJob(generationId, patch) {
+  const { data: existing } = await supabase
+    .from("image_generations")
+    .select("metadata")
+    .eq("id", generationId)
+    .single();
+
+  const nextPatch =
+    patch?.metadata && typeof patch.metadata === "object"
+      ? {
+          ...patch,
+          metadata: {
+            ...(existing?.metadata || {}),
+            ...patch.metadata,
+          },
+        }
+      : patch;
+
+  const { error } = await supabase
+    .from("image_generations")
+    .update(nextPatch)
+    .eq("id", generationId);
+
+  if (error) {
+    throw new Error(error.message || "Failed to update character pack job");
+  }
+}
+
+function serializePackResults(results = []) {
+  return results.map((item) => ({
+    type: item.type,
+    label: item.label,
+    url: item.url || null,
+    sort_order: item.sort_order,
+    accepted: !!item.accepted,
+    finalScore: item.finalScore ?? null,
+    scoreReason: item.scoreReason || null,
+    failureType: item.failureType || null,
+  }));
+}
+
+async function runGenerationJob(generationId, payload) {
   try {
     const {
       characterId,
       masterImage,
       userId,
       negativePrompt = "",
-    } = await req.json();
-
-    if (!characterId || !String(characterId).trim()) {
-      return Response.json({ error: "characterId is required" }, { status: 400 });
-    }
-
-    if (!masterImage || !String(masterImage).trim()) {
-      return Response.json({ error: "masterImage is required" }, { status: 400 });
-    }
-
-    if (!userId || !String(userId).trim()) {
-      return Response.json({ error: "userId is required" }, { status: 400 });
-    }
+    } = payload;
 
     const normalizedMaster = normalizeReferenceImage(masterImage);
     if (!normalizedMaster) {
-      return Response.json({ error: "Invalid master image" }, { status: 400 });
+      throw new Error("Invalid master image");
     }
 
 const routeStart = nowMs();
-console.log("PACK START", { characterId, userId });
+let timedOut = false;
+console.log("PACK START", { generationId, characterId, userId });
+
+await updateGenerationJob(generationId, {
+  status: "processing",
+  metadata: {
+    state: "processing",
+    progressStage: "loading_character_memory",
+    startedAt: new Date(routeStart).toISOString(),
+  },
+});
 
 const characterMemory = await loadCharacterMemory(characterId, userId);
 const uploadedReferenceUrls = await loadUploadedReferenceUrls(characterId, userId);
@@ -2799,6 +2878,11 @@ console.log("🧠 Loaded character memory", {
 
 
     for (const view of PACK_VIEWS) {
+      if (nowMs() - routeStart >= JOB_TIMEOUT_MS) {
+        timedOut = true;
+        break;
+      }
+
       const size =
         view.key === IMAGE_TYPES.CLOSEUP ? "1024x1024" : "1024x1536";
 
@@ -3021,7 +3105,7 @@ if (shouldStopPackEarly(err)) {
 const failedAfterFirstPass = collectFailedViews(finalResults);
 const repairableFailures = failedAfterFirstPass.filter(shouldRepairFailedView);
 
-if (repairableFailures.length > 0) {
+if (!timedOut && repairableFailures.length > 0) {
   const repaired = await repairFailedViews({
     results: finalResults,
     normalizedMaster,
@@ -3051,8 +3135,9 @@ const hasLeft = acceptedTypes.includes(IMAGE_TYPES.LEFT);
 const hasRight = acceptedTypes.includes(IMAGE_TYPES.RIGHT);
 const hasCloseup = acceptedTypes.includes(IMAGE_TYPES.CLOSEUP);
 const hasBack = acceptedTypes.includes(IMAGE_TYPES.BACK); // optional only
+const partialCompletion = timedOut && acceptedTypes.length > 0;
 
-if (!hasFront || !hasLeft || !hasRight || !hasCloseup) {
+if (!partialCompletion && (!hasFront || !hasLeft || !hasRight || !hasCloseup)) {
   const failedViews = finalResults
     .filter((r) => !r.accepted)
     .map((r) => r.type);
@@ -3138,34 +3223,9 @@ for (let i = 0; i < finalResults.length; i++) {
   };
 }
 
-await deleteExistingPackImages(characterId, userId);
-
 const acceptedItems = finalResults.filter((r) => r.accepted && r.url);
-
-const insertRows = acceptedItems.map((item) => ({
-  character_id: characterId,
-  user_id: userId,
-  image_type: "pack",
-  image_url: item.url,
-  pack_view: item.type,
-  source_type: "generated",
-  is_canon: item.finalScore >= 8.5,
-  is_cover: item.type === IMAGE_TYPES.FRONT,
-  sort_order: item.sort_order,
-  metadata: {
-    finalScore: item.finalScore,
-    identityScore: item.identityScore,
-    qualityScore: item.qualityScore,
-    repairedInPass2: !!item.repairedInPass2,
-  },
-}));
-
-const { error: insertError } = await supabase
-  .from("character_images")
-  .insert(insertRows);
-
-if (insertError) {
-  throw new Error(insertError.message || "Failed to save pack images");
+if (!acceptedItems.length) {
+  throw new Error("Character pack job completed without any accepted images.");
 }
 
 const averageFinalScore =
@@ -3190,17 +3250,47 @@ const repairedCount =
 
 const anchorViews = buildAnchorViewSummary(finalResults);
 
-const { error: characterUpdateError } = await supabase
-  .from("characters")
-  .update({
-    anchor_views: anchorViews,
-    processing_error: null,
-  })
-  .eq("id", characterId)
-  .eq("user_id", userId);
+if (!partialCompletion) {
+  await deleteExistingPackImages(characterId, userId);
 
-if (characterUpdateError) {
-  console.error("Character update warning:", characterUpdateError);
+  const insertRows = acceptedItems.map((item) => ({
+    character_id: characterId,
+    user_id: userId,
+    image_type: "pack",
+    image_url: item.url,
+    pack_view: item.type,
+    source_type: "generated",
+    is_canon: item.finalScore >= 8.5,
+    is_cover: item.type === IMAGE_TYPES.FRONT,
+    sort_order: item.sort_order,
+    metadata: {
+      finalScore: item.finalScore,
+      identityScore: item.identityScore,
+      qualityScore: item.qualityScore,
+      repairedInPass2: !!item.repairedInPass2,
+    },
+  }));
+
+  const { error: insertError } = await supabase
+    .from("character_images")
+    .insert(insertRows);
+
+  if (insertError) {
+    throw new Error(insertError.message || "Failed to save pack images");
+  }
+
+  const { error: characterUpdateError } = await supabase
+    .from("characters")
+    .update({
+      anchor_views: anchorViews,
+      processing_error: null,
+    })
+    .eq("id", characterId)
+    .eq("user_id", userId);
+
+  if (characterUpdateError) {
+    console.error("Character update warning:", characterUpdateError);
+  }
 }
 
 console.log("PACK COMPLETE", {
@@ -3208,25 +3298,24 @@ console.log("PACK COMPLETE", {
   acceptedCount: finalResults.filter((r) => r.accepted).length,
 });
 
-return Response.json({
-  success: true,
-  characterId,
-  pack: finalResults.map((item) => ({
-    type: item.type,
-    label: item.label,
-    url: item.url,
-    sort_order: item.sort_order,
-    accepted: item.accepted,
-    finalScore: item.finalScore,
-  })),
-  meta: {
+await updateGenerationJob(generationId, {
+  status: "completed",
+  images: acceptedItems.map((item) => item.url),
+  metadata: {
+    state: "completed",
+    progressStage: partialCompletion ? "completed_partial_timeout" : "completed",
+    completedAt: new Date().toISOString(),
+    timedOut,
+    partialCompletion,
+    characterId,
+    pack: serializePackResults(finalResults),
     model: {
-  front: getModelForView(IMAGE_TYPES.FRONT),
-  left: getModelForView(IMAGE_TYPES.LEFT),
-  right: getModelForView(IMAGE_TYPES.RIGHT),
-  back: getModelForView(IMAGE_TYPES.BACK),
-  closeup: getModelForView(IMAGE_TYPES.CLOSEUP),
-},
+      front: getModelForView(IMAGE_TYPES.FRONT),
+      left: getModelForView(IMAGE_TYPES.LEFT),
+      right: getModelForView(IMAGE_TYPES.RIGHT),
+      back: getModelForView(IMAGE_TYPES.BACK),
+      closeup: getModelForView(IMAGE_TYPES.CLOSEUP),
+    },
     evaluatorModel: EVALUATOR_MODEL,
     referenceCount: maxReferenceCountUsed,
     returnedCount: finalResults.length,
@@ -3237,8 +3326,74 @@ return Response.json({
     frontImageUrl:
       finalResults.find((r) => r.type === IMAGE_TYPES.FRONT)?.url || null,
     anchorViews,
+    error: null,
   },
 });
+  } catch (error) {
+    console.error("PACK ROUTE ERROR:", error);
+    await updateGenerationJob(generationId, {
+      status: "failed",
+      metadata: {
+        state: "failed",
+        progressStage: "failed",
+        failedAt: new Date().toISOString(),
+        error: error?.message || "Failed to generate character pack",
+      },
+    });
+  }
+}
+
+export async function POST(req) {
+  try {
+    const {
+      characterId,
+      masterImage,
+      userId,
+      negativePrompt = "",
+    } = await req.json();
+
+    if (!characterId || !String(characterId).trim()) {
+      return Response.json({ error: "characterId is required" }, { status: 400 });
+    }
+
+    if (!masterImage || !String(masterImage).trim()) {
+      return Response.json({ error: "masterImage is required" }, { status: 400 });
+    }
+
+    if (!userId || !String(userId).trim()) {
+      return Response.json({ error: "userId is required" }, { status: 400 });
+    }
+
+    const normalizedMaster = normalizeReferenceImage(masterImage);
+    if (!normalizedMaster) {
+      return Response.json({ error: "Invalid master image" }, { status: 400 });
+    }
+
+    const pending = await createPendingGeneration({
+      userId,
+      characterId,
+      prompt: `Generate character pack for ${characterId}`,
+      negativePrompt,
+      metadata: {
+        route: "generate-character-pack",
+        masterImage: normalizedMaster,
+      },
+    });
+
+    after(() =>
+      runGenerationJob(pending.id, {
+        characterId,
+        masterImage: normalizedMaster,
+        userId,
+        negativePrompt,
+      }).catch(console.error)
+    );
+
+    return Response.json({
+      success: true,
+      predictionId: pending.id,
+      status: "processing",
+    });
   } catch (error) {
     console.error("PACK ROUTE ERROR:", error);
     return Response.json(
