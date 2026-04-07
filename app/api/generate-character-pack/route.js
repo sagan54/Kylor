@@ -2758,7 +2758,6 @@ async function createPendingGeneration({
     mode: "character_pack",
     ratio: "2:3",
     style: "photorealistic",
-    status: "processing",
     metadata: {
       state: "processing",
       progressStage: "queued",
@@ -2840,7 +2839,6 @@ let timedOut = false;
 console.log("PACK START", { generationId, characterId, userId });
 
 await updateGenerationJob(generationId, {
-  status: "processing",
   metadata: {
     state: "processing",
     progressStage: "loading_character_memory",
@@ -3299,7 +3297,6 @@ console.log("PACK COMPLETE", {
 });
 
 await updateGenerationJob(generationId, {
-  status: "completed",
   images: acceptedItems.map((item) => item.url),
   metadata: {
     state: "completed",
@@ -3332,7 +3329,6 @@ await updateGenerationJob(generationId, {
   } catch (error) {
     console.error("PACK ROUTE ERROR:", error);
     await updateGenerationJob(generationId, {
-      status: "failed",
       metadata: {
         state: "failed",
         progressStage: "failed",

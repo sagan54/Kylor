@@ -23,7 +23,6 @@ function buildGenerationPayload(data) {
   return {
     id: data.id,
     status:
-      data.status ||
       data.metadata?.state ||
       (Array.isArray(data.images) && data.images.length > 0 ? "completed" : "processing"),
     prompt: data.prompt,
@@ -378,8 +377,7 @@ export async function GET(req) {
     }
 
     const metadata = data?.metadata || {};
-    const dbStatus = String(data?.status || "").toLowerCase();
-    const state = dbStatus || String(metadata?.state || "").toLowerCase() || "processing";
+    const state = String(metadata?.state || "").toLowerCase() || "processing";
     const hasImages = Array.isArray(data?.images) && data.images.length > 0;
     const createdAtMs = getTimeMs(data?.created_at);
     const startedAtMs = getTimeMs(metadata?.startedAt);

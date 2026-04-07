@@ -449,7 +449,6 @@ async function createPendingGeneration({
     mode: "consistency",
     ratio: mapSizeToAspectRatio(size),
     style: "photorealistic",
-    status: "processing",
     metadata: {
       state: "processing",
       progressStage: "queued",
@@ -526,7 +525,6 @@ async function runGenerationJob(generationId, payload) {
     let debug = null;
 
     await updateGenerationJob(generationId, {
-      status: "processing",
       metadata: {
         state: "processing",
         progressStage: "running",
@@ -582,7 +580,6 @@ async function runGenerationJob(generationId, payload) {
     }
 
     await updateGenerationJob(generationId, {
-      status: "completed",
       images: dedupedResults.map((item) => item.url).filter(Boolean),
       metadata: {
         state: "completed",
@@ -605,7 +602,6 @@ async function runGenerationJob(generationId, payload) {
     console.error("Consistency background job error:", error);
 
     await updateGenerationJob(generationId, {
-      status: "failed",
       metadata: {
         state: "failed",
         progressStage: "failed",
