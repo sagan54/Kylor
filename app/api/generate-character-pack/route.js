@@ -1496,8 +1496,15 @@ function shouldRejectScore(score, thresholds, viewType) {
   if (score.wrongShot) return true;
   if (score.hairMismatch) return true;
 
-  if (viewType === IMAGE_TYPES.LEFT && score.facingDirection !== "left") return true;
-  if (viewType === IMAGE_TYPES.RIGHT && score.facingDirection !== "right") return true;
+  const facing = String(score.facingDirection || "").toLowerCase();
+  const hasKnownFacing =
+    facing === "left" ||
+    facing === "right" ||
+    facing === "front" ||
+    facing === "back";
+
+  if (viewType === IMAGE_TYPES.LEFT && hasKnownFacing && facing !== "left") return true;
+  if (viewType === IMAGE_TYPES.RIGHT && hasKnownFacing && facing !== "right") return true;
 
   if (
   (viewType === IMAGE_TYPES.LEFT || viewType === IMAGE_TYPES.RIGHT) &&
@@ -1506,8 +1513,8 @@ function shouldRejectScore(score, thresholds, viewType) {
   return true;
 }
 
-  if (viewType === IMAGE_TYPES.FRONT && score.facingDirection !== "front") return true;
-  if (viewType === IMAGE_TYPES.BACK && score.facingDirection !== "back") return true;
+  if (viewType === IMAGE_TYPES.FRONT && hasKnownFacing && facing !== "front") return true;
+  if (viewType === IMAGE_TYPES.BACK && hasKnownFacing && facing !== "back") return true;
 
   // Back view should NOT fail just because face is not visible
   if (viewType !== IMAGE_TYPES.BACK && score.faceNotVisible) return true;
@@ -1521,6 +1528,36 @@ function shouldRejectScore(score, thresholds, viewType) {
   if (score.finalScore < thresholds.minFinalScore) return true;
 
   return false;
+}
+
+function shouldSoftAcceptScore(score, thresholds, viewType) {
+  if (!score || !thresholds) return false;
+
+  const facing = String(score.facingDirection || "").toLowerCase();
+  const hasKnownFacing =
+    facing === "left" ||
+    facing === "right" ||
+    facing === "front" ||
+    facing === "back";
+
+  if (score.multiplePeople) return false;
+  if (score.wrongShot) return false;
+  if (score.faceNotVisible && viewType !== IMAGE_TYPES.BACK) return false;
+  if (score.identityDrift) return false;
+  if (score.hairMismatch) return false;
+
+  if (viewType === IMAGE_TYPES.LEFT && hasKnownFacing && facing !== "left") return false;
+  if (viewType === IMAGE_TYPES.RIGHT && hasKnownFacing && facing !== "right") return false;
+  if (viewType === IMAGE_TYPES.FRONT && hasKnownFacing && facing !== "front") return false;
+  if (viewType === IMAGE_TYPES.BACK && hasKnownFacing && facing !== "back") return false;
+
+  if (score.identityScore < Math.max(5.8, thresholds.minIdentityScore - 1.2)) return false;
+  if (score.shotScore < Math.max(5.8, thresholds.minShotScore - 1.2)) return false;
+  if (score.compositionScore < Math.max(5.6, thresholds.minCompositionScore - 1.0)) return false;
+  if (score.qualityScore < Math.max(5.6, thresholds.minQualityScore - 1.0)) return false;
+  if (score.finalScore < Math.max(5.9, thresholds.minFinalScore - 1.2)) return false;
+
+  return true;
 }
 
 function getReferencePriority(viewType) {
@@ -2550,6 +2587,16 @@ async function scoreGeneratedView({
   const thresholdFailureReasons = getThresholdFailureReasons(normalized, thresholds);
 
   if (shouldRejectScore(normalized, thresholds, viewType)) {
+    if (shouldSoftAcceptScore(normalized, thresholds, viewType)) {
+      return {
+        ...normalized,
+        accepted: true,
+        thresholds,
+        thresholdFailureReasons: getThresholdFailureReasons(normalized, thresholds),
+        reason: normalized.reason || "soft_accept_borderline_score",
+      };
+    }
+
     return {
       ...normalized,
       accepted: false,
