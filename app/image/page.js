@@ -40,6 +40,14 @@ const SESSION_KEY = "kylor_img_cache_v2";
 const CHAR_SESSION_KEY = "kylor_img_chars_cache_v2";
 const PENDING_GENERATIONS_KEY = "kylor_pending_generations_v1";
 
+function isImagePageGroup(group) {
+  return String(group?.mode || "").toLowerCase() !== "character_pack";
+}
+
+function sanitizeImagePageGroups(groups) {
+  return Array.isArray(groups) ? groups.filter(isImagePageGroup) : [];
+}
+
 function loadPendingGenerations() {
   try {
     const raw = localStorage.getItem(PENDING_GENERATIONS_KEY);
@@ -80,6 +88,7 @@ async function sbLoadAll(userId) {
     .from("image_generations")
     .select("id, prompt, negative_prompt, images, created_at, mode, ratio, style")
     .eq("user_id", userId)
+    .neq("mode", "character_pack")
     .order("created_at", { ascending: false })
     .limit(24);
 
@@ -90,7 +99,7 @@ async function sbLoadAll(userId) {
 
   console.log("sbLoadAll result:", data);
 
-  return (data || []).map((row) => ({
+  return sanitizeImagePageGroups((data || []).map((row) => ({
     id: row.id,
     prompt: row.prompt,
     negativePrompt: row.negative_prompt,
@@ -119,7 +128,7 @@ async function sbLoadAll(userId) {
           return { url: null, starred: false };
         })
       : [],
-  }));
+  })));
 }
 
 async function sbSaveGroup(group, userId) {
@@ -1649,7 +1658,7 @@ const characterPrompt = [
         if (raw) {
           const cached = JSON.parse(raw);
           if (mounted && Array.isArray(cached) && cached.length > 0) {
-            setGroups(cached);
+            setGroups(sanitizeImagePageGroups(cached));
           }
         }
       } catch {}
@@ -1674,12 +1683,12 @@ const characterPrompt = [
       const fresh = await sbLoadAll(uid);
       if (!mounted) return;
       if (Array.isArray(fresh)) {
-        setGroups(fresh);
+        setGroups(sanitizeImagePageGroups(fresh));
       }
       setDbLoaded(true);
       if (Array.isArray(fresh)) {
         try {
-          localStorage.setItem(SESSION_KEY, JSON.stringify(fresh));
+          localStorage.setItem(SESSION_KEY, JSON.stringify(sanitizeImagePageGroups(fresh)));
         } catch {}
       }
     }
@@ -1701,12 +1710,12 @@ const characterPrompt = [
       const fresh = await sbLoadAll(uid);
       if (!mounted) return;
       if (Array.isArray(fresh)) {
-        setGroups(fresh);
+        setGroups(sanitizeImagePageGroups(fresh));
       }
       setDbLoaded(true);
       if (Array.isArray(fresh)) {
         try {
-          localStorage.setItem(SESSION_KEY, JSON.stringify(fresh));
+          localStorage.setItem(SESSION_KEY, JSON.stringify(sanitizeImagePageGroups(fresh)));
         } catch {}
       }
     });
@@ -1731,12 +1740,12 @@ const characterPrompt = [
 
   function syncCache(updatedGroups) {
     try {
-      localStorage.setItem(SESSION_KEY, JSON.stringify(updatedGroups));
+      localStorage.setItem(SESSION_KEY, JSON.stringify(sanitizeImagePageGroups(updatedGroups)));
     } catch {}
   }
 
   function mergeGenerationGroup(group) {
-    if (!group?.id) return;
+    if (!group?.id || !isImagePageGroup(group)) return;
     setGroups((prev) => {
       const exists = prev.some((item) => String(item.id) === String(group.id));
       const next = exists
