@@ -2,8 +2,10 @@ import { task } from "@trigger.dev/sdk/v3";
 import { createClient } from "@supabase/supabase-js";
 import { fal } from "@fal-ai/client";
 import {
+  buildCameraRealismBlock,
   buildExpressionNegativeBlock,
   buildLightingNegativeBlock,
+  buildMicroDetailBlock,
   buildRealismLightingBlock,
   buildSceneIntegrationBlock,
   buildSkinRealismBlock,
@@ -248,6 +250,8 @@ function buildSeedreamPrompt({
   const lightingBlock = buildRealismLightingBlock(sceneText, style || "");
   const sceneIntegrationBlock = buildSceneIntegrationBlock(sceneText, style || "");
   const skinRealismBlock = buildSkinRealismBlock(sceneText, style || "");
+  const cameraRealismBlock = buildCameraRealismBlock();
+  const microDetailBlock = buildMicroDetailBlock();
   const avoidBlock = [
     "different person",
     "identity drift",
@@ -299,6 +303,12 @@ ${sceneIntegrationBlock}
 
 Skin realism:
 ${skinRealismBlock}
+
+Camera realism:
+${cameraRealismBlock}
+
+Micro detail:
+${microDetailBlock}
 
 Scene:
 ${sceneText}
