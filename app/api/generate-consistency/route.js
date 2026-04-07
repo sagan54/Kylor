@@ -1,18 +1,28 @@
-import Replicate from "replicate";
+import { fal } from "@fal-ai/client";
 import { IMAGE_TYPES, IMAGE_ORDER, PACK_VIEWS } from "../../../lib/character-constants";
 import { createClient } from "@supabase/supabase-js";
 import { after } from "next/server";
-
-const replicate = new Replicate({
-  auth: process.env.REPLICATE_API_TOKEN,
-});
+import {
+  buildExpressionBlock,
+  buildExpressionNegativeBlock,
+  buildLightingBlock,
+  buildLightingNegativeBlock,
+  buildRealismBlock,
+  buildRealismLightingBlock,
+  buildSceneIntegrationBlock,
+  buildSkinRealismBlock,
+} from "../../../lib/image-generation-rules";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-const MODEL = "bytedance/seedream-5-lite";
+fal.config({
+  credentials: process.env.FAL_KEY,
+});
+
+const MODEL = "fal-ai/bytedance/seedream/v4.5/edit";
 const STORAGE_BUCKET = "character-refs";
 const JOB_TIMEOUT_MS = 90 * 1000;
 
@@ -38,28 +48,15 @@ function mapSizeToAspectRatio(size) {
   }
 }
 
-async function fileOutputToUrl(output) {
-  if (!output) return null;
+function extractFalImageUrl(result) {
+  const image =
+    result?.data?.images?.[0] ||
+    result?.data?.image ||
+    result?.images?.[0] ||
+    result?.image ||
+    null;
 
-  if (typeof output === "string") return output;
-
-  if (Array.isArray(output)) {
-    const first = output[0];
-    if (!first) return null;
-
-    if (typeof first === "string") return first;
-    if (typeof first.url === "function") return await first.url();
-    if (typeof first.url === "string") return first.url;
-
-    const s = typeof first.toString === "function" ? first.toString() : null;
-    return s && s !== "[object Object]" ? s : null;
-  }
-
-  if (typeof output.url === "function") return await output.url();
-  if (typeof output.url === "string") return output.url;
-
-  const s = typeof output.toString === "function" ? output.toString() : null;
-  return s && s !== "[object Object]" ? s : null;
+  return image?.url || null;
 }
 
 function detectViewType(prompt = "") {
@@ -239,8 +236,10 @@ function buildNegativeBlock(negativePrompt = "", viewType = "auto") {
     "different hairline",
     "different skin tone",
     "beauty filter",
+    "airbrushed skin",
     "plastic skin",
     "waxy skin",
+    "excessive skin smoothing",
     "cgi look",
     "3d render",
     "stylized face",
@@ -258,6 +257,7 @@ function buildNegativeBlock(negativePrompt = "", viewType = "auto") {
     "character sheet",
     "text",
     "watermark",
+    "emotion mismatch",
   ];
 
   if (
@@ -285,14 +285,20 @@ function buildFinalPrompt({
 }) {
   const identityBlock = buildIdentityLockBlock(hasRefs, strictIdentity);
   const shotBlock = buildShotInstruction(viewType);
-  const negativeBlock = buildNegativeBlock(negativePrompt, viewType);
-
-  const realismBlock = [
-    "Highly realistic human photography.",
-    "Natural skin texture, natural pores, realistic hair strands, realistic facial detail.",
-    "Grounded lighting, physically believable skin and hair.",
-    "No over-stylization.",
-  ].join(" ");
+  const safePrompt = String(prompt || "").trim();
+  const lightingBlock = buildLightingBlock(safePrompt);
+  const realismLightingBlock = buildRealismLightingBlock(safePrompt);
+  const sceneIntegrationBlock = buildSceneIntegrationBlock(safePrompt);
+  const skinRealismBlock = buildSkinRealismBlock(safePrompt);
+  const realismBlock = buildRealismBlock(safePrompt);
+  const expressionBlock = buildExpressionBlock(safePrompt);
+  const negativeBlock = [
+    buildNegativeBlock(negativePrompt, viewType),
+    buildLightingNegativeBlock(safePrompt),
+    buildExpressionNegativeBlock(safePrompt),
+  ]
+    .filter(Boolean)
+    .join(", ");
 
   const strictBlock = strictIdentity
     ? [
@@ -308,8 +314,13 @@ function buildFinalPrompt({
     identityBlock,
     strictBlock,
     shotBlock,
+    lightingBlock,
+    realismLightingBlock,
+    sceneIntegrationBlock,
+    skinRealismBlock,
     realismBlock,
-    `User request: ${String(prompt || "").trim()}`,
+    expressionBlock,
+    `User request: ${safePrompt}`,
     `Avoid: ${negativeBlock}`,
   ]
     .filter(Boolean)
@@ -331,7 +342,7 @@ async function savePermanentImage({ imageUrl, userId = "anonymous", folder = "co
 
   const response = await fetch(imageUrl);
   if (!response.ok) {
-    throw new Error(`Failed to download Replicate image: ${response.status}`);
+    throw new Error(`Failed to download generated image: ${response.status}`);
   }
 
   const contentType = response.headers.get("content-type") || "image/png";
@@ -385,23 +396,23 @@ const finalPrompt = buildFinalPrompt({
   const input = hasRefs
     ? {
         prompt: finalPrompt,
-        aspect_ratio,
-        size: seedreamSize,
-        output_format: "png",
-        image_input: refs,
+        image_size: seedreamSize,
+        num_images: 1,
+        image_urls: refs,
+        sync_mode: true,
       }
     : {
         prompt: finalPrompt,
-        aspect_ratio,
-        size: seedreamSize,
-        output_format: "png",
+        image_size: seedreamSize,
+        num_images: 1,
+        sync_mode: true,
       };
 
-  const output = await replicate.run(MODEL, { input });
-  const tempUrl = await fileOutputToUrl(output);
+  const output = await fal.subscribe(MODEL, { input });
+  const tempUrl = extractFalImageUrl(output);
 
   if (!tempUrl) {
-    throw new Error("No image URL returned from Replicate");
+    throw new Error("No image URL returned from fal");
   }
 
   const permanentUrl = await savePermanentImage({
@@ -503,11 +514,14 @@ async function updateGenerationJob(generationId, patch) {
 
 function mapSizeToSeedreamSize(size) {
   switch (size) {
+    case "1024x1024":
+      return "square_hd";
     case "1536x1024":
+      return "landscape_16_9";
     case "1024x1536":
-      return "3K";
+      return "portrait_4_3";
     default:
-      return "2K";
+      return "square_hd";
   }
 }
 
@@ -588,7 +602,7 @@ async function runGenerationJob(generationId, payload) {
       throw new Error(
         timedOut
           ? "Generation timed out before any completed image was produced."
-          : lastError?.message || "No image returned from Replicate"
+          : lastError?.message || "No image returned from fal"
       );
     }
 

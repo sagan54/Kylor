@@ -1,6 +1,14 @@
 import { task } from "@trigger.dev/sdk/v3";
 import { createClient } from "@supabase/supabase-js";
 import { fal } from "@fal-ai/client";
+import {
+  buildExpressionNegativeBlock,
+  buildLightingNegativeBlock,
+  buildRealismLightingBlock,
+  buildSceneIntegrationBlock,
+  buildSkinRealismBlock,
+  inferSceneExpression,
+} from "../lib/image-generation-rules.js";
 
 type GenerateImagePayload = {
   generationId: string;
@@ -226,6 +234,9 @@ function buildSeedreamPrompt({
   referenceUrls?: string[];
 }) {
   const charName = characterName || "the same character";
+  const sceneText = String(
+    scenePrompt || finalPrompt || "Create a cinematic photorealistic scene."
+  ).trim();
   const figureGuide =
     referenceUrls.length > 0
       ? referenceUrls.map((_, idx) => `Figure ${idx + 1}`).join(", ")
@@ -233,6 +244,22 @@ function buildSeedreamPrompt({
   const resolvedCharacterPrompt = String(
     characterPrompt || `Exact identity lock for ${charName}.`
   ).trim();
+  const expression = inferSceneExpression(sceneText, style || "");
+  const lightingBlock = buildRealismLightingBlock(sceneText, style || "");
+  const sceneIntegrationBlock = buildSceneIntegrationBlock(sceneText, style || "");
+  const skinRealismBlock = buildSkinRealismBlock(sceneText, style || "");
+  const avoidBlock = [
+    "different person",
+    "identity drift",
+    "rear view",
+    "extreme side profile",
+    "tiny face",
+    "distant subject",
+    buildLightingNegativeBlock(sceneText, style || ""),
+    buildExpressionNegativeBlock(sceneText, style || ""),
+  ]
+    .filter(Boolean)
+    .join(", ");
 
   return `
 Use ${figureGuide} as reference images of the SAME real person.
@@ -255,14 +282,26 @@ Face visibility rules:
 - Face must remain clearly visible and readable.
 - Eyes, nose, mouth, jawline, and full facial structure must remain unobstructed.
 - No silhouette and no back-facing angle.
-- No heavy fog, smoke, rain streaks, hair, props, or shadows covering the face.
+- No heavy fog, smoke, rain streaks, hair, or props completely hiding the face.
 - Prefer front-facing or slight 3/4 view.
 - Use eye-level framing.
 - Use medium shot or medium close-up framing.
-- Keep the face well-lit while preserving cinematic mood.
+
+Expression:
+${expression.guidance}
+Default away from happiness unless the scene explicitly suggests joy.
+
+Lighting realism:
+${lightingBlock}
+
+Scene integration:
+${sceneIntegrationBlock}
+
+Skin realism:
+${skinRealismBlock}
 
 Scene:
-${scenePrompt || finalPrompt || "Create a cinematic photorealistic scene."}
+${sceneText}
 
 Style:
 ${style || "cinematic photorealistic still frame"}
@@ -271,10 +310,10 @@ Aspect ratio:
 ${ratio || "16:9"}
 
 Quality:
-photorealistic, natural skin texture, realistic lighting, realistic eyes, cinematic composition, grounded atmosphere, one main subject only, no plastic skin, no beauty filter.
+photorealistic, realistic lighting interaction, realistic eyes, cinematic composition, grounded atmosphere, one main subject only.
 
 Avoid:
-different person, identity drift, silhouette, hidden face, fog covering face, backlit face, face in shadow, rear view, extreme side profile, tiny face, distant subject.
+${avoidBlock}
 `.trim();
 }
 

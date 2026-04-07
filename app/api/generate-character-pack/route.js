@@ -1,35 +1,23 @@
-import Replicate from "replicate";
+import { fal } from "@fal-ai/client";
 import { createClient } from "@supabase/supabase-js";
 import { IMAGE_TYPES, IMAGE_ORDER, PACK_VIEWS } from "../../../lib/character-constants";
 import { after } from "next/server";
-
-const replicate = new Replicate({
-  auth: process.env.REPLICATE_API_TOKEN,
-});
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
+fal.config({
+  credentials: process.env.FAL_KEY,
+});
+
 const JOB_TIMEOUT_MS = 90 * 1000;
+const MODEL = "fal-ai/bytedance/seedream/v4.5/edit";
 
 function getModelForView(viewType) {
-  switch (viewType) {
-    case IMAGE_TYPES.FRONT:
-    case IMAGE_TYPES.CLOSEUP:
-      return "black-forest-labs/flux-2-pro";
-
-    case IMAGE_TYPES.LEFT:
-    case IMAGE_TYPES.RIGHT:
-      return "black-forest-labs/flux-2-pro";
-
-    case IMAGE_TYPES.BACK:
-      return "black-forest-labs/flux-2-dev";
-
-    default:
-      return "black-forest-labs/flux-2-pro";
-  }
+  void viewType;
+  return MODEL;
 }
 
 function shouldEvaluateViewOnFirstPass(viewType) {
@@ -105,7 +93,7 @@ function nowMs() {
   return Date.now();
 }
 
-function isReplicateRateLimitError(err) {
+function isProviderRateLimitError(err) {
   const msg = String(err?.message || err || "").toLowerCase();
   return (
     msg.includes("rate limit") ||
@@ -114,20 +102,22 @@ function isReplicateRateLimitError(err) {
   );
 }
 
-function isReplicateBillingError(err) {
+function isProviderBillingError(err) {
   const msg = String(err?.message || err || "").toLowerCase();
   return (
     msg.includes("insufficient credit") ||
+    msg.includes("credits") ||
+    msg.includes("balance") ||
     msg.includes("payment required") ||
     msg.includes("402")
   );
 }
 
 function shouldStopPackEarly(err) {
-  return isReplicateRateLimitError(err) || isReplicateBillingError(err);
+  return isProviderRateLimitError(err) || isProviderBillingError(err);
 }
 
-async function runReplicateWithBackoff(fn, maxRetries = 2) {
+async function runProviderWithBackoff(fn, maxRetries = 2) {
   let lastError;
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
@@ -139,13 +129,13 @@ async function runReplicateWithBackoff(fn, maxRetries = 2) {
     } catch (err) {
       lastError = err;
 
-      if (isReplicateBillingError(err)) {
+      if (isProviderBillingError(err)) {
         throw new Error(
-          "Replicate credit/billing issue. Wait a few minutes after adding credit, then try again."
+          "fal credit/billing issue. Wait a few minutes after adding credit, then try again."
         );
       }
 
-      if (!isReplicateRateLimitError(err) || attempt === maxRetries) {
+      if (!isProviderRateLimitError(err) || attempt === maxRetries) {
         throw err;
       }
     }
@@ -176,49 +166,33 @@ function getViewPrompt(viewKey) {
   }
 }
 
-async function fileOutputToUrl(output) {
-  if (!output) return null;
+function extractFalImageUrl(result) {
+  const image =
+    result?.data?.images?.[0] ||
+    result?.data?.image ||
+    result?.images?.[0] ||
+    result?.image ||
+    null;
 
-  // direct string
-  if (typeof output === "string") return output;
+  return image?.url || null;
+}
 
-  // array output
-  if (Array.isArray(output)) {
-    for (const item of output) {
-      const url = await fileOutputToUrl(item);
-      if (url) return url;
-    }
-    return null;
+function mapSizeToSeedreamImageSize(size) {
+  switch (String(size || "").toLowerCase()) {
+    case "1024x1024":
+    case "square":
+    case "1:1":
+      return "square_hd";
+    case "1536x1024":
+    case "landscape":
+    case "16:9":
+      return "landscape_16_9";
+    case "1024x1536":
+    case "portrait":
+    case "2:3":
+    default:
+      return "portrait_4_3";
   }
-
-  // Replicate FileOutput with url()
-  if (typeof output?.url === "function") {
-    const u = await output.url();
-    return typeof u === "string" ? u : String(u || "");
-  }
-
-  // plain object with url string
-  if (typeof output?.url === "string") {
-    return output.url;
-  }
-
-  // plain object with href
-  if (typeof output?.href === "string") {
-    return output.href;
-  }
-
-  // nested output field
-  if (output?.output) {
-    return await fileOutputToUrl(output.output);
-  }
-
-  // fallback string conversion
-  const s = String(output || "").trim();
-  if (s.startsWith("http://") || s.startsWith("https://")) {
-    return s;
-  }
-
-  return null;
 }
 
 function buildShotInstruction(viewType) {
@@ -2118,6 +2092,7 @@ const finalPrompt = [
   basePrompt,
   dnaIdentityBlock,
   lockedTraitsBlock,
+  finalNegativePrompt ? `Avoid: ${finalNegativePrompt}` : "",
 ].filter(Boolean).join("\n\n");
 
 const cleanedRefs = refs
@@ -2128,22 +2103,22 @@ const cleanedRefs = refs
 const input = cleanedRefs.length > 0
   ? {
       prompt: finalPrompt,
-      negative_prompt: finalNegativePrompt,
-      aspect_ratio,
-      output_format: "png",
-      input_images: cleanedRefs,
+      image_size: mapSizeToSeedreamImageSize(size),
+      num_images: 1,
+      image_urls: cleanedRefs,
+      sync_mode: true,
     }
   : {
       prompt: finalPrompt,
-      negative_prompt: finalNegativePrompt,
-      aspect_ratio,
-      output_format: "png",
+      image_size: mapSizeToSeedreamImageSize(size),
+      num_images: 1,
+      sync_mode: true,
     };
 
 const modelToUse = getModelForView(viewType);
 
-const output = await runReplicateWithBackoff(async () => {
-  console.log("REPLICATE DEBUG", {
+const output = await runProviderWithBackoff(async () => {
+  console.log("PROVIDER DEBUG", {
     model: modelToUse,
     viewType,
     refCount: cleanedRefs.length,
@@ -2151,21 +2126,20 @@ const output = await runReplicateWithBackoff(async () => {
     inputKeys: Object.keys(input),
   });
 
-  console.log("REPLICATE INPUT SUMMARY", {
+  console.log("PROVIDER INPUT SUMMARY", {
   viewType,
   model: modelToUse,
   refCount: cleanedRefs.length,
-  aspect_ratio,
   hasNegativePrompt: !!finalNegativePrompt,
   promptLength: finalPrompt.length,
 });
 
-  return await replicate.run(modelToUse, { input });
+  return await fal.subscribe(modelToUse, { input });
 }, 1);
 
-const tempUrl = await fileOutputToUrl(output);
+const tempUrl = extractFalImageUrl(output);
 
-console.log("REPLICATE OUTPUT DEBUG", {
+console.log("PROVIDER OUTPUT DEBUG", {
   model: modelToUse,
   viewType,
   tempUrl,
@@ -3260,11 +3234,14 @@ console.log("PACK FAILURE SUMMARY", {
   console.log("FAILED VIEW DEBUG:", JSON.stringify(failedDebug, null, 2));
 
   if (
+    failedReasons.toLowerCase().includes("credit") ||
+    failedReasons.toLowerCase().includes("credits") ||
+    failedReasons.toLowerCase().includes("balance") ||
     failedReasons.includes("Insufficient credit") ||
     failedReasons.includes("Payment Required")
   ) {
     throw new Error(
-      "Replicate credit is insufficient. Add billing credit, wait a few minutes, and try again."
+      "fal credit is insufficient. Add billing credit, wait a few minutes, and try again."
     );
   }
 
@@ -3273,7 +3250,7 @@ console.log("PACK FAILURE SUMMARY", {
     failedReasons.includes("429")
   ) {
     throw new Error(
-      "Replicate rate limit hit. Wait about 10 seconds and try again."
+      "fal rate limit hit. Wait about 10 seconds and try again."
     );
   }
 
