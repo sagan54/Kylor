@@ -1090,6 +1090,7 @@ function GenerationCard({
 }) {
   const [featuredIdx, setFeaturedIdx] = useState(0);
   const featured = group.images[featuredIdx];
+  const hasNegativePrompt = Boolean(String(group.negativePrompt || "").trim());
 
   return (
     <motion.div
@@ -1357,7 +1358,7 @@ function GenerationCard({
     title="Prompt"
     text={buildDisplayFinalPrompt(group)}
     accent={C.textMuted}
-    height={220}
+    height={hasNegativePrompt ? 220 : 370}
   />
 
   <FixedPromptBox
@@ -1440,7 +1441,7 @@ export default function ImagePage() {
   const [favoritesOnly, setFavoritesOnly] = useState(false);
   const [prompt, setPrompt] = useState("");
   const [scenePrompt, setScenePrompt] = useState("");
-  const charLimit = 500;
+  const charLimit = 1500;
   const [negativeOpen, setNegativeOpen] = useState(false);
   const [negativePrompt, setNegativePrompt] = useState("");
   const [stylesOpen, setStylesOpen] = useState(false);
@@ -2585,7 +2586,7 @@ if (!newGroup) {
                     <div
                       style={{
                         width: "100%",
-                        maxHeight: 150,
+                        maxHeight: 68,
                         overflowY: "auto",
                         paddingRight: 4,
                         background: "transparent",
