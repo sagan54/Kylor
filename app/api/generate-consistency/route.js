@@ -12,7 +12,7 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-const MODEL = "black-forest-labs/flux-2-pro";
+const MODEL = "bytedance/seedream-5-lite";
 const STORAGE_BUCKET = "character-refs";
 const JOB_TIMEOUT_MS = 90 * 1000;
 
@@ -370,8 +370,9 @@ async function runSingleGeneration({
   userId,
 }) {
  const hasRefs = refs.length > 0;
-const aspect_ratio = mapSizeToAspectRatio(size);
+ const aspect_ratio = mapSizeToAspectRatio(size);
 const viewType = detectViewType(prompt);
+const seedreamSize = mapSizeToSeedreamSize(size);
 
 const finalPrompt = buildFinalPrompt({
   prompt,
@@ -385,12 +386,14 @@ const finalPrompt = buildFinalPrompt({
     ? {
         prompt: finalPrompt,
         aspect_ratio,
+        size: seedreamSize,
         output_format: "png",
-        reference_images: refs,
+        image_input: refs,
       }
     : {
         prompt: finalPrompt,
         aspect_ratio,
+        size: seedreamSize,
         output_format: "png",
       };
 
@@ -495,6 +498,16 @@ async function updateGenerationJob(generationId, patch) {
 
   if (error) {
     throw new Error(error.message || "Failed to update generation job");
+  }
+}
+
+function mapSizeToSeedreamSize(size) {
+  switch (size) {
+    case "1536x1024":
+    case "1024x1536":
+      return "3K";
+    default:
+      return "2K";
   }
 }
 

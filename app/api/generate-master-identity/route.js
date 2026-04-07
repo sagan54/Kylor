@@ -10,8 +10,12 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-const MODEL = "black-forest-labs/flux-2-pro";
+const MODEL = "bytedance/seedream-5-lite";
 const STORAGE_BUCKET = "character-refs";
+
+function getSeedreamSize() {
+  return "2K";
+}
 
 function normalizeReferenceImage(image) {
   if (!image || typeof image !== "string") return null;
@@ -206,12 +210,14 @@ async function runSingleCandidate({
       ? {
           prompt: finalPrompt,
           aspect_ratio: "2:3",
+          size: getSeedreamSize(),
           output_format: "png",
-          reference_images: refs,
+          image_input: refs,
         }
       : {
           prompt: finalPrompt,
           aspect_ratio: "2:3",
+          size: getSeedreamSize(),
           output_format: "png",
         };
 

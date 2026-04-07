@@ -12,25 +12,11 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-const MODEL = "black-forest-labs/flux-2-pro";
 const JOB_TIMEOUT_MS = 90 * 1000;
 
 function getModelForView(viewType) {
-  switch (viewType) {
-    case IMAGE_TYPES.FRONT:
-    case IMAGE_TYPES.CLOSEUP:
-      return "black-forest-labs/flux-2-pro";
-
-    case IMAGE_TYPES.LEFT:
-    case IMAGE_TYPES.RIGHT:
-      return "black-forest-labs/flux-2-pro";
-
-    case IMAGE_TYPES.BACK:
-      return "black-forest-labs/flux-2-dev";
-
-    default:
-      return "black-forest-labs/flux-2-pro";
-  }
+  void viewType;
+  return "bytedance/seedream-5-lite";
 }
 
 function shouldEvaluateViewOnFirstPass(viewType) {
@@ -1957,6 +1943,7 @@ async function runSingleGeneration({
 
   const hasRefs = refs.length > 0;
   const aspect_ratio = mapSizeToAspectRatio(size);
+  const seedreamSize = mapSizeToSeedreamSize(size);
 
   const referenceFusion = analyzeReferenceFusion({
     viewType,
@@ -1979,12 +1966,6 @@ const basePrompt = buildIntelligentPrompt({
   referenceFusion,
   packContextBlock,
 });
-
-const finalPrompt = [
-  basePrompt,
-  dnaIdentityBlock,
-  lockedTraitsBlock,
-].filter(Boolean).join("\n\n");
 
 const enforcedNegativePrompt = [
   negativePrompt,
@@ -2084,6 +2065,13 @@ const finalNegativePrompt = [
   viewSpecificNegativePrompt,
 ].filter(Boolean).join(", ");
 
+const finalPrompt = [
+  basePrompt,
+  dnaIdentityBlock,
+  lockedTraitsBlock,
+  finalNegativePrompt ? `Avoid: ${finalNegativePrompt}` : "",
+].filter(Boolean).join("\n\n");
+
 const cleanedRefs = refs
   .map((r) => normalizeReferenceImage(r))
   .filter(Boolean)
@@ -2092,15 +2080,15 @@ const cleanedRefs = refs
 const input = cleanedRefs.length > 0
   ? {
       prompt: finalPrompt,
-      negative_prompt: finalNegativePrompt,
       aspect_ratio,
+      size: seedreamSize,
       output_format: "png",
-      input_images: cleanedRefs,
+      image_input: cleanedRefs,
     }
   : {
       prompt: finalPrompt,
-      negative_prompt: finalNegativePrompt,
       aspect_ratio,
+      size: seedreamSize,
       output_format: "png",
     };
 
@@ -2777,6 +2765,16 @@ async function deleteExistingPackImages(characterId, userId) {
 
   if (error) {
     throw new Error(error.message || "Failed to clear previous pack images");
+  }
+}
+
+function mapSizeToSeedreamSize(size) {
+  switch (size) {
+    case "1536x1024":
+    case "1024x1536":
+      return "3K";
+    default:
+      return "2K";
   }
 }
 
