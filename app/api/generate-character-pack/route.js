@@ -15,8 +15,21 @@ const supabase = createClient(
 const JOB_TIMEOUT_MS = 90 * 1000;
 
 function getModelForView(viewType) {
-  void viewType;
-  return "bytedance/seedream-5-lite";
+  switch (viewType) {
+    case IMAGE_TYPES.FRONT:
+    case IMAGE_TYPES.CLOSEUP:
+      return "black-forest-labs/flux-2-pro";
+
+    case IMAGE_TYPES.LEFT:
+    case IMAGE_TYPES.RIGHT:
+      return "black-forest-labs/flux-2-pro";
+
+    case IMAGE_TYPES.BACK:
+      return "black-forest-labs/flux-2-dev";
+
+    default:
+      return "black-forest-labs/flux-2-pro";
+  }
 }
 
 function shouldEvaluateViewOnFirstPass(viewType) {
@@ -1943,7 +1956,6 @@ async function runSingleGeneration({
 
   const hasRefs = refs.length > 0;
   const aspect_ratio = mapSizeToAspectRatio(size);
-  const seedreamSize = mapSizeToSeedreamSize(size);
 
   const referenceFusion = analyzeReferenceFusion({
     viewType,
@@ -2069,7 +2081,6 @@ const finalPrompt = [
   basePrompt,
   dnaIdentityBlock,
   lockedTraitsBlock,
-  finalNegativePrompt ? `Avoid: ${finalNegativePrompt}` : "",
 ].filter(Boolean).join("\n\n");
 
 const cleanedRefs = refs
@@ -2080,15 +2091,15 @@ const cleanedRefs = refs
 const input = cleanedRefs.length > 0
   ? {
       prompt: finalPrompt,
+      negative_prompt: finalNegativePrompt,
       aspect_ratio,
-      size: seedreamSize,
       output_format: "png",
-      image_input: cleanedRefs,
+      input_images: cleanedRefs,
     }
   : {
       prompt: finalPrompt,
+      negative_prompt: finalNegativePrompt,
       aspect_ratio,
-      size: seedreamSize,
       output_format: "png",
     };
 
@@ -2765,16 +2776,6 @@ async function deleteExistingPackImages(characterId, userId) {
 
   if (error) {
     throw new Error(error.message || "Failed to clear previous pack images");
-  }
-}
-
-function mapSizeToSeedreamSize(size) {
-  switch (size) {
-    case "1536x1024":
-    case "1024x1536":
-      return "3K";
-    default:
-      return "2K";
   }
 }
 
