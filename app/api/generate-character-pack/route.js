@@ -158,7 +158,7 @@ async function runReplicateWithBackoff(fn, maxRetries = 2) {
 function getViewPrompt(viewKey) {
   switch (viewKey) {
     case IMAGE_TYPES.FRONT:
-      return "front-facing full body of the same exact person, standing straight, neutral pose, relaxed arms, centered composition, plain studio-like framing";
+      return "strict front-facing full body identity anchor of the same exact person, direct camera-facing head and torso, standing straight, neutral pose, relaxed arms, centered composition, full body visible from head to toe, clean neutral studio background, realistic front-view facial readability";
 
     case IMAGE_TYPES.LEFT:
       return "strict left side profile of the same exact person, full body, facing left, standing straight, neutral pose, relaxed arms, centered composition";
@@ -227,12 +227,15 @@ function buildShotInstruction(viewType) {
     case IMAGE_TYPES.FRONT:
       return [
         "Single person only.",
-        "Front-facing full body.",
+        "Strict front-facing full body.",
+        "Head, nose, chest, hips, knees, and feet must face directly toward camera.",
         "Standing straight, neutral pose, relaxed arms.",
         "Face clearly visible and highly recognizable.",
         "Preserve exact facial identity.",
         "Full body visible from head to toe.",
         "Centered composition.",
+        "Use this image as a clean front identity anchor for the pack.",
+        "No three-quarter angle, no semi-profile, no partial side turn.",
       ].join(" ");
 
 case IMAGE_TYPES.LEFT:
@@ -876,6 +879,13 @@ function buildAdaptiveIdentityBlock({
     );
   }
 
+  if (viewType === IMAGE_TYPES.FRONT) {
+    lines.push(
+      "Front view is the primary identity anchor for the pack.",
+      "Keep the face unmistakably the same person with direct camera-facing facial structure."
+    );
+  }
+
   if (viewType === IMAGE_TYPES.BACK) {
     lines.push(
       "For back view, preserve hairstyle, hair density, hair length, neck shape, shoulder width, body silhouette, and outfit continuity exactly."
@@ -953,7 +963,11 @@ if (viewType === IMAGE_TYPES.RIGHT) {
   }
 
   if (viewType === IMAGE_TYPES.FRONT) {
-    lines.push("Subject must face directly toward camera.");
+    lines.push(
+      "Subject must face directly toward camera.",
+      "Head must remain straight with no side turn.",
+      "Both eyes should be visible for a true front view."
+    );
   }
 
   if (intensity.shotWeight >= 1.2) {
@@ -993,6 +1007,12 @@ function buildAdaptiveCompositionBlock({
     lines.push(
       "Full body visible from head to toe.",
       "No cropped head, no cropped feet, no partial body cutoff."
+    );
+  }
+
+  if (viewType === IMAGE_TYPES.FRONT) {
+    lines.push(
+      "Keep the face readable and centered enough to function as the pack's main identity anchor."
     );
   }
 
@@ -1244,6 +1264,10 @@ function buildPackContextBlock({
 
   if (targetViewType === IMAGE_TYPES.CLOSEUP) {
     lines.push("For this repair, prioritize exact face match with accepted pack identity.");
+  }
+
+  if (targetViewType === IMAGE_TYPES.FRONT) {
+    lines.push("For this repair, prioritize a clean camera-facing identity anchor with exact facial match to the master reference.");
   }
 
   if (targetViewType === IMAGE_TYPES.BACK) {
@@ -2563,7 +2587,7 @@ let lastError = null;
 let lastScore = null;
 const basePrompt = getViewPrompt(failedView.type);
 
-const maxAttempts = 1;
+const maxAttempts = failedView.type === IMAGE_TYPES.FRONT ? 2 : 1;
 
 for (let attempt = 0; attempt < maxAttempts; attempt++) {
   try {
@@ -2911,7 +2935,7 @@ const referenceSelection = buildReferenceSet({
       let lastScore = null;
       const basePrompt = getViewPrompt(view.key);
 
-      const maxAttempts = 1;
+      const maxAttempts = view.key === IMAGE_TYPES.FRONT ? 2 : 1;
 
 for (let attempt = 0; attempt < maxAttempts; attempt++) {
         try {
