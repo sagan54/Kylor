@@ -353,6 +353,7 @@ Determine ONE primary failureType:
 - "none"
 
 Rules:
+ - If face shape, jawline, nose, eyes, hairline, or hairstyle clearly differs from the MASTER identity image, treat it as identity_drift
 - If identity does not match → identity_drift
 - If wrong angle or wrong facing direction → wrong_shot
 - If >1 person → multiple_people
@@ -832,6 +833,38 @@ function buildGlobalCharacterLockBlock() {
   ].join(" ");
 }
 
+function buildStableCharacterLockBlock() {
+  return [
+    "Hidden global character lock:",
+    "Preserve the same exact face, jawline, cheek structure, forehead, eye spacing, nose shape, lip shape, chin, ears, skin tone, hairstyle, hairline, sideburns, neck, shoulders, and body proportions in every pack view.",
+    "",
+    "Outfit lock:",
+    "The outfit must remain a plain white t-shirt and plain black pants in every generated pack view.",
+    "No logos, graphics, patterns, costume changes, printed shirt, or colored shirt.",
+    "Use reference images for identity only, not for clothing.",
+    "",
+    "Hair continuity lock:",
+    "Hairstyle, hair length, hair volume, hair density, hairline, sideburn shape, and overall hair silhouette must remain identical across all pack views.",
+    "Do not add extra hair mass, remove hair volume, change the parting, or alter the hairline unless clearly visible in the approved master identity.",
+    "",
+    "Background lock:",
+    "Background must be a clean neutral studio background with consistent simple lighting across all views.",
+    "Keep the background flat, non-distracting, and easy to evaluate.",
+    "",
+    "Skin realism lock:",
+    "Skin must stay natural and realistic with subtle real texture.",
+    "Do not beauty-retouch, airbrush, glamorize, polish, or beautify the face.",
+    "Do not invent new blemishes, acne, marks, or spots not visible in the master identity image.",
+    "Do not remove distinctive identity features visible in the master identity image.",
+    "",
+    "Side-profile direction lock:",
+    "LEFT profile and RIGHT profile must be true opposite directions.",
+    "LEFT profile must face left only.",
+    "RIGHT profile must face right only.",
+    "Do not duplicate the same side profile twice and do not mirror one side into the other.",
+  ].join(" ");
+}
+
 function buildAdaptiveIdentityBlock({
   hasRefs,
   viewType,
@@ -852,7 +885,8 @@ function buildAdaptiveIdentityBlock({
     lines.push(
       "This must remain the SAME EXACT person from the reference images.",
       "Do not generate a similar person. Do not reinterpret identity.",
-      "Preserve exact face shape, skull shape, jawline, cheek structure, forehead, brow line, eyebrow shape, eye shape, eyelids, nose bridge, nose tip, nostrils, lips, chin, ears, skin tone, hairstyle, hairline, and body proportions."
+      "Preserve exact face shape, skull shape, jawline, cheek structure, forehead, brow line, eyebrow shape, eye shape, eyelids, nose bridge, nose tip, nostrils, lips, chin, ears, skin tone, hairstyle, hairline, and body proportions.",
+      "Master reference identity overrides any generic beauty, fashion, or portrait tendencies from the model."
     );
   }
 
@@ -881,6 +915,10 @@ function buildAdaptiveIdentityBlock({
       "For back view, preserve hairstyle, hair density, hair length, neck shape, shoulder width, body silhouette, and outfit continuity exactly."
     );
   }
+
+  lines.push(
+    "Hair consistency is mandatory. Keep the same hairline, front hair shape, side volume, crown volume, and sideburn structure across every view."
+  );
 
   if (failureType === "identity_drift") {
     lines.push(
@@ -1160,6 +1198,9 @@ function buildReferenceFusionBlock({
     lines.push(
       "Use the master image as the root identity anchor."
     );
+    lines.push(
+      "MASTER reference has highest authority for face shape, hairline, hairstyle, sideburns, skin tone, and recognizable likeness."
+    );
   }
 
   if (fusion.hasFront) {
@@ -1300,11 +1341,8 @@ function buildIntelligentPrompt({
     "No CGI look, no 3D render look, no beauty-filtered skin.",
   ].join(" ");
 
-  const globalCharacterLockBlock = buildGlobalCharacterLockBlock();
-
-
 return [
-  globalCharacterLockBlock,
+  buildStableCharacterLockBlock(),
   identityBlock,
   shotBlock,
   compositionBlock,
