@@ -3911,18 +3911,47 @@ export async function POST(req) {
       },
     });
 
-    await tasks.trigger("generate-character-pack", {
-      generationId: pending.id,
-      characterId,
-      masterImage: normalizedMaster,
-      userId,
-      negativePrompt,
-    });
+    let dispatchMode = "trigger";
+
+    try {
+      await tasks.trigger("generate-character-pack", {
+        generationId: pending.id,
+        characterId,
+        masterImage: normalizedMaster,
+        userId,
+        negativePrompt,
+      });
+    } catch (triggerError) {
+      dispatchMode = "route_fallback";
+      console.error("PACK ROUTE TRIGGER DISPATCH FAILED, FALLING BACK:", triggerError);
+
+      await updateGenerationJob(pending.id, {
+        metadata: {
+          state: "processing",
+          progressStage: "fallback_started",
+          triggerDispatchError:
+            triggerError?.message || "Failed to enqueue Trigger task",
+          dispatchMode,
+        },
+      });
+
+      after(() =>
+        runGenerationJob(pending.id, {
+          characterId,
+          masterImage: normalizedMaster,
+          userId,
+          negativePrompt,
+        }).catch((err) => {
+          console.error("PACK ROUTE FALLBACK ERROR:", err);
+        })
+      );
+    }
 
     return Response.json({
       success: true,
       predictionId: pending.id,
       status: "processing",
+      dispatchMode,
     });
   } catch (error) {
     console.error("PACK ROUTE ERROR:", error);
