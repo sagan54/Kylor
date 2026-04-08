@@ -29,7 +29,6 @@ const GENERATION_VIEW_ORDER = [
   IMAGE_TYPES.LEFT,
   IMAGE_TYPES.RIGHT,
   IMAGE_TYPES.BACK,
-  IMAGE_TYPES.CLOSEUP,
 ];
 
 function getModelForView(viewType) {
@@ -2206,18 +2205,18 @@ async function buildDerivedPackAssets(finalResults = []) {
   const packMap = buildPackMap(finalResults);
   const leftSource = packMap[IMAGE_TYPES.LEFT]?.evalUrl || packMap[IMAGE_TYPES.LEFT]?.url;
   const rightSource = packMap[IMAGE_TYPES.RIGHT]?.evalUrl || packMap[IMAGE_TYPES.RIGHT]?.url;
-  const frontPortraitSource =
-    packMap[IMAGE_TYPES.CLOSEUP]?.evalUrl || packMap[IMAGE_TYPES.CLOSEUP]?.url;
   const frontSource = packMap[IMAGE_TYPES.FRONT]?.evalUrl || packMap[IMAGE_TYPES.FRONT]?.url;
   const backSource = packMap[IMAGE_TYPES.BACK]?.evalUrl || packMap[IMAGE_TYPES.BACK]?.url;
 
-  if (!leftSource || !rightSource || !frontPortraitSource || !frontSource || !backSource) {
+  if (!leftSource || !rightSource || !frontSource || !backSource) {
     return [];
   }
 
+  const frontPortraitBuffer = await buildPortraitFromFullBody(frontSource);
   const leftPortraitBuffer = await buildPortraitFromFullBody(leftSource);
   const rightPortraitBuffer = await buildPortraitFromFullBody(rightSource);
 
+  const frontPortraitUrl = `data:image/jpeg;base64,${frontPortraitBuffer.toString("base64")}`;
   const leftPortraitUrl = `data:image/jpeg;base64,${leftPortraitBuffer.toString("base64")}`;
   const rightPortraitUrl = `data:image/jpeg;base64,${rightPortraitBuffer.toString("base64")}`;
 
@@ -2227,13 +2226,30 @@ async function buildDerivedPackAssets(finalResults = []) {
     rightUrl: rightSource,
     backUrl: backSource,
     leftPortraitUrl,
-    frontPortraitUrl: frontPortraitSource,
+    frontPortraitUrl,
     rightPortraitUrl,
   });
 
-  const closeupScore = packMap[IMAGE_TYPES.CLOSEUP];
+  const frontScore = packMap[IMAGE_TYPES.FRONT];
 
   return [
+    {
+      type: IMAGE_TYPES.CLOSEUP,
+      label: PACK_VIEWS.find((view) => view.key === IMAGE_TYPES.CLOSEUP)?.label || IMAGE_TYPES.CLOSEUP,
+      evalUrl: frontPortraitUrl,
+      url: frontPortraitUrl,
+      sort_order: IMAGE_ORDER[IMAGE_TYPES.CLOSEUP],
+      accepted: true,
+      finalScore: frontScore?.finalScore ?? 8,
+      identityScore: frontScore?.identityScore ?? 8,
+      qualityScore: frontScore?.qualityScore ?? 8,
+      shotScore: frontScore?.shotScore ?? 8,
+      compositionScore: frontScore?.compositionScore ?? 8,
+      repairedInPass2: false,
+      repairedFromCohesion: false,
+      derived: true,
+      derivedBuffer: frontPortraitBuffer,
+    },
     {
       type: IMAGE_TYPES.CLOSEUP_LEFT,
       label: PACK_VIEWS.find((view) => view.key === IMAGE_TYPES.CLOSEUP_LEFT)?.label || IMAGE_TYPES.CLOSEUP_LEFT,
@@ -2241,11 +2257,11 @@ async function buildDerivedPackAssets(finalResults = []) {
       url: leftPortraitUrl,
       sort_order: IMAGE_ORDER[IMAGE_TYPES.CLOSEUP_LEFT],
       accepted: true,
-      finalScore: closeupScore?.finalScore ?? 8,
-      identityScore: closeupScore?.identityScore ?? 8,
-      qualityScore: closeupScore?.qualityScore ?? 8,
-      shotScore: closeupScore?.shotScore ?? 8,
-      compositionScore: closeupScore?.compositionScore ?? 8,
+      finalScore: frontScore?.finalScore ?? 8,
+      identityScore: frontScore?.identityScore ?? 8,
+      qualityScore: frontScore?.qualityScore ?? 8,
+      shotScore: frontScore?.shotScore ?? 8,
+      compositionScore: frontScore?.compositionScore ?? 8,
       repairedInPass2: false,
       repairedFromCohesion: false,
       derived: true,
@@ -2258,11 +2274,11 @@ async function buildDerivedPackAssets(finalResults = []) {
       url: rightPortraitUrl,
       sort_order: IMAGE_ORDER[IMAGE_TYPES.CLOSEUP_RIGHT],
       accepted: true,
-      finalScore: closeupScore?.finalScore ?? 8,
-      identityScore: closeupScore?.identityScore ?? 8,
-      qualityScore: closeupScore?.qualityScore ?? 8,
-      shotScore: closeupScore?.shotScore ?? 8,
-      compositionScore: closeupScore?.compositionScore ?? 8,
+      finalScore: frontScore?.finalScore ?? 8,
+      identityScore: frontScore?.identityScore ?? 8,
+      qualityScore: frontScore?.qualityScore ?? 8,
+      shotScore: frontScore?.shotScore ?? 8,
+      compositionScore: frontScore?.compositionScore ?? 8,
       repairedInPass2: false,
       repairedFromCohesion: false,
       derived: true,
