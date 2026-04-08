@@ -12,8 +12,27 @@ fal.config({
   credentials: process.env.FAL_KEY,
 });
 
-const JOB_TIMEOUT_MS = 90 * 1000;
+const JOB_TIMEOUT_MS = 4 * 60 * 1000;
 const MODEL = "fal-ai/bytedance/seedream/v4.5/edit";
+
+const REQUIRED_PACK_VIEWS = [
+  IMAGE_TYPES.FRONT,
+  IMAGE_TYPES.LEFT,
+  IMAGE_TYPES.RIGHT,
+  IMAGE_TYPES.BACK,
+  IMAGE_TYPES.CLOSEUP,
+];
+
+const GENERATION_VIEW_ORDER = [
+  IMAGE_TYPES.FRONT,
+  IMAGE_TYPES.LEFT,
+  IMAGE_TYPES.RIGHT,
+  IMAGE_TYPES.BACK,
+  IMAGE_TYPES.CLOSEUP,
+  IMAGE_TYPES.CLOSEUP_LEFT,
+  IMAGE_TYPES.CLOSEUP_RIGHT,
+  IMAGE_TYPES.SHEET,
+];
 
 function getModelForView(viewType) {
   void viewType;
@@ -3070,7 +3089,11 @@ console.log("🧠 Loaded character memory", {
     let maxReferenceCountUsed = 0;
 
 
-    for (const view of PACK_VIEWS) {
+    const generationViews = GENERATION_VIEW_ORDER
+      .map((key) => PACK_VIEWS.find((view) => view.key === key))
+      .filter(Boolean);
+
+    for (const view of generationViews) {
       if (nowMs() - routeStart >= JOB_TIMEOUT_MS) {
         timedOut = true;
         break;
@@ -3322,14 +3345,12 @@ const acceptedTypes = finalResults
   .filter((r) => r.accepted)
   .map((r) => r.type);
 
-const hasFront = acceptedTypes.includes(IMAGE_TYPES.FRONT);
-const hasLeft = acceptedTypes.includes(IMAGE_TYPES.LEFT);
-const hasRight = acceptedTypes.includes(IMAGE_TYPES.RIGHT);
-const hasCloseup = acceptedTypes.includes(IMAGE_TYPES.CLOSEUP);
-const hasBack = acceptedTypes.includes(IMAGE_TYPES.BACK); // optional only
+const missingRequiredViews = REQUIRED_PACK_VIEWS.filter(
+  (viewType) => !acceptedTypes.includes(viewType)
+);
 const partialCompletion = timedOut && acceptedTypes.length > 0;
 
-if (!partialCompletion && (!hasFront || !hasLeft || !hasRight || !hasCloseup)) {
+if (!partialCompletion && missingRequiredViews.length > 0) {
   const failedViews = finalResults
     .filter((r) => !r.accepted)
     .map((r) => r.type);
@@ -3344,11 +3365,7 @@ if (!partialCompletion && (!hasFront || !hasLeft || !hasRight || !hasCloseup)) {
 console.log("PACK FAILURE SUMMARY", {
   acceptedCount,
   totalViews,
-  hasFront,
-  hasLeft,
-  hasRight,
-  hasCloseup,
-  hasBack,
+  missingRequiredViews,
   failedViews,
 });
 
@@ -3391,7 +3408,7 @@ console.log("PACK FAILURE SUMMARY", {
   }
 
 throw new Error(
-  `Pack incomplete after repair pass. Required views missing. Accepted: ${acceptedTypes.join(", ")}. Failed: ${failedViews.join(", ")}`
+  `Pack incomplete after repair pass. Required views missing: ${missingRequiredViews.join(", ")}. Accepted: ${acceptedTypes.join(", ")}. Failed: ${failedViews.join(", ")}`
 );
 }
 
