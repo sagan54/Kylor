@@ -3248,6 +3248,232 @@ function serializePackResults(results = []) {
   }));
 }
 
+async function generatePackView({
+  view,
+  routeStart,
+  normalizedMaster,
+  baseAnchorRefs,
+  acceptedViewMap,
+  negativePrompt,
+  userId,
+  characterId,
+  frontImageUrl,
+  dnaIdentityBlock,
+  lockedTraitsBlock,
+}) {
+  if (nowMs() - routeStart >= JOB_TIMEOUT_MS) {
+    return {
+      timedOut: true,
+      result: null,
+      maxReferenceCountUsed: 0,
+    };
+  }
+
+  const size = view.size || "1024x1536";
+  const viewStart = nowMs();
+  console.log("VIEW START", { view: view.key });
+
+  const referenceSelection = buildReferenceSet({
+    viewType: view.key,
+    masterImage: normalizedMaster,
+    acceptedViewMap,
+    anchorRefs: baseAnchorRefs,
+  });
+
+  const currentRefs = referenceSelection.refs;
+  const rankedCandidates = referenceSelection.rankedCandidates;
+  const basePrompt = getViewPrompt(view.key);
+  const maxAttempts = 1;
+  let acceptedResult = null;
+  let lastError = null;
+  let lastScore = null;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      const generated = await runSingleGeneration({
+        prompt: basePrompt,
+        refs: currentRefs,
+        size,
+        negativePrompt,
+        strictIdentity: true,
+        userId,
+        characterId,
+        viewType: view.key,
+        attempt,
+        failureType: lastScore?.failureType || "none",
+        rankedCandidates,
+        selectedRefs: currentRefs,
+        acceptedViewMap,
+        dnaIdentityBlock,
+        lockedTraitsBlock,
+      });
+
+      console.log("VIEW GENERATED", {
+        view: view.key,
+        seconds: ((nowMs() - viewStart) / 1000).toFixed(2),
+      });
+
+      if (!generated?.imageUrl) {
+        throw new Error(`No image produced for ${view.key}`);
+      }
+
+      const validation = validateGeneratedView({
+        imageUrl: generated.imageUrl,
+        viewType: view.key,
+      });
+
+      if (!validation.ok) {
+        throw new Error(`Validation failed: ${validation.reason}`);
+      }
+
+      let score;
+
+      if (shouldEvaluateViewOnFirstPass(view.key)) {
+        score = await scoreGeneratedView({
+          imageUrl: generated.imageUrl,
+          masterImage: normalizedMaster,
+          frontImageUrl,
+          viewType: view.key,
+          attempt,
+          referenceFusion: generated.referenceFusion,
+        });
+
+        lastScore = score;
+
+        console.log("VIEW SCORED", {
+          view: view.key,
+          seconds: ((nowMs() - viewStart) / 1000).toFixed(2),
+          accepted: score.accepted,
+          finalScore: score.finalScore,
+        });
+
+        if (!score.accepted) {
+          throw new Error(score.reason || `Scoring failed for ${view.key}`);
+        }
+      } else {
+        score = {
+          accepted: true,
+          identityScore: 8,
+          shotScore: 8,
+          compositionScore: 8,
+          qualityScore: 8,
+          finalScore: 8,
+          multiplePeople: false,
+          wrongShot: false,
+          faceNotVisible: false,
+          identityDrift: false,
+          lowQuality: false,
+          failureType: "none",
+          reason: "first_pass_fast_accept",
+          thresholds: null,
+          thresholdFailureReasons: [],
+        };
+      }
+
+      acceptedResult = {
+        type: view.key,
+        label: view.label,
+        url: generated.tempUrl,
+        evalUrl: generated.tempUrl,
+        sort_order: IMAGE_ORDER[view.key],
+        accepted: true,
+        attemptsUsed: attempt + 1,
+        validationReason: validation.reason,
+        identityScore: score.identityScore,
+        shotScore: score.shotScore,
+        compositionScore: score.compositionScore,
+        qualityScore: score.qualityScore,
+        finalScore: score.finalScore,
+        multiplePeople: score.multiplePeople,
+        wrongShot: score.wrongShot,
+        faceNotVisible: score.faceNotVisible,
+        identityDrift: score.identityDrift,
+        lowQuality: score.lowQuality,
+        hairMismatch: score.hairMismatch,
+        facingDirection: score.facingDirection,
+        failureType: score.failureType,
+        scoreReason: score.reason,
+        generationAttempt: attempt,
+        referenceCount: generated.referenceCount,
+        referencesUsed: generated.referencesUsed,
+        referenceFusion: generated.referenceFusion,
+        thresholds: score.thresholds,
+        thresholdFailureReasons: score.thresholdFailureReasons,
+        selectedReferenceTypes: rankedCandidates
+          .filter((item) => currentRefs.includes(item.url))
+          .map((item) => item.type),
+        selectedReferenceScores: rankedCandidates
+          .filter((item) => currentRefs.includes(item.url))
+          .map((item) => ({
+            type: item.type,
+            finalScore: item.finalScore,
+            identityScore: item.identityScore,
+            qualityScore: item.qualityScore,
+          })),
+        repairedInPass2: false,
+        repairedFromCohesion: false,
+      };
+
+      break;
+    } catch (err) {
+      lastError = err;
+      console.error(`Attempt ${attempt + 1} failed for ${view.key}:`, err);
+
+      if (shouldStopPackEarly(err)) {
+        throw err;
+      }
+    }
+  }
+
+  if (!acceptedResult) {
+    return {
+      timedOut: false,
+      maxReferenceCountUsed: currentRefs.length,
+      result: {
+        type: view.key,
+        label: view.label,
+        url: null,
+        sort_order: IMAGE_ORDER[view.key],
+        accepted: false,
+        attemptsUsed: maxAttempts,
+        scoreReason: lastError?.message || `Failed to generate acceptable ${view.key}`,
+        failureType: lastScore?.failureType || "unknown",
+        thresholds: lastScore?.thresholds || null,
+        thresholdFailureReasons: lastScore?.thresholdFailureReasons || [],
+        referenceCount: currentRefs.length,
+        referencesUsed: currentRefs,
+        selectedReferenceTypes: rankedCandidates
+          .filter((item) => currentRefs.includes(item.url))
+          .map((item) => item.type),
+        selectedReferenceScores: rankedCandidates
+          .filter((item) => currentRefs.includes(item.url))
+          .map((item) => ({
+            type: item.type,
+            finalScore: item.finalScore,
+            identityScore: item.identityScore,
+            qualityScore: item.qualityScore,
+          })),
+        repairedInPass2: false,
+        repairedFromCohesion: false,
+      },
+    };
+  }
+
+  console.log("Success:", view.key, {
+    attemptsUsed: acceptedResult.attemptsUsed,
+    finalScore: acceptedResult.finalScore,
+    failureType: acceptedResult.failureType,
+    referenceCount: acceptedResult.referenceCount,
+    thresholds: acceptedResult.thresholds,
+  });
+
+  return {
+    timedOut: false,
+    maxReferenceCountUsed: currentRefs.length,
+    result: acceptedResult,
+  };
+}
+
 async function runGenerationJob(generationId, payload) {
   try {
     const {
@@ -3302,230 +3528,79 @@ console.log("🧠 Loaded character memory", {
     let frontImageUrl = null;
     let maxReferenceCountUsed = 0;
 
-
     const generationViews = GENERATION_VIEW_ORDER
       .map((key) => PACK_VIEWS.find((view) => view.key === key))
       .filter(Boolean);
 
-    for (const view of generationViews) {
-      if (nowMs() - routeStart >= JOB_TIMEOUT_MS) {
-        timedOut = true;
-        break;
+    const frontView = generationViews.find((view) => view.key === IMAGE_TYPES.FRONT);
+    if (!frontView) {
+      throw new Error("Front view configuration is missing.");
+    }
+
+    const frontRun = await generatePackView({
+      view: frontView,
+      routeStart,
+      normalizedMaster,
+      baseAnchorRefs,
+      acceptedViewMap,
+      negativePrompt,
+      userId,
+      characterId,
+      frontImageUrl: null,
+      dnaIdentityBlock,
+      lockedTraitsBlock,
+    });
+
+    if (frontRun.timedOut) {
+      timedOut = true;
+    } else if (frontRun.result) {
+      results.push(frontRun.result);
+      maxReferenceCountUsed = Math.max(maxReferenceCountUsed, frontRun.maxReferenceCountUsed);
+      if (frontRun.result.accepted && frontRun.result.url) {
+        acceptedViewMap[IMAGE_TYPES.FRONT] = frontRun.result;
+        frontImageUrl = frontRun.result.evalUrl || frontRun.result.url;
       }
+    }
 
-      const size = view.size || "1024x1536";
+    const remainingViews = generationViews.filter((view) => view.key !== IMAGE_TYPES.FRONT);
 
-  const viewStart = nowMs();
-  console.log("VIEW START", { view: view.key });
+    if (!timedOut && remainingViews.length > 0) {
+      const parallelRuns = await Promise.allSettled(
+        remainingViews.map((view) =>
+          generatePackView({
+            view,
+            routeStart,
+            normalizedMaster,
+            baseAnchorRefs,
+            acceptedViewMap,
+            negativePrompt,
+            userId,
+            characterId,
+            frontImageUrl,
+            dnaIdentityBlock,
+            lockedTraitsBlock,
+          })
+        )
+      );
 
-const referenceSelection = buildReferenceSet({
-  viewType: view.key,
-  masterImage: normalizedMaster,
-  acceptedViewMap,
-  anchorRefs: baseAnchorRefs,
-});
+      for (const run of parallelRuns) {
+        if (run.status === "rejected") {
+          throw run.reason;
+        }
 
-      const currentRefs = referenceSelection.refs;
-      const rankedCandidates = referenceSelection.rankedCandidates;
+        if (run.value.timedOut) {
+          timedOut = true;
+          continue;
+        }
 
-      maxReferenceCountUsed = Math.max(maxReferenceCountUsed, currentRefs.length);
-
-      console.log("Generating view:", view.key, {
-  refCount: currentRefs.length,
-  refs: currentRefs,
-  uploadedReferenceCount: uploadedReferenceUrls.length,
-  baseAnchorRefCount: baseAnchorRefs.length,
-});
-
-      let acceptedResult = null;
-      let lastError = null;
-      let lastScore = null;
-      const basePrompt = getViewPrompt(view.key);
-
-      const maxAttempts = 1;
-
-for (let attempt = 0; attempt < maxAttempts; attempt++) {
-        try {
-const generated = await runSingleGeneration({
-  prompt: basePrompt,
-  refs: currentRefs,
-  size,
-  negativePrompt,
-  strictIdentity: true,
-  userId,
-  characterId,
-  viewType: view.key,
-  attempt,
-  failureType: lastScore?.failureType || "none",
-  rankedCandidates,
-  selectedRefs: currentRefs,
-  acceptedViewMap,
-  dnaIdentityBlock,
-  lockedTraitsBlock,
-});
-
-console.log("VIEW GENERATED", {
-  view: view.key,
-  seconds: ((nowMs() - viewStart) / 1000).toFixed(2),
-});
-
-          if (!generated?.imageUrl) {
-            throw new Error(`No image produced for ${view.key}`);
+        if (run.value.result) {
+          results.push(run.value.result);
+          maxReferenceCountUsed = Math.max(maxReferenceCountUsed, run.value.maxReferenceCountUsed);
+          if (run.value.result.accepted && run.value.result.url) {
+            acceptedViewMap[run.value.result.type] = run.value.result;
           }
-
-          const validation = validateGeneratedView({
-            imageUrl: generated.imageUrl,
-            viewType: view.key,
-          });
-
-          if (!validation.ok) {
-            throw new Error(`Validation failed: ${validation.reason}`);
-          }
-
-          let score;
-
-          if (shouldEvaluateViewOnFirstPass(view.key)) {
-            score = await scoreGeneratedView({
-              imageUrl: generated.imageUrl,
-              masterImage: normalizedMaster,
-              frontImageUrl,
-              viewType: view.key,
-              attempt,
-              referenceFusion: generated.referenceFusion,
-            });
-
-            lastScore = score;
-
-console.log("VIEW SCORED", {
-  view: view.key,
-  seconds: ((nowMs() - viewStart) / 1000).toFixed(2),
-  accepted: score.accepted,
-  finalScore: score.finalScore,
-});
-
-            if (!score.accepted) {
-              throw new Error(score.reason || `Scoring failed for ${view.key}`);
-            }
-          } else {
-            score = {
-              accepted: true,
-              identityScore: 8,
-              shotScore: 8,
-              compositionScore: 8,
-              qualityScore: 8,
-              finalScore: 8,
-              multiplePeople: false,
-              wrongShot: false,
-              faceNotVisible: false,
-              identityDrift: false,
-              lowQuality: false,
-              failureType: "none",
-              reason: "first_pass_fast_accept",
-              thresholds: null,
-              thresholdFailureReasons: [],
-            };
-          }
-
-acceptedResult = {
-  type: view.key,
-  label: view.label,
-  url: generated.tempUrl,      // temporary for now
-  evalUrl: generated.tempUrl,  // evaluator/source URL
-  sort_order: IMAGE_ORDER[view.key],
-  accepted: true,
-  attemptsUsed: attempt + 1,
-  validationReason: validation.reason,
-  identityScore: score.identityScore,
-  shotScore: score.shotScore,
-  compositionScore: score.compositionScore,
-  qualityScore: score.qualityScore,
-  finalScore: score.finalScore,
-  multiplePeople: score.multiplePeople,
-  wrongShot: score.wrongShot,
-  faceNotVisible: score.faceNotVisible,
-  identityDrift: score.identityDrift,
-  lowQuality: score.lowQuality,
-  hairMismatch: score.hairMismatch,
-  facingDirection: score.facingDirection,
-  failureType: score.failureType,
-  scoreReason: score.reason,
-  generationAttempt: attempt,
-  referenceCount: generated.referenceCount,
-  referencesUsed: generated.referencesUsed,
-  referenceFusion: generated.referenceFusion,
-  thresholds: score.thresholds,
-  thresholdFailureReasons: score.thresholdFailureReasons,
-  selectedReferenceTypes: rankedCandidates
-    .filter((item) => currentRefs.includes(item.url))
-    .map((item) => item.type),
-  selectedReferenceScores: rankedCandidates
-    .filter((item) => currentRefs.includes(item.url))
-    .map((item) => ({
-      type: item.type,
-      finalScore: item.finalScore,
-      identityScore: item.identityScore,
-      qualityScore: item.qualityScore,
-    })),
-  repairedInPass2: false,
-  repairedFromCohesion: false,
-};
-
-          break;
-        } catch (err) {
-          lastError = err;
-          console.error(`Attempt ${attempt + 1} failed for ${view.key}:`, err);
-
-if (shouldStopPackEarly(err)) {
-  throw err;
-}
         }
       }
-
-      if (!acceptedResult) {
-        results.push({
-          type: view.key,
-          label: view.label,
-          url: null,
-          sort_order: IMAGE_ORDER[view.key],
-          accepted: false,
-          attemptsUsed: maxAttempts,
-          scoreReason: lastError?.message || `Failed to generate acceptable ${view.key}`,
-          failureType: lastScore?.failureType || "unknown",
-          thresholds: lastScore?.thresholds || null,
-          thresholdFailureReasons: lastScore?.thresholdFailureReasons || [],
-          referenceCount: currentRefs.length,
-          referencesUsed: currentRefs,
-          selectedReferenceTypes: rankedCandidates
-            .filter((item) => currentRefs.includes(item.url))
-            .map((item) => item.type),
-          selectedReferenceScores: rankedCandidates
-            .filter((item) => currentRefs.includes(item.url))
-            .map((item) => ({
-              type: item.type,
-              finalScore: item.finalScore,
-              identityScore: item.identityScore,
-              qualityScore: item.qualityScore,
-            })),
-          repairedInPass2: false,
-          repairedFromCohesion: false,
-        });
-        continue;
-      }
-
-      if (view.key === IMAGE_TYPES.FRONT) {
-        frontImageUrl = acceptedResult.evalUrl || acceptedResult.url;
-      }
-
-      acceptedViewMap[view.key] = acceptedResult;
-      results.push(acceptedResult);
-
-      console.log("Success:", view.key, {
-        attemptsUsed: acceptedResult.attemptsUsed,
-        finalScore: acceptedResult.finalScore,
-        failureType: acceptedResult.failureType,
-        referenceCount: acceptedResult.referenceCount,
-        thresholds: acceptedResult.thresholds,
-      });
     }
 
     let finalResults = results;
