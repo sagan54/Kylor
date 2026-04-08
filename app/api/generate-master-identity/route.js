@@ -1,8 +1,11 @@
 import { fal } from "@fal-ai/client";
 import { createClient } from "@supabase/supabase-js";
 import {
+  buildCameraRealismBlock,
   buildLightingNegativeBlock,
+  buildNegativeRealismBlock,
   buildRealismLightingBlock,
+  buildShadowInteractionBlock,
   buildSkinRealismBlock,
 } from "../../../lib/image-generation-rules";
 
@@ -101,6 +104,8 @@ function buildMasterIdentityPrompt({
 
   const realismLightingBlock = buildRealismLightingBlock(safePrompt || shotBlock);
   const skinRealismBlock = buildSkinRealismBlock(safePrompt || shotBlock);
+  const cameraRealismBlock = buildCameraRealismBlock();
+  const shadowInteractionBlock = buildShadowInteractionBlock();
   const realismBlock = [
     "Photorealistic real human portrait.",
     "Natural facial depth, grounded exposure, realistic hair strands, and physically believable portrait rendering.",
@@ -138,6 +143,7 @@ function buildMasterIdentityPrompt({
     "flat frontal lighting",
     "studio-lit face in a dark scene",
     buildLightingNegativeBlock(safePrompt || shotBlock),
+    buildNegativeRealismBlock(),
     "multiple people",
     "collage",
     "split screen",
@@ -154,6 +160,8 @@ function buildMasterIdentityPrompt({
     shotBlock,
     realismLightingBlock,
     skinRealismBlock,
+    cameraRealismBlock,
+    shadowInteractionBlock,
     realismBlock,
     `User request: ${safePrompt || "exact same real-person master identity portrait"}`,
     `Avoid: ${avoidBlock}`,

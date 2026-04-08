@@ -3,13 +3,16 @@ import { IMAGE_TYPES, IMAGE_ORDER, PACK_VIEWS } from "../../../lib/character-con
 import { createClient } from "@supabase/supabase-js";
 import { after } from "next/server";
 import {
+  buildCameraRealismBlock,
   buildExpressionBlock,
   buildExpressionNegativeBlock,
   buildLightingBlock,
   buildLightingNegativeBlock,
+  buildNegativeRealismBlock,
   buildRealismBlock,
   buildRealismLightingBlock,
   buildSceneIntegrationBlock,
+  buildShadowInteractionBlock,
   buildSkinRealismBlock,
 } from "../../../lib/image-generation-rules";
 
@@ -290,12 +293,15 @@ function buildFinalPrompt({
   const realismLightingBlock = buildRealismLightingBlock(safePrompt);
   const sceneIntegrationBlock = buildSceneIntegrationBlock(safePrompt);
   const skinRealismBlock = buildSkinRealismBlock(safePrompt);
+  const cameraRealismBlock = buildCameraRealismBlock();
+  const shadowInteractionBlock = buildShadowInteractionBlock();
   const realismBlock = buildRealismBlock(safePrompt);
   const expressionBlock = buildExpressionBlock(safePrompt);
   const negativeBlock = [
     buildNegativeBlock(negativePrompt, viewType),
     buildLightingNegativeBlock(safePrompt),
     buildExpressionNegativeBlock(safePrompt),
+    buildNegativeRealismBlock(),
   ]
     .filter(Boolean)
     .join(", ");
@@ -318,6 +324,8 @@ function buildFinalPrompt({
     realismLightingBlock,
     sceneIntegrationBlock,
     skinRealismBlock,
+    cameraRealismBlock,
+    shadowInteractionBlock,
     realismBlock,
     expressionBlock,
     `User request: ${safePrompt}`,

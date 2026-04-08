@@ -3,11 +3,14 @@ import { createClient } from "@supabase/supabase-js";
 import { fal } from "@fal-ai/client";
 import {
   buildCameraRealismBlock,
+  buildExpressionEnforcementBlock,
   buildExpressionNegativeBlock,
   buildLightingNegativeBlock,
   buildMicroDetailBlock,
+  buildNegativeRealismBlock,
   buildRealismLightingBlock,
   buildSceneIntegrationBlock,
+  buildShadowInteractionBlock,
   buildSkinRealismBlock,
   inferSceneExpression,
 } from "../lib/image-generation-rules.js";
@@ -251,6 +254,8 @@ function buildSeedreamPrompt({
   const sceneIntegrationBlock = buildSceneIntegrationBlock(sceneText, style || "");
   const skinRealismBlock = buildSkinRealismBlock(sceneText, style || "");
   const cameraRealismBlock = buildCameraRealismBlock();
+  const expressionEnforcementBlock = buildExpressionEnforcementBlock();
+  const shadowInteractionBlock = buildShadowInteractionBlock();
   const microDetailBlock = buildMicroDetailBlock();
   const avoidBlock = [
     "different person",
@@ -261,6 +266,7 @@ function buildSeedreamPrompt({
     "distant subject",
     buildLightingNegativeBlock(sceneText, style || ""),
     buildExpressionNegativeBlock(sceneText, style || ""),
+    buildNegativeRealismBlock(),
   ]
     .filter(Boolean)
     .join(", ");
@@ -268,11 +274,12 @@ function buildSeedreamPrompt({
   return `
 Use ${figureGuide} as reference images of the SAME real person.
 
-Highest priority:
+IDENTITY LOCK (STRICT):
 Keep the exact same facial identity of ${charName}.
 Do not create a different person.
 Do not beautify or alter facial structure.
 Keep the same face shape, eyes, nose, lips, jawline, hairline, hairstyle, skin tone, age impression, facial hair pattern, and recognizable likeness.
+Do not preserve the previous expression, mood, or facial muscle tension.
 
 Identity anchor:
 ${resolvedCharacterPrompt}
@@ -293,7 +300,11 @@ Face visibility rules:
 
 Expression:
 ${expression.guidance}
-Default away from happiness unless the scene explicitly suggests joy.
+Facial muscle behavior:
+${expression.muscleGuide}
+Expression emphasis:
+${expression.weighted}
+${expressionEnforcementBlock}
 
 Lighting realism:
 ${lightingBlock}
@@ -307,10 +318,13 @@ ${skinRealismBlock}
 Camera realism:
 ${cameraRealismBlock}
 
+Shadow interaction:
+${shadowInteractionBlock}
+
 Micro detail:
 ${microDetailBlock}
 
-Scene:
+SCENE PROMPT:
 ${sceneText}
 
 Style:
