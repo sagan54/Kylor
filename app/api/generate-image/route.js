@@ -12,6 +12,7 @@ const replicate = new Replicate({
 });
 
 const MAX_REFERENCE_IMAGES = 5;
+const SEEDREAM_MODEL = "fal-ai/bytedance/seedream/v4.5/edit";
 const MAX_PROMPT_LENGTH = 12000;
 const MAX_NEGATIVE_PROMPT_LENGTH = 6000;
 
@@ -478,10 +479,10 @@ export async function POST(req) {
         referenceCount: referenceUrls.length,
         referenceUrls,
         identityMode: usingCharacterMode
-          ? "character_prompt_flux"
+          ? "multi_reference_seedream"
           : "prompt_only_flux",
-        provider: "replicate",
-        model: FLUX_MODEL,
+        provider: usingCharacterMode ? "fal" : "replicate",
+        model: usingCharacterMode ? SEEDREAM_MODEL : FLUX_MODEL,
         remotePredictionId: null,
         remoteStatus: usingCharacterMode ? null : "starting",
         hasNegativePrompt: Boolean(negativePrompt),
@@ -638,11 +639,11 @@ export async function POST(req) {
         scenePrompt: scenePrompt || prompt || "",
         finalPrompt,
         characterPrompt,
-        provider: "replicate",
-        model: FLUX_MODEL,
+        provider: "fal",
+        model: SEEDREAM_MODEL,
         referenceCount: referenceUrls.length,
         referenceUrls,
-        identityMode: "character_prompt_flux",
+        identityMode: "multi_reference_seedream",
         hasNegativePrompt: Boolean(negativePrompt),
       },
     });
