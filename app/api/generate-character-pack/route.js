@@ -1,4 +1,5 @@
 import { fal } from "@fal-ai/client";
+import { tasks } from "@trigger.dev/sdk/v3";
 import { createClient } from "@supabase/supabase-js";
 import { IMAGE_TYPES, IMAGE_ORDER, PACK_VIEWS } from "../../../lib/character-constants";
 import { after } from "next/server";
@@ -3872,6 +3873,33 @@ export async function POST(req) {
       return Response.json({ error: "Invalid master image" }, { status: 400 });
     }
 
+    const { data: existingRows, error: existingError } = await supabase
+      .from("image_generations")
+      .select("id, metadata, created_at")
+      .eq("character_id", characterId)
+      .eq("user_id", userId)
+      .eq("mode", "character_pack")
+      .order("created_at", { ascending: false })
+      .limit(5);
+
+    if (existingError) {
+      console.warn("PACK ROUTE EXISTING JOB CHECK FAILED", existingError);
+    }
+
+    const activeJob = (existingRows || []).find((row) => {
+      const state = String(row?.metadata?.state || "").toLowerCase();
+      return state === "processing" || state === "queued" || state === "";
+    });
+
+    if (activeJob?.id) {
+      return Response.json({
+        success: true,
+        predictionId: activeJob.id,
+        status: "processing",
+        reused: true,
+      });
+    }
+
     const pending = await createPendingGeneration({
       userId,
       characterId,
@@ -3883,14 +3911,13 @@ export async function POST(req) {
       },
     });
 
-    after(() =>
-      runGenerationJob(pending.id, {
-        characterId,
-        masterImage: normalizedMaster,
-        userId,
-        negativePrompt,
-      }).catch(console.error)
-    );
+    await tasks.trigger("generate-character-pack", {
+      generationId: pending.id,
+      characterId,
+      masterImage: normalizedMaster,
+      userId,
+      negativePrompt,
+    });
 
     return Response.json({
       success: true,
