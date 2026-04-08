@@ -15,6 +15,7 @@ const replicate = new Replicate({
 
 const JOB_TIMEOUT_MS = 3 * 60 * 1000;
 const STALE_PACK_JOB_MS = 10 * 60 * 1000;
+const INTER_VIEW_COOLDOWN_MS = 11000;
 const MODEL = FLUX_MODEL;
 
 const REQUIRED_PACK_VIEWS = [
@@ -108,6 +109,30 @@ function isProviderBillingError(err) {
   );
 }
 
+function getReplicateRetryAfterMs(err) {
+  const msg = String(err?.message || err || "");
+  const match =
+    msg.match(/retry_after["']?\s*:\s*(\d+)/i) ||
+    msg.match(/retry after["']?\s*:\s*(\d+)/i) ||
+    msg.match(/resets in ~?(\d+)s/i);
+
+  if (!match) return null;
+
+  const seconds = Number(match[1]);
+  if (!Number.isFinite(seconds) || seconds <= 0) return null;
+
+  return seconds * 1000;
+}
+
+function formatReplicateRateLimitMessage(err) {
+  const retryAfterMs = getReplicateRetryAfterMs(err);
+  const retryAfterSeconds = retryAfterMs
+    ? Math.max(1, Math.ceil(retryAfterMs / 1000))
+    : 10;
+
+  return `Replicate rate limit hit. Wait about ${retryAfterSeconds} seconds and try again.`;
+}
+
 function shouldStopPackEarly(err) {
   return isProviderRateLimitError(err) || isProviderBillingError(err);
 }
@@ -118,7 +143,8 @@ async function runProviderWithBackoff(fn, maxRetries = 2) {
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       if (attempt > 0) {
-        await sleep(10000); // 10 sec cooldown before retry
+        const retryAfterMs = getReplicateRetryAfterMs(lastError);
+        await sleep(retryAfterMs || INTER_VIEW_COOLDOWN_MS);
       }
       return await fn();
     } catch (err) {
@@ -130,7 +156,11 @@ async function runProviderWithBackoff(fn, maxRetries = 2) {
         );
       }
 
-      if (!isProviderRateLimitError(err) || attempt === maxRetries) {
+      if (isProviderRateLimitError(err) && attempt === maxRetries) {
+        throw new Error(formatReplicateRateLimitMessage(err));
+      }
+
+      if (!isProviderRateLimitError(err)) {
         throw err;
       }
     }
@@ -3573,40 +3603,46 @@ console.log("🧠 Loaded character memory", {
     const remainingViews = generationViews.filter((view) => view.key !== IMAGE_TYPES.FRONT);
 
     if (!timedOut && remainingViews.length > 0) {
-      const parallelRuns = await Promise.allSettled(
-        remainingViews.map((view) =>
-          generatePackView({
-            view,
-            routeStart,
-            normalizedMaster,
-            baseAnchorRefs,
-            acceptedViewMap,
-            negativePrompt,
-            userId,
-            characterId,
-            frontImageUrl,
-            dnaIdentityBlock,
-            lockedTraitsBlock,
-          })
-        )
-      );
+      for (let index = 0; index < remainingViews.length; index += 1) {
+        const view = remainingViews[index];
 
-      for (const run of parallelRuns) {
-        if (run.status === "rejected") {
-          throw run.reason;
-        }
+        await updateGenerationJob(generationId, {
+          metadata: {
+            state: "processing",
+            progressStage: `generating_${view.key}`,
+            lastProgressAt: new Date().toISOString(),
+          },
+        });
 
-        if (run.value.timedOut) {
+        const run = await generatePackView({
+          view,
+          routeStart,
+          normalizedMaster,
+          baseAnchorRefs,
+          acceptedViewMap,
+          negativePrompt,
+          userId,
+          characterId,
+          frontImageUrl,
+          dnaIdentityBlock,
+          lockedTraitsBlock,
+        });
+
+        if (run.timedOut) {
           timedOut = true;
-          continue;
+          break;
         }
 
-        if (run.value.result) {
-          results.push(run.value.result);
-          maxReferenceCountUsed = Math.max(maxReferenceCountUsed, run.value.maxReferenceCountUsed);
-          if (run.value.result.accepted && run.value.result.url) {
-            acceptedViewMap[run.value.result.type] = run.value.result;
+        if (run.result) {
+          results.push(run.result);
+          maxReferenceCountUsed = Math.max(maxReferenceCountUsed, run.maxReferenceCountUsed);
+          if (run.result.accepted && run.result.url) {
+            acceptedViewMap[run.result.type] = run.result;
           }
+        }
+
+        if (index < remainingViews.length - 1) {
+          await sleep(INTER_VIEW_COOLDOWN_MS);
         }
       }
     }
@@ -3700,7 +3736,7 @@ console.log("PACK FAILURE SUMMARY", {
     failedReasons.includes("429")
   ) {
     throw new Error(
-      "Replicate rate limit hit. Wait about 10 seconds and try again."
+      formatReplicateRateLimitMessage(failedReasons)
     );
   }
 
