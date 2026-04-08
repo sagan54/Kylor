@@ -58,6 +58,7 @@ const CHARACTER_PACK_VIEWS = [
   { key: "closeup",       label: "Front Portrait",          shot: "single person, front-facing portrait, head-and-shoulders framing, neutral expression, centered composition", size: "1024x1536" },
   { key: "closeup_right", label: "Right Profile Portrait",  shot: "single person, strict right side profile portrait, head-and-shoulders framing, facing the right edge of the frame, centered composition", size: "1024x1536" },
 ];
+const CHARACTER_PACK_POLL_TIMEOUT_MS = 3 * 60 * 1000;
 const CARD_GRADIENTS = [
   "linear-gradient(135deg, rgba(79,70,229,0.55), rgba(124,58,237,0.3))",
   "linear-gradient(135deg, rgba(124,58,237,0.5), rgba(17,17,34,0.85))",
@@ -2140,7 +2141,7 @@ if (!predictionId) {
 
 const completedData = await pollGenerationJob(predictionId, {
   intervalMs: 2500,
-  timeoutMs: 240000,
+  timeoutMs: CHARACTER_PACK_POLL_TIMEOUT_MS,
 });
 
 fetch("/api/process-character-dna", {

@@ -2,6 +2,7 @@ import { fal } from "@fal-ai/client";
 import { createClient } from "@supabase/supabase-js";
 import { IMAGE_TYPES, IMAGE_ORDER, PACK_VIEWS } from "../../../lib/character-constants";
 import { after } from "next/server";
+import sharp from "sharp";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -12,7 +13,7 @@ fal.config({
   credentials: process.env.FAL_KEY,
 });
 
-const JOB_TIMEOUT_MS = 4 * 60 * 1000;
+const JOB_TIMEOUT_MS = 3 * 60 * 1000;
 const MODEL = "fal-ai/bytedance/seedream/v4.5/edit";
 
 const REQUIRED_PACK_VIEWS = [
@@ -29,9 +30,6 @@ const GENERATION_VIEW_ORDER = [
   IMAGE_TYPES.RIGHT,
   IMAGE_TYPES.BACK,
   IMAGE_TYPES.CLOSEUP,
-  IMAGE_TYPES.CLOSEUP_LEFT,
-  IMAGE_TYPES.CLOSEUP_RIGHT,
-  IMAGE_TYPES.SHEET,
 ];
 
 function getModelForView(viewType) {
@@ -2080,8 +2078,25 @@ async function savePermanentImage({
   const contentType = response.headers.get("content-type") || "image/png";
   const arrayBuffer = await response.arrayBuffer();
   const buffer = Buffer.from(arrayBuffer);
-  const ext = getExtensionFromContentType(contentType);
+  return await savePermanentBuffer({
+    buffer,
+    contentType,
+    userId,
+    characterId,
+    viewType,
+  });
+}
 
+async function savePermanentBuffer({
+  buffer,
+  contentType = "image/png",
+  userId = "anonymous",
+  characterId,
+  viewType,
+}) {
+  if (!buffer) return null;
+
+  const ext = getExtensionFromContentType(contentType);
   const filePath = `${userId}/${characterId}/pack/${viewType}-${Date.now()}.${ext}`;
 
   const { error: uploadError } = await supabase.storage
@@ -2100,6 +2115,205 @@ async function savePermanentImage({
     .getPublicUrl(filePath);
 
   return publicData?.publicUrl || null;
+}
+
+async function fetchImageBuffer(imageUrl) {
+  const response = await fetch(imageUrl);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch image asset: ${response.status}`);
+  }
+
+  const arrayBuffer = await response.arrayBuffer();
+  return Buffer.from(arrayBuffer);
+}
+
+function clampInt(value, min, max) {
+  return Math.max(min, Math.min(max, Math.round(value)));
+}
+
+async function buildPortraitFromFullBody(imageUrl) {
+  const buffer = await fetchImageBuffer(imageUrl);
+  const source = sharp(buffer);
+  const metadata = await source.metadata();
+  const width = metadata.width || 1024;
+  const height = metadata.height || 1536;
+
+  const scale = Math.max(1600 / width, 2400 / height);
+  const scaledWidth = Math.max(1600, Math.round(width * scale));
+  const scaledHeight = Math.max(2400, Math.round(height * scale));
+  const targetWidth = 1024;
+  const targetHeight = 1536;
+  const left = clampInt((scaledWidth - targetWidth) / 2, 0, Math.max(0, scaledWidth - targetWidth));
+  const top = clampInt(scaledHeight * 0.06, 0, Math.max(0, scaledHeight - targetHeight));
+
+  return await source
+    .resize(scaledWidth, scaledHeight, { fit: "cover" })
+    .extract({
+      left,
+      top,
+      width: targetWidth,
+      height: targetHeight,
+    })
+    .jpeg({ quality: 90 })
+    .toBuffer();
+}
+
+async function fitBufferForSheet(imageUrl, width, height) {
+  const buffer = await fetchImageBuffer(imageUrl);
+  return await sharp(buffer)
+    .resize(width, height, {
+      fit: "contain",
+      background: { r: 245, g: 245, b: 245, alpha: 1 },
+    })
+    .png()
+    .toBuffer();
+}
+
+async function buildProfileSheet({
+  frontUrl,
+  leftUrl,
+  rightUrl,
+  backUrl,
+  leftPortraitUrl,
+  frontPortraitUrl,
+  rightPortraitUrl,
+}) {
+  const sheetWidth = 1536;
+  const sheetHeight = 1024;
+  const topY = 48;
+  const bottomY = 622;
+  const topW = 300;
+  const topH = 500;
+  const bottomW = 320;
+  const bottomH = 320;
+  const topXs = [24, 408, 792, 1176];
+  const bottomXs = [128, 608, 1088];
+
+  const [
+    front,
+    left,
+    right,
+    back,
+    leftPortrait,
+    frontPortrait,
+    rightPortrait,
+  ] = await Promise.all([
+    fitBufferForSheet(frontUrl, topW, topH),
+    fitBufferForSheet(leftUrl, topW, topH),
+    fitBufferForSheet(rightUrl, topW, topH),
+    fitBufferForSheet(backUrl, topW, topH),
+    fitBufferForSheet(leftPortraitUrl, bottomW, bottomH),
+    fitBufferForSheet(frontPortraitUrl, bottomW, bottomH),
+    fitBufferForSheet(rightPortraitUrl, bottomW, bottomH),
+  ]);
+
+  const background = {
+    create: {
+      width: sheetWidth,
+      height: sheetHeight,
+      channels: 3,
+      background: { r: 247, g: 247, b: 247 },
+    },
+  };
+
+  return await sharp(background)
+    .composite([
+      { input: front, left: topXs[0], top: topY },
+      { input: left, left: topXs[1], top: topY },
+      { input: right, left: topXs[2], top: topY },
+      { input: back, left: topXs[3], top: topY },
+      { input: leftPortrait, left: bottomXs[0], top: bottomY },
+      { input: frontPortrait, left: bottomXs[1], top: bottomY },
+      { input: rightPortrait, left: bottomXs[2], top: bottomY },
+    ])
+    .jpeg({ quality: 92 })
+    .toBuffer();
+}
+
+async function buildDerivedPackAssets(finalResults = []) {
+  const packMap = buildPackMap(finalResults);
+  const leftSource = packMap[IMAGE_TYPES.LEFT]?.evalUrl || packMap[IMAGE_TYPES.LEFT]?.url;
+  const rightSource = packMap[IMAGE_TYPES.RIGHT]?.evalUrl || packMap[IMAGE_TYPES.RIGHT]?.url;
+  const frontPortraitSource =
+    packMap[IMAGE_TYPES.CLOSEUP]?.evalUrl || packMap[IMAGE_TYPES.CLOSEUP]?.url;
+  const frontSource = packMap[IMAGE_TYPES.FRONT]?.evalUrl || packMap[IMAGE_TYPES.FRONT]?.url;
+  const backSource = packMap[IMAGE_TYPES.BACK]?.evalUrl || packMap[IMAGE_TYPES.BACK]?.url;
+
+  if (!leftSource || !rightSource || !frontPortraitSource || !frontSource || !backSource) {
+    return [];
+  }
+
+  const leftPortraitBuffer = await buildPortraitFromFullBody(leftSource);
+  const rightPortraitBuffer = await buildPortraitFromFullBody(rightSource);
+
+  const leftPortraitUrl = `data:image/jpeg;base64,${leftPortraitBuffer.toString("base64")}`;
+  const rightPortraitUrl = `data:image/jpeg;base64,${rightPortraitBuffer.toString("base64")}`;
+
+  const sheetBuffer = await buildProfileSheet({
+    frontUrl: frontSource,
+    leftUrl: leftSource,
+    rightUrl: rightSource,
+    backUrl: backSource,
+    leftPortraitUrl,
+    frontPortraitUrl: frontPortraitSource,
+    rightPortraitUrl,
+  });
+
+  const closeupScore = packMap[IMAGE_TYPES.CLOSEUP];
+
+  return [
+    {
+      type: IMAGE_TYPES.CLOSEUP_LEFT,
+      label: PACK_VIEWS.find((view) => view.key === IMAGE_TYPES.CLOSEUP_LEFT)?.label || IMAGE_TYPES.CLOSEUP_LEFT,
+      evalUrl: leftPortraitUrl,
+      url: leftPortraitUrl,
+      sort_order: IMAGE_ORDER[IMAGE_TYPES.CLOSEUP_LEFT],
+      accepted: true,
+      finalScore: closeupScore?.finalScore ?? 8,
+      identityScore: closeupScore?.identityScore ?? 8,
+      qualityScore: closeupScore?.qualityScore ?? 8,
+      shotScore: closeupScore?.shotScore ?? 8,
+      compositionScore: closeupScore?.compositionScore ?? 8,
+      repairedInPass2: false,
+      repairedFromCohesion: false,
+      derived: true,
+      derivedBuffer: leftPortraitBuffer,
+    },
+    {
+      type: IMAGE_TYPES.CLOSEUP_RIGHT,
+      label: PACK_VIEWS.find((view) => view.key === IMAGE_TYPES.CLOSEUP_RIGHT)?.label || IMAGE_TYPES.CLOSEUP_RIGHT,
+      evalUrl: rightPortraitUrl,
+      url: rightPortraitUrl,
+      sort_order: IMAGE_ORDER[IMAGE_TYPES.CLOSEUP_RIGHT],
+      accepted: true,
+      finalScore: closeupScore?.finalScore ?? 8,
+      identityScore: closeupScore?.identityScore ?? 8,
+      qualityScore: closeupScore?.qualityScore ?? 8,
+      shotScore: closeupScore?.shotScore ?? 8,
+      compositionScore: closeupScore?.compositionScore ?? 8,
+      repairedInPass2: false,
+      repairedFromCohesion: false,
+      derived: true,
+      derivedBuffer: rightPortraitBuffer,
+    },
+    {
+      type: IMAGE_TYPES.SHEET,
+      label: PACK_VIEWS.find((view) => view.key === IMAGE_TYPES.SHEET)?.label || IMAGE_TYPES.SHEET,
+      evalUrl: `data:image/jpeg;base64,${sheetBuffer.toString("base64")}`,
+      url: `data:image/jpeg;base64,${sheetBuffer.toString("base64")}`,
+      sort_order: IMAGE_ORDER[IMAGE_TYPES.SHEET],
+      accepted: true,
+      finalScore: 8.5,
+      identityScore: 8.5,
+      qualityScore: 8.5,
+      shotScore: 8.5,
+      compositionScore: 8.5,
+      repairedInPass2: false,
+      repairedFromCohesion: false,
+      derived: true,
+      derivedBuffer: sheetBuffer,
+    },
+  ];
 }
 
 async function runSingleGeneration({
@@ -3412,8 +3626,15 @@ throw new Error(
 );
 }
 
+  const derivedAssets = await buildDerivedPackAssets(finalResults);
+  if (derivedAssets.length > 0) {
+    finalResults = [...finalResults, ...derivedAssets].sort(
+      (a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)
+    );
+  }
+
 console.log("FINAL UPLOAD START", {
-  acceptedCount,
+  acceptedCount: finalResults.filter((r) => r.accepted).length,
   elapsedSeconds: ((nowMs() - routeStart) / 1000).toFixed(2),
 });
 
@@ -3422,16 +3643,25 @@ for (let i = 0; i < finalResults.length; i++) {
   const item = finalResults[i];
   if (!item.accepted || !item.url) continue;
 
-  const permanentUrl = await savePermanentImage({
-    imageUrl: item.evalUrl || item.url,
-    userId,
-    characterId,
-    viewType: item.type,
-  });
+  const permanentUrl = item.derivedBuffer
+    ? await savePermanentBuffer({
+        buffer: item.derivedBuffer,
+        contentType: "image/jpeg",
+        userId,
+        characterId,
+        viewType: item.type,
+      })
+    : await savePermanentImage({
+        imageUrl: item.evalUrl || item.url,
+        userId,
+        characterId,
+        viewType: item.type,
+      });
 
   finalResults[i] = {
     ...item,
     url: permanentUrl,
+    derivedBuffer: undefined,
   };
 }
 
