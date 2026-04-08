@@ -1349,7 +1349,43 @@ async function autoSaveReferencesForCharacter(characterId, currentEntries) {
     if (!currentChar) {
       setCharacterImages(filteredRows);
       await markCharacterDnaStale(characterId);
-  return null;
+      return null;
+    }
+
+    const mapped = rowToCharacter(
+      {
+        ...currentChar,
+        master_image:
+          currentChar.masterImage ||
+          currentChar.coverImage ||
+          currentChar.refEntries?.[0]?.previewUrl ||
+          null,
+      },
+      filteredRows
+    );
+
+    setCharacters((prev) => {
+      const updated = prev.map((c) =>
+        c.id === characterId ? mapped : c
+      );
+      updateCharactersCache(updated);
+      return updated;
+    });
+
+    if (activeCharId === characterId) {
+      setCharacterImages(filteredRows);
+      setRefEntries(mapped.refEntries || []);
+    }
+
+    await markCharacterDnaStale(characterId);
+
+    return mapped;
+  } catch (err) {
+    console.error("Auto-save references failed:", err);
+    return null;
+  } finally {
+    setSavingRefs(false);
+  }
 }
 
 const resumePendingCharacterPack = useCallback(async (pendingItem) => {
@@ -1411,42 +1447,6 @@ const resumePendingCharacterPack = useCallback(async (pendingItem) => {
       resumePendingCharacterPack(item);
     });
   }, [resumePendingCharacterPack]);
-
-    const mapped = rowToCharacter(
-      {
-        ...currentChar,
-        master_image:
-          currentChar.masterImage ||
-          currentChar.coverImage ||
-          currentChar.refEntries?.[0]?.previewUrl ||
-          null,
-      },
-      filteredRows
-    );
-
-    setCharacters((prev) => {
-      const updated = prev.map((c) =>
-        c.id === characterId ? mapped : c
-      );
-      updateCharactersCache(updated);
-      return updated;
-    });
-
-    if (activeCharId === characterId) {
-      setCharacterImages(filteredRows);
-      setRefEntries(mapped.refEntries || []);
-    }
-
-    await markCharacterDnaStale(characterId);
-
-    return mapped;
-  } catch (err) {
-    console.error("Auto-save references failed:", err);
-    return null;
-  } finally {
-    setSavingRefs(false);
-  }
-}
 
   async function persistGeneratedImage(imageUrl, characterId, folder = "generated") {
   if (!imageUrl || !userId || !characterId) return null;
