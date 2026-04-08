@@ -998,7 +998,9 @@ function savePendingPackJobs(items) {
 
 function upsertPendingPackJob(item) {
   const existing = loadPendingPackJobs().filter(
-    (entry) => String(entry?.predictionId || "") !== String(item?.predictionId || "")
+    (entry) =>
+      String(entry?.predictionId || "") !== String(item?.predictionId || "") &&
+      String(entry?.characterId || "") !== String(item?.characterId || "")
   );
   savePendingPackJobs([item, ...existing]);
 }

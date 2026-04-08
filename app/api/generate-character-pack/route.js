@@ -3828,6 +3828,19 @@ export async function POST(req) {
         return false;
       }
 
+      const existingMasterImage = normalizeReferenceImage(row?.metadata?.masterImage);
+      if (
+        existingMasterImage &&
+        normalizedMaster &&
+        existingMasterImage !== normalizedMaster
+      ) {
+        return false;
+      }
+
+      if (String(row?.metadata?.error || "").trim()) {
+        return false;
+      }
+
       const lastProgressAt =
         getTimeMs(row?.metadata?.lastProgressAt) ||
         getTimeMs(row?.metadata?.startedAt) ||
