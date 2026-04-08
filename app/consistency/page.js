@@ -50,14 +50,11 @@ const HAIR_COLORS = ["Black", "Brown", "Blonde", "Red", "White", "Silver", "Blue
 const EYE_COLORS  = ["Brown", "Blue", "Green", "Hazel", "Grey", "Amber"];
 const BUILD_TYPES = ["Slim", "Athletic", "Average", "Muscular", "Stocky", "Curvy"];
 const CHARACTER_PACK_VIEWS = [
-  { key: "sheet",         label: "All Profiles Sheet",      shot: "single multi-view character sheet of the same exact person, 16:9 layout, top row shows front full-body, left profile full-body, right profile full-body, and back full-body, bottom row shows left profile portrait, front portrait, and right profile portrait, clean neutral studio background, evenly spaced turnaround board, same exact person in every panel", size: "1536x1024" },
-  { key: "front",         label: "Front Full-Body",         shot: "single person, front-facing, full-body, standing straight, arms relaxed, centered composition", size: "1024x1536" },
-  { key: "left",          label: "Left Profile Full-Body",  shot: "single person, strict left side profile, facing the left edge of the frame, full-body, standing straight, arms relaxed, centered composition", size: "1024x1536" },
-  { key: "right",         label: "Right Profile Full-Body", shot: "single person, strict right side profile, facing the right edge of the frame, full-body, standing straight, arms relaxed, centered composition", size: "1024x1536" },
-  { key: "back",          label: "Back Full-Body",          shot: "single person, full-body back view, facing away from camera, standing straight, arms relaxed, centered composition", size: "1024x1536" },
-  { key: "closeup_left",  label: "Left Profile Portrait",   shot: "single person, strict left side profile portrait, head-and-shoulders framing, facing the left edge of the frame, centered composition", size: "1024x1536" },
-  { key: "closeup",       label: "Front Portrait",          shot: "single person, front-facing portrait, head-and-shoulders framing, neutral expression, centered composition", size: "1024x1536" },
-  { key: "closeup_right", label: "Right Profile Portrait",  shot: "single person, strict right side profile portrait, head-and-shoulders framing, facing the right edge of the frame, centered composition", size: "1024x1536" },
+  { key: "front", label: "Front Full Body", shot: "single person, front-facing, full-body, standing straight, arms relaxed, centered composition", size: "1024x1536" },
+  { key: "closeup", label: "Front Upper Close", shot: "single person, front-facing upper-body close portrait, chest-up framing, face clearly visible, centered composition", size: "1024x1536" },
+  { key: "right", label: "Right Side Profile", shot: "single person, strict right side profile portrait, upper-body framing, facing the right edge of the frame, centered composition", size: "1024x1536" },
+  { key: "left", label: "Left Side Profile", shot: "single person, strict left side profile portrait, upper-body framing, facing the left edge of the frame, centered composition", size: "1024x1536" },
+  { key: "back", label: "Back Side Profile", shot: "single person, upper-body back profile, facing away from camera, centered composition", size: "1024x1536" },
 ];
 const CHARACTER_PACK_POLL_TIMEOUT_MS = 3 * 60 * 1000;
 const CARD_GRADIENTS = [
@@ -977,8 +974,8 @@ export default function ConsistencyPage() {
     .map(view => visibleCharOutputs.find(o => o.scene === view.label))
     .filter(Boolean);
 
-  const frontOutput = visibleCharOutputs.find(o => o.scene === "Front Full-Body");
-  const otherOutputs = visibleCharOutputs.filter(o => o.scene !== "Front Full-Body");
+  const frontOutput = visibleCharOutputs.find(o => o.scene === "Front Full Body");
+  const otherOutputs = visibleCharOutputs.filter(o => o.scene !== "Front Full Body");
   const shouldShowGenerateMorePanel = false;
 
 function loadPendingPackJobs() {
@@ -3099,7 +3096,7 @@ cover_image: savedUrl,
                     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} style={{ textAlign: "center", maxWidth: 300 }}>
                       <div style={{ width: 72, height: 72, borderRadius: 999, margin: "0 auto 16px", display: "grid", placeItems: "center", border: `1px solid ${C.border}`, background: C.surface }}><ImageIcon size={28} color={C.textDim} /></div>
                       <p style={{ margin: "0 0 6px", color: C.text, fontSize: 15, fontWeight: 700 }}>Ready to generate</p>
-                      <p style={{ margin: "0 0 18px", color: C.textMuted, fontSize: 12.5, lineHeight: 1.7 }}>Generate the 8-image consistency pack: one 16:9 profile sheet plus seven separate 9:16 views.</p>
+                      <p style={{ margin: "0 0 18px", color: C.textMuted, fontSize: 12.5, lineHeight: 1.7 }}>Generate the 5-image consistency pack: front full body, front upper close, right profile, left profile, and back profile.</p>
                       <motion.button whileTap={{ scale: 0.96 }} onClick={() => setFormSection("generate")}
                         style={{ height: 36, padding: "0 16px", borderRadius: radius.md, border: `1px solid ${C.accentBorder}`, background: C.accentSoft, color: "#c4b5fd", fontSize: 13, cursor: "pointer", fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: 6 }}>
                         <Wand2 size={13} /> Set up generation

@@ -20,16 +20,17 @@ const MODEL = FLUX_MODEL;
 
 const REQUIRED_PACK_VIEWS = [
   IMAGE_TYPES.FRONT,
-  IMAGE_TYPES.LEFT,
-  IMAGE_TYPES.RIGHT,
-  IMAGE_TYPES.BACK,
   IMAGE_TYPES.CLOSEUP,
+  IMAGE_TYPES.RIGHT,
+  IMAGE_TYPES.LEFT,
+  IMAGE_TYPES.BACK,
 ];
 
 const GENERATION_VIEW_ORDER = [
   IMAGE_TYPES.FRONT,
-  IMAGE_TYPES.LEFT,
+  IMAGE_TYPES.CLOSEUP,
   IMAGE_TYPES.RIGHT,
+  IMAGE_TYPES.LEFT,
   IMAGE_TYPES.BACK,
 ];
 
@@ -171,29 +172,20 @@ async function runProviderWithBackoff(fn, maxRetries = 2) {
 
 function getViewPrompt(viewKey) {
   switch (viewKey) {
-    case IMAGE_TYPES.SHEET:
-      return "multi-view character turnaround sheet of the same exact person, 16:9 layout, top row shows front full body, strict left full-body profile, strict right full-body profile, and back full body, bottom row shows left profile portrait, front portrait, and right profile portrait, clean studio character sheet, same exact person in every panel, evenly spaced presentation";
-
     case IMAGE_TYPES.FRONT:
       return "front-facing full body of the same exact person, standing straight, neutral pose, relaxed arms, centered composition, plain studio-like framing";
 
+    case IMAGE_TYPES.CLOSEUP:
+      return "front-facing upper-body close portrait of the same exact person, chest-up framing, face clearly visible, highly recognizable identity, centered composition, plain studio-like framing";
+
     case IMAGE_TYPES.LEFT:
-      return "strict left side profile of the same exact person, full body, facing left, standing straight, neutral pose, relaxed arms, centered composition";
+      return "strict left side profile portrait of the same exact person, upper-body framing, facing left, centered composition";
 
     case IMAGE_TYPES.RIGHT:
-      return "strict right side profile of the same exact person, full body, facing right, standing straight, neutral pose, relaxed arms, centered composition";
+      return "strict right side profile portrait of the same exact person, upper-body framing, facing right, centered composition";
 
     case IMAGE_TYPES.BACK:
-      return "back view of the same exact person, full body, facing away from camera, standing straight, neutral pose, relaxed arms, centered composition";
-
-    case IMAGE_TYPES.CLOSEUP_LEFT:
-      return "strict left side profile portrait of the same exact person, head-and-shoulders framing, facing left, neutral expression, centered composition, realistic photography";
-
-    case IMAGE_TYPES.CLOSEUP:
-      return "front-facing portrait of the same exact person, head-and-shoulders framing, face clearly visible, highly recognizable identity, neutral expression, realistic photography";
-
-    case IMAGE_TYPES.CLOSEUP_RIGHT:
-      return "strict right side profile portrait of the same exact person, head-and-shoulders framing, facing right, neutral expression, centered composition, realistic photography";
+      return "back side profile portrait of the same exact person, upper-body framing, facing away from camera, centered composition";
 
     default:
       return "full body portrait of the same exact person, natural realistic photography";
@@ -253,16 +245,6 @@ function mapSizeToSeedreamImageSize(size) {
 
 function buildShotInstruction(viewType) {
   switch (viewType) {
-    case IMAGE_TYPES.SHEET:
-      return [
-        "Generate one 16:9 multi-view character sheet.",
-        "Use the same exact person in every panel.",
-        "Top row must show front full-body, strict left full-body profile, strict right full-body profile, and back full-body.",
-        "Bottom row must show left profile portrait, front portrait, and right profile portrait.",
-        "Clean neutral studio character-sheet presentation only.",
-        "Do not generate extra panels, text, labels, borders, or watermarks.",
-      ].join(" ");
-
     case IMAGE_TYPES.FRONT:
       return [
         "Single person only.",
@@ -273,6 +255,16 @@ function buildShotInstruction(viewType) {
         "Full body visible from head to toe.",
         "Centered composition.",
       ].join(" ");
+
+case IMAGE_TYPES.CLOSEUP:
+  return [
+    "Single person only.",
+    "Front-facing upper-body close portrait.",
+    "Chest-up framing.",
+    "Face clearly visible and highly recognizable.",
+    "Preserve exact facial identity.",
+    "Centered composition.",
+  ].join(" ");
 
 case IMAGE_TYPES.LEFT:
   return [
@@ -291,8 +283,7 @@ case IMAGE_TYPES.LEFT:
     "Do not turn toward camera.",
     "Preserve exact identity from the same person.",
     "Preserve exact forehead slope, nose bridge, nose tip, lips, chin projection, jaw contour, ear shape, hairline, hairstyle, and sideburn shape.",
-    "Full body visible from head to toe.",
-    "Standing straight, neutral pose, relaxed arms.",
+    "Upper-body portrait framing.",
     "Centered composition.",
   ].join(" ");
 
@@ -313,70 +304,19 @@ case IMAGE_TYPES.RIGHT:
     "Do not turn toward camera.",
     "Preserve exact identity from the same person.",
     "Preserve exact forehead slope, nose bridge, nose tip, lips, chin projection, jaw contour, ear shape, hairline, hairstyle, and sideburn shape.",
-    "Full body visible from head to toe.",
-    "Standing straight, neutral pose, relaxed arms.",
+    "Upper-body portrait framing.",
     "Centered composition.",
   ].join(" ");
 
     case IMAGE_TYPES.BACK:
       return [
         "Single person only.",
-        "Back view.",
+        "Back side profile portrait.",
         "Facing away from camera.",
-        "Full body visible from head to toe.",
-        "Standing straight, neutral pose, relaxed arms.",
+        "Upper-body portrait framing.",
         "Only the viewing angle changes.",
         "Identity, body type, hairstyle, hair length, neck, shoulders, silhouette, and outfit remain the same person.",
       ].join(" ");
-
-case IMAGE_TYPES.CLOSEUP:
-  return [
-    "Single person only.",
-    "Front-facing portrait.",
-    "Face clearly visible and highly recognizable.",
-    "Close-up must look unmistakably like the same person as the master identity and front image.",
-    "Preserve exact face shape, cheek structure, jawline, chin, forehead, brow shape, eyebrow thickness, eyelids, eye shape, nose bridge, nose tip, lips, ears, hairline, hairstyle, skin tone, beard or moustache pattern, and natural facial asymmetry.",
-    "Natural real human skin texture.",
-    "Matte skin, not glossy.",
-    "Real pores and subtle natural skin texture.",
-"Skin must be clean, smooth, and healthy.",
-"No acne, no pimples, no skin spots, no blemishes.",
-"No artificial imperfections or added marks.",
-"Keep natural realism without introducing defects.",
-    "No skin smoothing, no beauty retouching, no airbrushed face, no cosmetic enhancement.",
-    "No glossy skin, no shiny forehead, no waxy skin, no plastic skin, no polished skin, no studio beauty look.",
-    "Realistic passport-photo-like facial rendering.",
-    "Natural realistic photography.",
-    "Skin must appear clean and healthy.",
-"No acne, no pimples, no facial blemishes.",
-"Preserve real texture but without added imperfections.",
-  ].join(" ");
-
-case IMAGE_TYPES.CLOSEUP_LEFT:
-  return [
-    "Single person only.",
-    "Strict LEFT side profile portrait only.",
-    "The subject must face LEFT.",
-    "Only the LEFT side of the face is visible.",
-    "Head-and-shoulders portrait framing.",
-    "No three-quarter angle.",
-    "No front angle.",
-    "Preserve exact side-profile identity markers.",
-    "Centered composition.",
-  ].join(" ");
-
-case IMAGE_TYPES.CLOSEUP_RIGHT:
-  return [
-    "Single person only.",
-    "Strict RIGHT side profile portrait only.",
-    "The subject must face RIGHT.",
-    "Only the RIGHT side of the face is visible.",
-    "Head-and-shoulders portrait framing.",
-    "No three-quarter angle.",
-    "No front angle.",
-    "Preserve exact side-profile identity markers.",
-    "Centered composition.",
-  ].join(" ");
 
     default:
       return [
@@ -2261,106 +2201,8 @@ async function buildProfileSheet({
 }
 
 async function buildDerivedPackAssets(finalResults = []) {
-  const packMap = buildPackMap(finalResults);
-  const leftSource = packMap[IMAGE_TYPES.LEFT]?.evalUrl || packMap[IMAGE_TYPES.LEFT]?.url;
-  const rightSource = packMap[IMAGE_TYPES.RIGHT]?.evalUrl || packMap[IMAGE_TYPES.RIGHT]?.url;
-  const frontSource = packMap[IMAGE_TYPES.FRONT]?.evalUrl || packMap[IMAGE_TYPES.FRONT]?.url;
-  const backSource = packMap[IMAGE_TYPES.BACK]?.evalUrl || packMap[IMAGE_TYPES.BACK]?.url;
-
-  if (!leftSource || !rightSource || !frontSource || !backSource) {
-    return [];
-  }
-
-  const frontPortraitBuffer = await buildPortraitFromFullBody(frontSource);
-  const leftPortraitBuffer = await buildPortraitFromFullBody(leftSource);
-  const rightPortraitBuffer = await buildPortraitFromFullBody(rightSource);
-
-  const frontPortraitUrl = `data:image/jpeg;base64,${frontPortraitBuffer.toString("base64")}`;
-  const leftPortraitUrl = `data:image/jpeg;base64,${leftPortraitBuffer.toString("base64")}`;
-  const rightPortraitUrl = `data:image/jpeg;base64,${rightPortraitBuffer.toString("base64")}`;
-
-  const sheetBuffer = await buildProfileSheet({
-    frontUrl: frontSource,
-    leftUrl: leftSource,
-    rightUrl: rightSource,
-    backUrl: backSource,
-    leftPortraitUrl,
-    frontPortraitUrl,
-    rightPortraitUrl,
-  });
-
-  const frontScore = packMap[IMAGE_TYPES.FRONT];
-
-  return [
-    {
-      type: IMAGE_TYPES.CLOSEUP,
-      label: PACK_VIEWS.find((view) => view.key === IMAGE_TYPES.CLOSEUP)?.label || IMAGE_TYPES.CLOSEUP,
-      evalUrl: frontPortraitUrl,
-      url: frontPortraitUrl,
-      sort_order: IMAGE_ORDER[IMAGE_TYPES.CLOSEUP],
-      accepted: true,
-      finalScore: frontScore?.finalScore ?? 8,
-      identityScore: frontScore?.identityScore ?? 8,
-      qualityScore: frontScore?.qualityScore ?? 8,
-      shotScore: frontScore?.shotScore ?? 8,
-      compositionScore: frontScore?.compositionScore ?? 8,
-      repairedInPass2: false,
-      repairedFromCohesion: false,
-      derived: true,
-      derivedBuffer: frontPortraitBuffer,
-    },
-    {
-      type: IMAGE_TYPES.CLOSEUP_LEFT,
-      label: PACK_VIEWS.find((view) => view.key === IMAGE_TYPES.CLOSEUP_LEFT)?.label || IMAGE_TYPES.CLOSEUP_LEFT,
-      evalUrl: leftPortraitUrl,
-      url: leftPortraitUrl,
-      sort_order: IMAGE_ORDER[IMAGE_TYPES.CLOSEUP_LEFT],
-      accepted: true,
-      finalScore: frontScore?.finalScore ?? 8,
-      identityScore: frontScore?.identityScore ?? 8,
-      qualityScore: frontScore?.qualityScore ?? 8,
-      shotScore: frontScore?.shotScore ?? 8,
-      compositionScore: frontScore?.compositionScore ?? 8,
-      repairedInPass2: false,
-      repairedFromCohesion: false,
-      derived: true,
-      derivedBuffer: leftPortraitBuffer,
-    },
-    {
-      type: IMAGE_TYPES.CLOSEUP_RIGHT,
-      label: PACK_VIEWS.find((view) => view.key === IMAGE_TYPES.CLOSEUP_RIGHT)?.label || IMAGE_TYPES.CLOSEUP_RIGHT,
-      evalUrl: rightPortraitUrl,
-      url: rightPortraitUrl,
-      sort_order: IMAGE_ORDER[IMAGE_TYPES.CLOSEUP_RIGHT],
-      accepted: true,
-      finalScore: frontScore?.finalScore ?? 8,
-      identityScore: frontScore?.identityScore ?? 8,
-      qualityScore: frontScore?.qualityScore ?? 8,
-      shotScore: frontScore?.shotScore ?? 8,
-      compositionScore: frontScore?.compositionScore ?? 8,
-      repairedInPass2: false,
-      repairedFromCohesion: false,
-      derived: true,
-      derivedBuffer: rightPortraitBuffer,
-    },
-    {
-      type: IMAGE_TYPES.SHEET,
-      label: PACK_VIEWS.find((view) => view.key === IMAGE_TYPES.SHEET)?.label || IMAGE_TYPES.SHEET,
-      evalUrl: `data:image/jpeg;base64,${sheetBuffer.toString("base64")}`,
-      url: `data:image/jpeg;base64,${sheetBuffer.toString("base64")}`,
-      sort_order: IMAGE_ORDER[IMAGE_TYPES.SHEET],
-      accepted: true,
-      finalScore: 8.5,
-      identityScore: 8.5,
-      qualityScore: 8.5,
-      shotScore: 8.5,
-      compositionScore: 8.5,
-      repairedInPass2: false,
-      repairedFromCohesion: false,
-      derived: true,
-      derivedBuffer: sheetBuffer,
-    },
-  ];
+  void finalResults;
+  return [];
 }
 
 async function runSingleGeneration({
@@ -2519,8 +2361,10 @@ const cleanedRefs = refs
 
 const input = {
   prompt: finalPrompt,
+  input_images: cleanedRefs,
   aspect_ratio,
   output_format: "png",
+  prompt_upsampling: false,
 };
 
 const modelToUse = getModelForView(viewType);
