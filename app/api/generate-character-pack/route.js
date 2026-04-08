@@ -3647,8 +3647,8 @@ console.log("🧠 Loaded character memory", {
       }
     }
 
-    let finalResults = results;
-    let finalFrontImageUrl = frontImageUrl;
+let finalResults = results;
+let finalFrontImageUrl = frontImageUrl;
 
 const failedAfterFirstPass = collectFailedViews(finalResults);
 const repairableFailures = failedAfterFirstPass.filter(shouldRepairFailedView);
@@ -3669,6 +3669,13 @@ if (!timedOut && repairableFailures.length > 0) {
 
   finalResults = repaired.results;
   finalFrontImageUrl = repaired.frontImageUrl;
+}
+
+const derivedAssets = await buildDerivedPackAssets(finalResults);
+if (derivedAssets.length > 0) {
+  finalResults = [...finalResults, ...derivedAssets].sort(
+    (a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)
+  );
 }
 
 const acceptedCount = finalResults.filter((r) => r.accepted).length;
@@ -3744,13 +3751,6 @@ throw new Error(
   `Pack incomplete after repair pass. Required views missing: ${missingRequiredViews.join(", ")}. Accepted: ${acceptedTypes.join(", ")}. Failed: ${failedViews.join(", ")}`
 );
 }
-
-  const derivedAssets = await buildDerivedPackAssets(finalResults);
-  if (derivedAssets.length > 0) {
-    finalResults = [...finalResults, ...derivedAssets].sort(
-      (a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)
-    );
-  }
 
 console.log("FINAL UPLOAD START", {
   acceptedCount: finalResults.filter((r) => r.accepted).length,
