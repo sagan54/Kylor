@@ -49,11 +49,14 @@ const HAIR_COLORS = ["Black", "Brown", "Blonde", "Red", "White", "Silver", "Blue
 const EYE_COLORS  = ["Brown", "Blue", "Green", "Hazel", "Grey", "Amber"];
 const BUILD_TYPES = ["Slim", "Athletic", "Average", "Muscular", "Stocky", "Curvy"];
 const CHARACTER_PACK_VIEWS = [
-  { key: "front",   label: "Front Full-Body",         shot: "single person, front-facing, full-body, standing straight, arms relaxed, centered composition",                                                    size: "1024x1536" },
-  { key: "left",    label: "Left Profile Full-Body",  shot: "single person, strict left side profile, facing the left edge of the frame, full-body, standing straight, arms relaxed, centered composition",   size: "1024x1536" },
-  { key: "right",   label: "Right Profile Full-Body", shot: "single person, strict right side profile, facing the right edge of the frame, full-body, standing straight, arms relaxed, centered composition", size: "1024x1536" },
-  { key: "back",    label: "Back Full-Body",          shot: "single person, full-body back view, facing away from camera, standing straight, arms relaxed, centered composition",                             size: "1024x1536" },
-  { key: "closeup", label: "Upper-Body Close-Up",     shot: "single person, upper-body close-up portrait, facing camera, centered composition",                                                               size: "1024x1024" },
+  { key: "sheet",         label: "All Profiles Sheet",      shot: "single multi-view character sheet of the same exact person, 16:9 layout, top row shows front full-body, left profile full-body, right profile full-body, and back full-body, bottom row shows left profile portrait, front portrait, and right profile portrait, clean neutral studio background, evenly spaced turnaround board, same exact person in every panel", size: "1536x1024" },
+  { key: "front",         label: "Front Full-Body",         shot: "single person, front-facing, full-body, standing straight, arms relaxed, centered composition", size: "1024x1536" },
+  { key: "left",          label: "Left Profile Full-Body",  shot: "single person, strict left side profile, facing the left edge of the frame, full-body, standing straight, arms relaxed, centered composition", size: "1024x1536" },
+  { key: "right",         label: "Right Profile Full-Body", shot: "single person, strict right side profile, facing the right edge of the frame, full-body, standing straight, arms relaxed, centered composition", size: "1024x1536" },
+  { key: "back",          label: "Back Full-Body",          shot: "single person, full-body back view, facing away from camera, standing straight, arms relaxed, centered composition", size: "1024x1536" },
+  { key: "closeup_left",  label: "Left Profile Portrait",   shot: "single person, strict left side profile portrait, head-and-shoulders framing, facing the left edge of the frame, centered composition", size: "1024x1536" },
+  { key: "closeup",       label: "Front Portrait",          shot: "single person, front-facing portrait, head-and-shoulders framing, neutral expression, centered composition", size: "1024x1536" },
+  { key: "closeup_right", label: "Right Profile Portrait",  shot: "single person, strict right side profile portrait, head-and-shoulders framing, facing the right edge of the frame, centered composition", size: "1024x1536" },
 ];
 const CARD_GRADIENTS = [
   "linear-gradient(135deg, rgba(79,70,229,0.55), rgba(124,58,237,0.3))",
@@ -196,11 +199,14 @@ function rowToCharacter(row, imageRows = []) {
     (img) =>
       img.source_type === "generated" ||
       [
+        IMAGE_TYPES.SHEET,
         IMAGE_TYPES.FRONT,
         IMAGE_TYPES.LEFT,
         IMAGE_TYPES.RIGHT,
         IMAGE_TYPES.BACK,
+        IMAGE_TYPES.CLOSEUP_LEFT,
         IMAGE_TYPES.CLOSEUP,
+        IMAGE_TYPES.CLOSEUP_RIGHT,
       ].includes(img.image_type)
   )
   .sort((a, b) => {
@@ -1089,11 +1095,14 @@ async function refreshCharacterPackState(character, masterRefOverride = null) {
       (r) =>
         r.source_type === "generated" &&
         [
+          IMAGE_TYPES.SHEET,
           IMAGE_TYPES.FRONT,
           IMAGE_TYPES.LEFT,
           IMAGE_TYPES.RIGHT,
           IMAGE_TYPES.BACK,
+          IMAGE_TYPES.CLOSEUP_LEFT,
           IMAGE_TYPES.CLOSEUP,
+          IMAGE_TYPES.CLOSEUP_RIGHT,
         ].includes(r.pack_view)
     );
 
@@ -2973,7 +2982,7 @@ cover_image: savedUrl,
                     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} style={{ textAlign: "center", maxWidth: 300 }}>
                       <div style={{ width: 72, height: 72, borderRadius: 999, margin: "0 auto 16px", display: "grid", placeItems: "center", border: `1px solid ${C.border}`, background: C.surface }}><ImageIcon size={28} color={C.textDim} /></div>
                       <p style={{ margin: "0 0 6px", color: C.text, fontSize: 15, fontWeight: 700 }}>Ready to generate</p>
-                      <p style={{ margin: "0 0 18px", color: C.textMuted, fontSize: 12.5, lineHeight: 1.7 }}>Generate the fixed 5-view character pack, then use it in the Image section.</p>
+                      <p style={{ margin: "0 0 18px", color: C.textMuted, fontSize: 12.5, lineHeight: 1.7 }}>Generate the 8-image consistency pack: one 16:9 profile sheet plus seven separate 9:16 views.</p>
                       <motion.button whileTap={{ scale: 0.96 }} onClick={() => setFormSection("generate")}
                         style={{ height: 36, padding: "0 16px", borderRadius: radius.md, border: `1px solid ${C.accentBorder}`, background: C.accentSoft, color: "#c4b5fd", fontSize: 13, cursor: "pointer", fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: 6 }}>
                         <Wand2 size={13} /> Set up generation

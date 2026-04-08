@@ -77,7 +77,7 @@ function mapSizeToAspectRatio(size) {
     case "1024x1536":
       return "2:3";
     case "1536x1024":
-      return "3:2";
+      return "16:9";
     case "1024x1024":
       return "1:1";
     default:
@@ -146,6 +146,9 @@ async function runProviderWithBackoff(fn, maxRetries = 2) {
 
 function getViewPrompt(viewKey) {
   switch (viewKey) {
+    case IMAGE_TYPES.SHEET:
+      return "multi-view character turnaround sheet of the same exact person, 16:9 layout, top row shows front full body, strict left full-body profile, strict right full-body profile, and back full body, bottom row shows left profile portrait, front portrait, and right profile portrait, clean studio character sheet, same exact person in every panel, evenly spaced presentation";
+
     case IMAGE_TYPES.FRONT:
       return "front-facing full body of the same exact person, standing straight, neutral pose, relaxed arms, centered composition, plain studio-like framing";
 
@@ -158,8 +161,14 @@ function getViewPrompt(viewKey) {
     case IMAGE_TYPES.BACK:
       return "back view of the same exact person, full body, facing away from camera, standing straight, neutral pose, relaxed arms, centered composition";
 
+    case IMAGE_TYPES.CLOSEUP_LEFT:
+      return "strict left side profile portrait of the same exact person, head-and-shoulders framing, facing left, neutral expression, centered composition, realistic photography";
+
     case IMAGE_TYPES.CLOSEUP:
-      return "tight close-up portrait of the same exact person, face clearly visible, highly recognizable identity, neutral expression, realistic photography";
+      return "front-facing portrait of the same exact person, head-and-shoulders framing, face clearly visible, highly recognizable identity, neutral expression, realistic photography";
+
+    case IMAGE_TYPES.CLOSEUP_RIGHT:
+      return "strict right side profile portrait of the same exact person, head-and-shoulders framing, facing right, neutral expression, centered composition, realistic photography";
 
     default:
       return "full body portrait of the same exact person, natural realistic photography";
@@ -197,6 +206,16 @@ function mapSizeToSeedreamImageSize(size) {
 
 function buildShotInstruction(viewType) {
   switch (viewType) {
+    case IMAGE_TYPES.SHEET:
+      return [
+        "Generate one 16:9 multi-view character sheet.",
+        "Use the same exact person in every panel.",
+        "Top row must show front full-body, strict left full-body profile, strict right full-body profile, and back full-body.",
+        "Bottom row must show left profile portrait, front portrait, and right profile portrait.",
+        "Clean neutral studio character-sheet presentation only.",
+        "Do not generate extra panels, text, labels, borders, or watermarks.",
+      ].join(" ");
+
     case IMAGE_TYPES.FRONT:
       return [
         "Single person only.",
@@ -266,7 +285,7 @@ case IMAGE_TYPES.RIGHT:
 case IMAGE_TYPES.CLOSEUP:
   return [
     "Single person only.",
-    "Tight close-up portrait.",
+    "Front-facing portrait.",
     "Face clearly visible and highly recognizable.",
     "Close-up must look unmistakably like the same person as the master identity and front image.",
     "Preserve exact face shape, cheek structure, jawline, chin, forehead, brow shape, eyebrow thickness, eyelids, eye shape, nose bridge, nose tip, lips, ears, hairline, hairstyle, skin tone, beard or moustache pattern, and natural facial asymmetry.",
@@ -284,6 +303,32 @@ case IMAGE_TYPES.CLOSEUP:
     "Skin must appear clean and healthy.",
 "No acne, no pimples, no facial blemishes.",
 "Preserve real texture but without added imperfections.",
+  ].join(" ");
+
+case IMAGE_TYPES.CLOSEUP_LEFT:
+  return [
+    "Single person only.",
+    "Strict LEFT side profile portrait only.",
+    "The subject must face LEFT.",
+    "Only the LEFT side of the face is visible.",
+    "Head-and-shoulders portrait framing.",
+    "No three-quarter angle.",
+    "No front angle.",
+    "Preserve exact side-profile identity markers.",
+    "Centered composition.",
+  ].join(" ");
+
+case IMAGE_TYPES.CLOSEUP_RIGHT:
+  return [
+    "Single person only.",
+    "Strict RIGHT side profile portrait only.",
+    "The subject must face RIGHT.",
+    "Only the RIGHT side of the face is visible.",
+    "Head-and-shoulders portrait framing.",
+    "No three-quarter angle.",
+    "No front angle.",
+    "Preserve exact side-profile identity markers.",
+    "Centered composition.",
   ].join(" ");
 
     default:
@@ -701,6 +746,14 @@ function getPromptIntensity(attempt = 0) {
 
 function getViewStrategy(viewType) {
   switch (viewType) {
+    case IMAGE_TYPES.SHEET:
+      return {
+        identityPriority: "very_high",
+        shotPriority: "high",
+        compositionPriority: "high",
+        cinematicPriority: "low",
+      };
+
     case IMAGE_TYPES.FRONT:
       return {
         identityPriority: "high",
@@ -727,6 +780,8 @@ function getViewStrategy(viewType) {
       };
 
     case IMAGE_TYPES.CLOSEUP:
+    case IMAGE_TYPES.CLOSEUP_LEFT:
+    case IMAGE_TYPES.CLOSEUP_RIGHT:
       return {
         identityPriority: "very_high",
         shotPriority: "medium",
@@ -870,13 +925,22 @@ function buildAdaptiveIdentityBlock({
     );
   }
 
-  if (viewType === IMAGE_TYPES.LEFT || viewType === IMAGE_TYPES.RIGHT) {
+  if (
+    viewType === IMAGE_TYPES.LEFT ||
+    viewType === IMAGE_TYPES.RIGHT ||
+    viewType === IMAGE_TYPES.CLOSEUP_LEFT ||
+    viewType === IMAGE_TYPES.CLOSEUP_RIGHT
+  ) {
     lines.push(
       "Preserve side-profile identity markers exactly: forehead slope, nose projection, nose bridge, lip projection, chin projection, jaw contour, ear shape, and hairline."
     );
   }
 
-  if (viewType === IMAGE_TYPES.CLOSEUP) {
+  if (
+    viewType === IMAGE_TYPES.CLOSEUP ||
+    viewType === IMAGE_TYPES.CLOSEUP_LEFT ||
+    viewType === IMAGE_TYPES.CLOSEUP_RIGHT
+  ) {
     lines.push(
       "Close-up must be highly recognizable and unmistakably the same person.",
       "Facial identity must be preserved with maximum accuracy."
@@ -959,6 +1023,22 @@ if (viewType === IMAGE_TYPES.RIGHT) {
   );
 }
 
+if (viewType === IMAGE_TYPES.CLOSEUP_LEFT) {
+  lines.push(
+    "Mandatory direction rule: the person must face LEFT.",
+    "Only the left facial contour may be visible.",
+    "This must be a true left profile portrait, not a three-quarter portrait."
+  );
+}
+
+if (viewType === IMAGE_TYPES.CLOSEUP_RIGHT) {
+  lines.push(
+    "Mandatory direction rule: the person must face RIGHT.",
+    "Only the right facial contour may be visible.",
+    "This must be a true right profile portrait, not a three-quarter portrait."
+  );
+}
+
   if (viewType === IMAGE_TYPES.BACK) {
     lines.push("Subject must fully face away from camera.");
   }
@@ -995,7 +1075,22 @@ function buildAdaptiveCompositionBlock({
     "Centered composition.",
   ];
 
-  if (viewType === IMAGE_TYPES.CLOSEUP) {
+  if (viewType === IMAGE_TYPES.SHEET) {
+    return [
+      "Single character sheet only.",
+      "Landscape 16:9 composition.",
+      "Seven clearly separated panels with even spacing.",
+      "Top row: four full-body views.",
+      "Bottom row: three portrait views.",
+      "No extra people, no duplicate bonus panels, no text labels, no border captions.",
+    ].join(" ");
+  }
+
+  if (
+    viewType === IMAGE_TYPES.CLOSEUP ||
+    viewType === IMAGE_TYPES.CLOSEUP_LEFT ||
+    viewType === IMAGE_TYPES.CLOSEUP_RIGHT
+  ) {
     lines.push(
       "Tight portrait framing.",
       "Face fully visible and clearly readable."
@@ -1194,14 +1289,24 @@ function buildReferenceFusionBlock({
     );
   }
 
-  if (viewType === IMAGE_TYPES.CLOSEUP && fusion.faceHeavy) {
+  if (
+    (viewType === IMAGE_TYPES.CLOSEUP ||
+      viewType === IMAGE_TYPES.CLOSEUP_LEFT ||
+      viewType === IMAGE_TYPES.CLOSEUP_RIGHT) &&
+    fusion.faceHeavy
+  ) {
     lines.push(
       "This shot is face-critical. Prioritize exact facial identity over all non-essential styling."
     );
   }
 
   if (
-    (viewType === IMAGE_TYPES.LEFT || viewType === IMAGE_TYPES.RIGHT) &&
+    (
+      viewType === IMAGE_TYPES.LEFT ||
+      viewType === IMAGE_TYPES.RIGHT ||
+      viewType === IMAGE_TYPES.CLOSEUP_LEFT ||
+      viewType === IMAGE_TYPES.CLOSEUP_RIGHT
+    ) &&
     fusion.profileHeavy
   ) {
     lines.push(
@@ -1536,6 +1641,9 @@ function shouldSoftAcceptScore(score, thresholds, viewType) {
 
 function getReferencePriority(viewType) {
   switch (viewType) {
+    case IMAGE_TYPES.SHEET:
+      return ["MASTER", IMAGE_TYPES.FRONT, IMAGE_TYPES.LEFT, IMAGE_TYPES.RIGHT, IMAGE_TYPES.BACK];
+
     case IMAGE_TYPES.FRONT:
       return ["MASTER", IMAGE_TYPES.FRONT];
 
@@ -1551,6 +1659,12 @@ case IMAGE_TYPES.RIGHT:
     case IMAGE_TYPES.CLOSEUP:
       return [IMAGE_TYPES.FRONT, "MASTER", IMAGE_TYPES.LEFT, IMAGE_TYPES.RIGHT];
 
+    case IMAGE_TYPES.CLOSEUP_LEFT:
+      return ["MASTER", IMAGE_TYPES.LEFT, IMAGE_TYPES.FRONT, IMAGE_TYPES.CLOSEUP];
+
+    case IMAGE_TYPES.CLOSEUP_RIGHT:
+      return ["MASTER", IMAGE_TYPES.RIGHT, IMAGE_TYPES.FRONT, IMAGE_TYPES.CLOSEUP];
+
     default:
       return ["MASTER", IMAGE_TYPES.FRONT];
   }
@@ -1560,6 +1674,9 @@ function trimReferencesForView(viewType, refs) {
   const uniqueRefs = Array.from(new Set(refs)).filter(Boolean);
 
   switch (viewType) {
+    case IMAGE_TYPES.SHEET:
+      return uniqueRefs.slice(0, 5);
+
     case IMAGE_TYPES.FRONT:
       return uniqueRefs.slice(0, 4);
 
@@ -1572,6 +1689,10 @@ function trimReferencesForView(viewType, refs) {
 
     case IMAGE_TYPES.CLOSEUP:
       return uniqueRefs.slice(0, 3);
+
+    case IMAGE_TYPES.CLOSEUP_LEFT:
+    case IMAGE_TYPES.CLOSEUP_RIGHT:
+      return uniqueRefs.slice(0, 4);
 
     default:
       return uniqueRefs.slice(0, 3);
@@ -1626,6 +1747,22 @@ function scoreReferenceCandidate({
 
     if (candidate.type === IMAGE_TYPES.FRONT) score += 10;
     if (candidate.type === IMAGE_TYPES.LEFT || candidate.type === IMAGE_TYPES.RIGHT) score += 4;
+  }
+
+  if (targetViewType === IMAGE_TYPES.CLOSEUP_LEFT) {
+    score += identityScore * 2.5;
+    score += qualityScore * 1.5;
+
+    if (candidate.type === IMAGE_TYPES.LEFT) score += 16;
+    if (candidate.type === IMAGE_TYPES.FRONT) score += 8;
+  }
+
+  if (targetViewType === IMAGE_TYPES.CLOSEUP_RIGHT) {
+    score += identityScore * 2.5;
+    score += qualityScore * 1.5;
+
+    if (candidate.type === IMAGE_TYPES.RIGHT) score += 16;
+    if (candidate.type === IMAGE_TYPES.FRONT) score += 8;
   }
 
   if (targetViewType === IMAGE_TYPES.BACK) {
@@ -2604,7 +2741,7 @@ async function runRepairPassForView({
   lockedTraitsBlock = "",
 }) {
   const size =
-    failedView.type === IMAGE_TYPES.CLOSEUP ? "1024x1024" : "1024x1536";
+    PACK_VIEWS.find((view) => view.key === failedView.type)?.size || "1024x1536";
 
 const referenceSelection = buildReferenceSet({
   viewType: failedView.type,
@@ -2939,8 +3076,7 @@ console.log("🧠 Loaded character memory", {
         break;
       }
 
-      const size =
-        view.key === IMAGE_TYPES.CLOSEUP ? "1024x1024" : "1024x1536";
+      const size = view.size || "1024x1536";
 
   const viewStart = nowMs();
   console.log("VIEW START", { view: view.key });
