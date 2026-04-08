@@ -38,40 +38,12 @@ function getModelForView(viewType) {
 }
 
 function shouldEvaluateViewOnFirstPass(viewType) {
-  return (
-    viewType === IMAGE_TYPES.FRONT ||
-    viewType === IMAGE_TYPES.LEFT ||
-    viewType === IMAGE_TYPES.RIGHT ||
-    viewType === IMAGE_TYPES.BACK ||
-    viewType === IMAGE_TYPES.CLOSEUP
-  );
+  void viewType;
+  return false;
 }
 
 function shouldRepairFailedView(failedView) {
-  if (!failedView) return false;
-
-  if (
-    failedView.type === IMAGE_TYPES.FRONT ||
-    failedView.type === IMAGE_TYPES.CLOSEUP
-  ) {
-    return true;
-  }
-
-  if (
-    failedView.type === IMAGE_TYPES.LEFT ||
-    failedView.type === IMAGE_TYPES.RIGHT
-  ) {
-    return (
-      failedView.failureType === "wrong_shot" ||
-      failedView.failureType === "identity_drift" ||
-      failedView.failureType === "multiple_people"
-    );
-  }
-
-if (failedView.type === IMAGE_TYPES.BACK) {
-  return true;
-}
-
+  void failedView;
   return false;
 }
 
