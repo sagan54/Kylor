@@ -409,16 +409,6 @@ export async function GET(req) {
       });
     }
 
-    if (data?.mode && data.mode !== "image") {
-      return Response.json({
-        success: true,
-        status: "processing",
-        images: data?.images || [],
-        error: errorMessage || null,
-        generation: buildGenerationPayload(data),
-      });
-    }
-
     if (String(metadata?.provider || "").toLowerCase() === "replicate") {
       const replicateResult = await finalizeReplicatePrediction(data);
       if (replicateResult?.images?.length) {
@@ -491,6 +481,16 @@ export async function GET(req) {
           ? "recovering_db_sync"
           : "processing",
         message: "Generation is still processing. Refreshing status...",
+        generation: buildGenerationPayload(data),
+      });
+    }
+
+    if (data?.mode && data.mode !== "image") {
+      return Response.json({
+        success: true,
+        status: "processing",
+        images: data?.images || [],
+        error: errorMessage || null,
         generation: buildGenerationPayload(data),
       });
     }

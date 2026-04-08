@@ -1,5 +1,4 @@
 import Replicate from "replicate";
-import { tasks } from "@trigger.dev/sdk/v3";
 import { createClient } from "@supabase/supabase-js";
 import { IMAGE_TYPES, IMAGE_ORDER, PACK_VIEWS } from "../../../lib/character-constants";
 import { FLUX_MODEL } from "../../../lib/image-generation-rules";
@@ -15,6 +14,7 @@ const replicate = new Replicate({
 });
 
 const JOB_TIMEOUT_MS = 3 * 60 * 1000;
+const STALE_PACK_JOB_MS = 10 * 60 * 1000;
 const MODEL = FLUX_MODEL;
 
 const REQUIRED_PACK_VIEWS = [
@@ -80,6 +80,12 @@ function sleep(ms) {
 
 function nowMs() {
   return Date.now();
+}
+
+function getTimeMs(value) {
+  if (!value) return null;
+  const parsed = new Date(value).getTime();
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function isProviderRateLimitError(err) {
@@ -3901,7 +3907,18 @@ export async function POST(req) {
 
     const activeJob = (existingRows || []).find((row) => {
       const state = String(row?.metadata?.state || "").toLowerCase();
-      return state === "processing" || state === "queued" || state === "";
+      if (!(state === "processing" || state === "queued" || state === "")) {
+        return false;
+      }
+
+      const lastProgressAt =
+        getTimeMs(row?.metadata?.lastProgressAt) ||
+        getTimeMs(row?.metadata?.startedAt) ||
+        getTimeMs(row?.created_at);
+
+      if (!lastProgressAt) return true;
+
+      return nowMs() - lastProgressAt < STALE_PACK_JOB_MS;
     });
 
     if (activeJob?.id) {
@@ -3924,41 +3941,27 @@ export async function POST(req) {
       },
     });
 
-    let dispatchMode = "trigger";
+    const dispatchMode = "route_direct";
 
-    try {
-      await tasks.trigger("generate-character-pack", {
-        generationId: pending.id,
+    await updateGenerationJob(pending.id, {
+      metadata: {
+        state: "processing",
+        progressStage: "queued_direct",
+        dispatchMode,
+        lastProgressAt: new Date().toISOString(),
+      },
+    });
+
+    after(() =>
+      runGenerationJob(pending.id, {
         characterId,
         masterImage: normalizedMaster,
         userId,
         negativePrompt,
-      });
-    } catch (triggerError) {
-      dispatchMode = "route_fallback";
-      console.error("PACK ROUTE TRIGGER DISPATCH FAILED, FALLING BACK:", triggerError);
-
-      await updateGenerationJob(pending.id, {
-        metadata: {
-          state: "processing",
-          progressStage: "fallback_started",
-          triggerDispatchError:
-            triggerError?.message || "Failed to enqueue Trigger task",
-          dispatchMode,
-        },
-      });
-
-      after(() =>
-        runGenerationJob(pending.id, {
-          characterId,
-          masterImage: normalizedMaster,
-          userId,
-          negativePrompt,
-        }).catch((err) => {
-          console.error("PACK ROUTE FALLBACK ERROR:", err);
-        })
-      );
-    }
+      }).catch((err) => {
+        console.error("PACK ROUTE DIRECT ERROR:", err);
+      })
+    );
 
     return Response.json({
       success: true,
