@@ -1,7 +1,7 @@
 import Replicate from "replicate";
 import { createClient } from "@supabase/supabase-js";
 import { IMAGE_TYPES, IMAGE_ORDER, PACK_VIEWS } from "../../../lib/character-constants";
-import { FLUX_MODEL } from "../../../lib/image-generation-rules";
+import { INSTANTID_MODEL } from "../../../lib/image-generation-rules";
 import { after } from "next/server";
 import sharp from "sharp";
 
@@ -16,7 +16,7 @@ const replicate = new Replicate({
 const JOB_TIMEOUT_MS = 3 * 60 * 1000;
 const STALE_PACK_JOB_MS = 10 * 60 * 1000;
 const INTER_VIEW_COOLDOWN_MS = 11000;
-const MODEL = FLUX_MODEL;
+const MODEL = INSTANTID_MODEL;
 
 const REQUIRED_PACK_VIEWS = [
   IMAGE_TYPES.FRONT,
@@ -189,6 +189,18 @@ function getViewPrompt(viewKey) {
 
     default:
       return "full body portrait of the same exact person, natural realistic photography";
+  }
+}
+
+function mapSizeToDimensions(size) {
+  switch (String(size || "").toLowerCase()) {
+    case "1536x1024":
+      return { width: 1024, height: 1536 };
+    case "1024x1024":
+      return { width: 1024, height: 1024 };
+    case "1024x1536":
+    default:
+      return { width: 1024, height: 1536 };
   }
 }
 
@@ -2361,10 +2373,13 @@ const cleanedRefs = refs
 
 const input = {
   prompt: finalPrompt,
-  input_images: cleanedRefs,
-  aspect_ratio,
-  output_format: "png",
-  prompt_upsampling: false,
+  image: cleanedRefs[0],
+  negative_prompt: finalNegativePrompt,
+  ...mapSizeToDimensions(size),
+  ip_adapter_scale: 0.95,
+  controlnet_conditioning_scale: 0.95,
+  num_inference_steps: 40,
+  guidance_scale: 4.5,
 };
 
 const modelToUse = getModelForView(viewType);
