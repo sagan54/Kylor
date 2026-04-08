@@ -17,6 +17,7 @@ import { supabase } from "../../lib/supabase";
 
 const CHAR_BUCKET = "character-refs";
 const SESSION_KEY = "kylor_chars_cache_v2";
+const PENDING_PACK_KEY = "kylor_pending_character_packs_v1";
 
 const C = {
   accent: "#7c3aed", accentSoft: "rgba(124,58,237,0.15)",
@@ -477,6 +478,10 @@ function getMasterImageForCharacter(char) {
   if (coverRef?.previewUrl) return coverRef.previewUrl;
 
   return char.coverImage || null;
+}
+
+function isPollingTimeoutError(err) {
+  return String(err?.message || "").toLowerCase().includes("timed out while waiting for completion");
 }
 
 function SidebarItem({ item }) {
@@ -963,6 +968,7 @@ export default function ConsistencyPage() {
 
   const canvasRef = useRef(null);
   const generatingRef = useRef(false);
+  const pendingPackPollsRef = useRef(new Set());
 
   const activeChar = characters.find(c => c.id === activeCharId) || null;
   const charOutputs = outputs.filter(o => o.charId === activeCharId);
@@ -974,6 +980,38 @@ export default function ConsistencyPage() {
   const frontOutput = visibleCharOutputs.find(o => o.scene === "Front Full-Body");
   const otherOutputs = visibleCharOutputs.filter(o => o.scene !== "Front Full-Body");
   const shouldShowGenerateMorePanel = false;
+
+function loadPendingPackJobs() {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(PENDING_PACK_KEY);
+    const parsed = JSON.parse(raw || "[]");
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function savePendingPackJobs(items) {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(PENDING_PACK_KEY, JSON.stringify(items || []));
+  } catch {}
+}
+
+function upsertPendingPackJob(item) {
+  const existing = loadPendingPackJobs().filter(
+    (entry) => String(entry?.predictionId || "") !== String(item?.predictionId || "")
+  );
+  savePendingPackJobs([item, ...existing]);
+}
+
+function removePendingPackJob(predictionId) {
+  const next = loadPendingPackJobs().filter(
+    (entry) => String(entry?.predictionId || "") !== String(predictionId || "")
+  );
+  savePendingPackJobs(next);
+}
 
 const updateCharactersCache = useCallback((chars) => {
   try {
@@ -1026,6 +1064,48 @@ const hydrateCachedCharacters = useCallback((cached) => {
     };
   });
 }, []);
+
+const applyCompletedCharacterPack = useCallback(async ({ completedData, characterId, masterRef }) => {
+  const pack = extractPackResults(completedData);
+
+  if (!pack.length) return;
+
+  const nextOutputs = pack
+    .filter((item) => item?.url)
+    .map((item) => ({
+      id: `${characterId}-${item.type}`,
+      charId: characterId,
+      prompt: "",
+      scene: PACK_VIEWS.find((v) => v.key === item.type)?.label || item.type,
+      url: item.url,
+      createdAt: new Date().toISOString(),
+    }));
+
+  setOutputs((prev) => [
+    ...prev.filter((o) => o.charId !== characterId),
+    ...nextOutputs,
+  ]);
+
+  setCharacters((prev) => {
+    const updated = prev.map((c) =>
+      c.id === characterId
+        ? {
+            ...c,
+            masterImage: masterRef || c.masterImage,
+            generatedImages: pack.map((item) => item.url).filter(Boolean),
+            generations: pack.filter((item) => item.url).length,
+          }
+        : c
+    );
+    updateCharactersCache(updated);
+    return updated;
+  });
+
+  await refreshCharacterPackState(
+    characters.find((c) => c.id === characterId) || activeChar,
+    masterRef || null
+  );
+}, [activeChar, characters, refreshCharacterPackState, updateCharactersCache]);
 
   async function loadCharacterImages(characterId, allCharacters = null) {
     if (!characterId && !allCharacters?.length) {
@@ -1269,8 +1349,68 @@ async function autoSaveReferencesForCharacter(characterId, currentEntries) {
     if (!currentChar) {
       setCharacterImages(filteredRows);
       await markCharacterDnaStale(characterId);
-      return null;
+  return null;
+}
+
+const resumePendingCharacterPack = useCallback(async (pendingItem) => {
+  const predictionId = pendingItem?.predictionId;
+  const characterId = pendingItem?.characterId;
+  const masterRef = pendingItem?.masterRef || null;
+
+  if (!predictionId || !characterId) return;
+  if (pendingPackPollsRef.current.has(predictionId)) return;
+
+  pendingPackPollsRef.current.add(predictionId);
+
+  try {
+    const completedData = await pollGenerationJob(predictionId, {
+      intervalMs: 2500,
+      timeoutMs: 15 * 60 * 1000,
+    });
+
+    await applyCompletedCharacterPack({
+      completedData,
+      characterId,
+      masterRef,
+    });
+
+    if (userId) {
+      fetch("/api/process-character-dna", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          characterId,
+          userId,
+        }),
+      }).catch((err) => {
+        console.error("Failed to trigger DNA processing:", err);
+      });
     }
+
+    removePendingPackJob(predictionId);
+  } catch (err) {
+    if (isPollingTimeoutError(err)) {
+      console.info("resumePendingCharacterPack: still processing in background", {
+        predictionId,
+        characterId,
+      });
+    } else {
+      console.error("resumePendingCharacterPack failed:", err);
+      removePendingPackJob(predictionId);
+    }
+  } finally {
+    pendingPackPollsRef.current.delete(predictionId);
+  }
+}, [applyCompletedCharacterPack, userId]);
+
+  useEffect(() => {
+    const pending = loadPendingPackJobs();
+    pending.forEach((item) => {
+      resumePendingCharacterPack(item);
+    });
+  }, [resumePendingCharacterPack]);
 
     const mapped = rowToCharacter(
       {
@@ -2139,77 +2279,53 @@ if (!predictionId) {
   throw new Error("Character pack job did not return a predictionId.");
 }
 
-const completedData = await pollGenerationJob(predictionId, {
-  intervalMs: 2500,
-  timeoutMs: CHARACTER_PACK_POLL_TIMEOUT_MS,
+upsertPendingPackJob({
+  predictionId,
+  characterId: activeChar.id,
+  masterRef,
+  startedAt: new Date().toISOString(),
 });
 
-fetch("/api/process-character-dna", {
-  method: "POST",
-  headers: {
-    "Content-Type": "application/json",
-  },
-  body: JSON.stringify({
-    characterId: activeChar.id,
-    userId,
-  }),
-})
-  .then(async (dnaRes) => {
-    const dnaRaw = await dnaRes.text();
-
-    let dnaData = null;
-    try {
-      dnaData = JSON.parse(dnaRaw);
-    } catch {
-      console.error("DNA API NON-JSON RESPONSE:", dnaRaw);
-      return;
-    }
-
-    if (!dnaRes.ok) {
-      console.error("DNA processing failed:", dnaData);
-      return;
-    }
-
-    console.log("DNA processing complete:", dnaData);
-  })
-  .catch((err) => {
-    console.error("Failed to trigger DNA processing:", err);
+try {
+  const completedData = await pollGenerationJob(predictionId, {
+    intervalMs: 2500,
+    timeoutMs: CHARACTER_PACK_POLL_TIMEOUT_MS,
   });
 
-const pack = extractPackResults(completedData);
+  await applyCompletedCharacterPack({
+    completedData,
+    characterId: activeChar.id,
+    masterRef,
+  });
 
-const nextOutputs = pack
-  .filter((item) => item?.url)
-  .map((item) => ({
-    id: `${activeChar.id}-${item.type}`,
-    charId: activeChar.id,
-    prompt: "",
-    scene: PACK_VIEWS.find((v) => v.key === item.type)?.label || item.type,
-    url: item.url,
-    createdAt: new Date().toISOString(),
-  }));
+  removePendingPackJob(predictionId);
 
-setOutputs((prev) => [
-  ...prev.filter((o) => o.charId !== activeChar.id),
-  ...nextOutputs,
-]);
+  fetch("/api/process-character-dna", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      characterId: activeChar.id,
+      userId,
+    }),
+  })
+    .catch((err) => {
+      console.error("Failed to trigger DNA processing:", err);
+    });
+} catch (pollErr) {
+  if (isPollingTimeoutError(pollErr)) {
+    resumePendingCharacterPack({
+      predictionId,
+      characterId: activeChar.id,
+      masterRef,
+    });
+    alert("Character pack is still processing in the background. It will appear automatically when ready.");
+    return;
+  }
 
-setCharacters((prev) => {
-  const updated = prev.map((c) =>
-    c.id === activeChar.id
-      ? {
-          ...c,
-          masterImage: masterRef,
-          generatedImages: pack.map((item) => item.url).filter(Boolean),
-          generations: pack.filter((item) => item.url).length,
-        }
-      : c
-  );
-  updateCharactersCache(updated);
-  return updated;
-});
-
-await refreshCharacterPackState(activeChar, masterRef);
+  throw pollErr;
+}
   } catch (err) {
     console.error("Character pack generation failed:", err);
     alert(err?.message || "Failed to generate character pack.");
