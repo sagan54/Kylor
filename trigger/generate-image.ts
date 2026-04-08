@@ -1,15 +1,9 @@
 import { task } from "@trigger.dev/sdk/v3";
 import { createClient } from "@supabase/supabase-js";
-import { fal } from "@fal-ai/client";
+import Replicate from "replicate";
 import {
-  buildCameraRealismBlock,
-  buildExpressionNegativeBlock,
-  buildLightingNegativeBlock,
-  buildMicroDetailBlock,
-  buildRealismLightingBlock,
-  buildSceneIntegrationBlock,
-  buildSkinRealismBlock,
-  inferSceneExpression,
+  FLUX_MODEL,
+  buildPrompt,
 } from "../lib/image-generation-rules.js";
 
 type GenerateImagePayload = {
@@ -36,12 +30,11 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-fal.config({
-  credentials: process.env.FAL_KEY!,
+const replicate = new Replicate({
+  auth: process.env.REPLICATE_API_TOKEN!,
 });
 
 const GENERATED_BUCKET = "generated-images";
-const SEEDREAM_MODEL = "fal-ai/bytedance/seedream/v4.5/edit";
 
 function normalizeImageUrl(value: unknown) {
   const url = String(value || "").trim();
@@ -66,23 +59,24 @@ function getFileExtFromContentType(contentType?: string | null) {
   return "png";
 }
 
-function mapSizeToSeedreamImageSize(size?: string | null) {
-  switch (String(size || "").toLowerCase()) {
-    case "square":
-    case "1:1":
-      return "square_hd";
+function mapSizeToAspectRatio(size?: string | null, ratio?: string | null) {
+  switch (String(size || ratio || "").toLowerCase()) {
+    case "1024x1536":
     case "portrait":
     case "4:5":
     case "3:4":
-      return "portrait_4_3";
-    case "9:16":
-      return "portrait_16_9";
+      return "2:3";
+    case "1536x1024":
     case "16:9":
-      return "landscape_16_9";
+      return "16:9";
     case "4:3":
-      return "landscape_4_3";
+      return "4:3";
+    case "9:16":
+      return "9:16";
+    case "square":
+    case "1:1":
     default:
-      return "landscape_16_9";
+      return "1:1";
   }
 }
 
@@ -201,184 +195,123 @@ async function uploadGeneratedImage({
   };
 }
 
-function extractImageOutput(result: any) {
-  const image =
-    result?.data?.images?.[0] ||
-    result?.data?.image ||
-    result?.images?.[0] ||
-    result?.image ||
-    null;
+async function fileOutputToUrl(output: any): Promise<string | null> {
+  if (!output) return null;
+  if (typeof output === "string") return output;
 
-  return {
-    url: image?.url || null,
-    width: image?.width || null,
-    height: image?.height || null,
-    content_type: image?.content_type || "image/png",
-    raw: result,
-  };
+  if (Array.isArray(output)) {
+    for (const item of output) {
+      const url = await fileOutputToUrl(item);
+      if (url) return url;
+    }
+    return null;
+  }
+
+  if (typeof output?.url === "function") {
+    const url = await output.url();
+    return typeof url === "string" ? url : String(url || "");
+  }
+
+  if (typeof output?.url === "string") return output.url;
+  if (typeof output?.href === "string") return output.href;
+
+  const asString = String(output || "").trim();
+  if (asString.startsWith("http://") || asString.startsWith("https://")) {
+    return asString;
+  }
+
+  return null;
 }
 
-function buildSeedreamPrompt({
+function buildFluxCharacterPrompt({
   finalPrompt,
   scenePrompt,
-  characterName,
   characterPrompt,
   style,
-  ratio,
-  referenceUrls = [],
+  negativePrompt,
 }: {
   finalPrompt?: string | null;
   scenePrompt?: string | null;
-  characterName?: string | null;
   characterPrompt?: string | null;
   style?: string | null;
-  ratio?: string | null;
-  referenceUrls?: string[];
+  negativePrompt?: string | null;
 }) {
-  const charName = characterName || "the same character";
-  const sceneText = String(
-    scenePrompt || finalPrompt || "Create a cinematic photorealistic scene."
-  ).trim();
-  const figureGuide =
-    referenceUrls.length > 0
-      ? referenceUrls.map((_, idx) => `Figure ${idx + 1}`).join(", ")
-      : "the provided reference images";
-  const resolvedCharacterPrompt = String(
-    characterPrompt || `Exact identity lock for ${charName}.`
-  ).trim();
-  const expression = inferSceneExpression(sceneText, style || "");
-  const lightingBlock = buildRealismLightingBlock(sceneText, style || "");
-  const sceneIntegrationBlock = buildSceneIntegrationBlock(sceneText, style || "");
-  const skinRealismBlock = buildSkinRealismBlock(sceneText, style || "");
-  const cameraRealismBlock = buildCameraRealismBlock();
-  const microDetailBlock = buildMicroDetailBlock();
-  const avoidBlock = [
-    "different person",
-    "identity drift",
-    "rear view",
-    "extreme side profile",
-    "tiny face",
-    "distant subject",
-    buildLightingNegativeBlock(sceneText, style || ""),
-    buildExpressionNegativeBlock(sceneText, style || ""),
-  ]
-    .filter(Boolean)
-    .join(", ");
+  const scene = scenePrompt || finalPrompt || "";
+  const basePrompt = buildPrompt({
+    scene,
+    style,
+    negativePrompt,
+    mode: "character",
+  });
 
-  return `
-Use ${figureGuide} as reference images of the SAME real person.
-
-Highest priority:
-Keep the exact same facial identity of ${charName}.
-Do not create a different person.
-Do not beautify or alter facial structure.
-Keep the same face shape, eyes, nose, lips, jawline, hairline, hairstyle, skin tone, age impression, facial hair pattern, and recognizable likeness.
-
-Identity anchor:
-${resolvedCharacterPrompt}
-
-Reference rules:
-- Figure 1 is the primary identity anchor.
-- All other figures are supporting views of the same person.
-- Keep identity locked even if angle, lighting, camera distance, pose, wardrobe, or environment changes.
-
-Face visibility rules:
-- Face must remain clearly visible and readable.
-- Eyes, nose, mouth, jawline, and full facial structure must remain unobstructed.
-- No silhouette and no back-facing angle.
-- No heavy fog, smoke, rain streaks, hair, or props completely hiding the face.
-- Prefer front-facing or slight 3/4 view.
-- Use eye-level framing.
-- Use medium shot or medium close-up framing.
-
-Expression:
-${expression.guidance}
-Default away from happiness unless the scene explicitly suggests joy.
-
-Lighting realism:
-${lightingBlock}
-
-Scene integration:
-${sceneIntegrationBlock}
-
-Skin realism:
-${skinRealismBlock}
-
-Camera realism:
-${cameraRealismBlock}
-
-Micro detail:
-${microDetailBlock}
-
-Scene:
-${sceneText}
-
-Style:
-${style || "cinematic photorealistic still frame"}
-
-Aspect ratio:
-${ratio || "16:9"}
-
-Quality:
-photorealistic, realistic lighting interaction, realistic eyes, cinematic composition, grounded atmosphere, one main subject only.
-
-Avoid:
-${avoidBlock}
-`.trim();
+  return [characterPrompt || "", basePrompt].filter(Boolean).join("\n\n");
 }
 
-async function runSeedreamCharacterGeneration({
+async function runFluxCharacterGeneration({
   prompt,
-  referenceUrls,
+  negativePrompt,
+  style,
+  scenePrompt,
+  ratio,
   size,
   seed,
 }: {
   prompt: string;
-  referenceUrls: string[];
+  negativePrompt?: string | null;
+  style?: string | null;
+  scenePrompt?: string | null;
+  ratio?: string | null;
   size?: string | null;
   seed?: number | null;
 }) {
-  const cleanedRefs = (referenceUrls || [])
-    .map((url) => normalizeImageUrl(url))
-    .filter(Boolean) as string[];
-
-  if (!cleanedRefs.length) {
-    throw new Error("No valid reference URLs were provided to Seedream.");
-  }
-
-  const result = (await fal.subscribe(SEEDREAM_MODEL, {
+  const result = await replicate.run(FLUX_MODEL, {
     input: {
-      prompt,
-      image_size: mapSizeToSeedreamImageSize(size),
-      num_images: 1,
-      image_urls: cleanedRefs,
+      prompt: buildPrompt({
+        scene: scenePrompt || prompt || "",
+        style,
+        negativePrompt,
+        mode: "freeform",
+      }),
+      aspect_ratio: mapSizeToAspectRatio(size, ratio),
+      output_format: "png",
       seed: typeof seed === "number" ? seed : undefined,
-      sync_mode: true,
     },
-    logs: true,
-  })) as any;
+  });
 
-  const image = extractImageOutput(result);
-  if (!image.url) {
-    throw new Error("Seedream returned no image URL.");
+  const url = await fileOutputToUrl(result);
+  if (!url) {
+    throw new Error("FLUX returned no image URL.");
   }
 
-  return image;
+  return {
+    url,
+    content_type: "image/png",
+    raw: result,
+  };
 }
 async function runCharacterModel({
   prompt,
-  referenceUrls,
+  negativePrompt,
+  style,
+  scenePrompt,
+  ratio,
   size,
   seed,
 }: {
   prompt: string;
-  referenceUrls: string[];
+  negativePrompt?: string | null;
+  style?: string | null;
+  scenePrompt?: string | null;
+  ratio?: string | null;
   size?: string | null;
   seed?: number | null;
 }) {
-  return runSeedreamCharacterGeneration({
+  return runFluxCharacterGeneration({
     prompt,
-    referenceUrls,
+    negativePrompt,
+    style,
+    scenePrompt,
+    ratio,
     size,
     seed,
   });
@@ -431,9 +364,9 @@ export const generateImageTask = task({
           characterPrompt: characterPrompt || "",
           referenceCount: referenceUrls.length,
           referenceUrls,
-          provider: "fal",
-          model: SEEDREAM_MODEL,
-          identityMode: "multi_reference_seedream",
+          provider: "replicate",
+          model: FLUX_MODEL,
+          identityMode: "character_prompt_flux",
         },
       });
 
@@ -447,14 +380,12 @@ export const generateImageTask = task({
         throw new Error("No reference images available for this character.");
       }
 
-      const seedreamPrompt = buildSeedreamPrompt({
+      const characterFluxPrompt = buildFluxCharacterPrompt({
         finalPrompt: finalPrompt || prompt || "",
         scenePrompt: scenePrompt || finalPrompt || prompt || "",
-        characterName,
         characterPrompt,
         style,
-        ratio,
-        referenceUrls,
+        negativePrompt,
       });
 
       currentStage = "generating_image";
@@ -462,20 +393,23 @@ export const generateImageTask = task({
         metadata: {
           lastProgressAt: new Date().toISOString(),
           progressStage: "generating_image",
-          resolvedPrompt: seedreamPrompt,
+          resolvedPrompt: characterFluxPrompt,
         },
       });
 
       console.info("generate-image: generation started", {
         generationId,
         stage: currentStage,
-        model: SEEDREAM_MODEL,
+        model: FLUX_MODEL,
         referenceCount: referenceUrls.length,
       });
 
       const generatedRemote = await runCharacterModel({
-        prompt: seedreamPrompt,
-        referenceUrls,
+        prompt: characterFluxPrompt,
+        negativePrompt: negativePrompt || "",
+        style,
+        scenePrompt: scenePrompt || finalPrompt || prompt || "",
+        ratio,
         size: size || ratio,
         seed,
       });
@@ -511,13 +445,13 @@ export const generateImageTask = task({
             completedAt: new Date().toISOString(),
             lastProgressAt: new Date().toISOString(),
             progressStage: "completed",
-            provider: "fal",
-            model: SEEDREAM_MODEL,
+            provider: "replicate",
+            model: FLUX_MODEL,
             referenceUrls,
             referenceCount: referenceUrls.length,
             generatedRemote,
             storagePath: uploaded.storagePath,
-            identityMode: "multi_reference_seedream",
+            identityMode: "character_prompt_flux",
             negativePrompt: negativePrompt || "",
           },
         });
@@ -570,8 +504,8 @@ export const generateImageTask = task({
                 : currentStage === "finalizing_database"
                 ? "db_sync_failure"
                 : "generation_failure",
-            provider: "fal",
-            model: SEEDREAM_MODEL,
+            provider: "replicate",
+            model: FLUX_MODEL,
           },
         });
       } catch (persistError: any) {
