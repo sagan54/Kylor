@@ -45,8 +45,8 @@ function shouldEvaluateViewOnFirstPass(viewType) {
 }
 
 function shouldRepairFailedView(failedView) {
-  void failedView;
-  return false;
+  if (!failedView || failedView.accepted) return false;
+  return REQUIRED_PACK_VIEWS.includes(failedView.type);
 }
 
 const STORAGE_BUCKET = "character-refs";
@@ -2888,7 +2888,7 @@ let lastError = null;
 let lastScore = null;
 const basePrompt = getViewPrompt(failedView.type);
 
-const maxAttempts = 1;
+const maxAttempts = 2;
 
 for (let attempt = 0; attempt < maxAttempts; attempt++) {
   try {
@@ -2919,14 +2919,35 @@ for (let attempt = 0; attempt < maxAttempts; attempt++) {
       throw new Error(`Validation failed: ${validation.reason}`);
     }
 
-    const score = await scoreGeneratedView({
-      imageUrl: generated.tempUrl || generated.imageUrl,
-      masterImage: normalizedMaster,
-      frontImageUrl,
-      viewType: failedView.type,
-      attempt: attempt + 3,
-      referenceFusion: generated.referenceFusion,
-    });
+    const shouldEvaluate = shouldEvaluateViewOnFirstPass(failedView.type);
+    const score = shouldEvaluate
+      ? await scoreGeneratedView({
+          imageUrl: generated.tempUrl || generated.imageUrl,
+          masterImage: normalizedMaster,
+          frontImageUrl,
+          viewType: failedView.type,
+          attempt: attempt + 3,
+          referenceFusion: generated.referenceFusion,
+        })
+      : {
+          accepted: true,
+          identityScore: 8,
+          shotScore: 8,
+          compositionScore: 8,
+          qualityScore: 8,
+          finalScore: 8,
+          multiplePeople: false,
+          wrongShot: false,
+          faceNotVisible: false,
+          identityDrift: false,
+          lowQuality: false,
+          hairMismatch: false,
+          facingDirection: "unknown",
+          failureType: "none",
+          reason: "repair_pass_fast_accept",
+          thresholds: null,
+          thresholdFailureReasons: [],
+        };
 
     lastScore = score;
 
@@ -3180,7 +3201,7 @@ async function generatePackView({
   const currentRefs = referenceSelection.refs;
   const rankedCandidates = referenceSelection.rankedCandidates;
   const basePrompt = getViewPrompt(view.key);
-  const maxAttempts = 1;
+  const maxAttempts = 2;
   let acceptedResult = null;
   let lastError = null;
   let lastScore = null;
@@ -3606,9 +3627,10 @@ console.log("PACK FAILURE SUMMARY", {
     );
   }
 
-throw new Error(
-  `Pack incomplete after repair pass. Required views missing: ${missingRequiredViews.join(", ")}. Accepted: ${acceptedTypes.join(", ")}. Failed: ${failedViews.join(", ")}`
-);
+  const reasonSuffix = failedReasons ? ` Reasons: ${failedReasons}` : "";
+  throw new Error(
+    `Pack incomplete after repair pass. Required views missing: ${missingRequiredViews.join(", ")}. Accepted: ${acceptedTypes.join(", ")}. Failed: ${failedViews.join(", ")}.${reasonSuffix}`
+  );
 }
 
 console.log("FINAL UPLOAD START", {
