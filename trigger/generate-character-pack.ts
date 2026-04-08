@@ -1,8 +1,9 @@
 import { task } from "@trigger.dev/sdk/v3";
 import { createClient } from "@supabase/supabase-js";
-import { fal } from "@fal-ai/client";
+import Replicate from "replicate";
 import sharp from "sharp";
 import { IMAGE_ORDER, IMAGE_TYPES, PACK_VIEWS } from "../lib/character-constants";
+import { FLUX_MODEL } from "../lib/image-generation-rules.js";
 
 type GenerateCharacterPackPayload = {
   generationId: string;
@@ -16,12 +17,11 @@ const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
-
-fal.config({
-  credentials: process.env.FAL_KEY!,
+const replicate = new Replicate({
+  auth: process.env.REPLICATE_API_TOKEN!,
 });
 
-const MODEL = "fal-ai/bytedance/seedream/v4.5/edit";
+const MODEL = FLUX_MODEL;
 const STORAGE_BUCKET = "character-refs";
 
 const CORE_VIEWS = [
@@ -98,6 +98,50 @@ function mapSizeToSeedreamImageSize(size?: string | null) {
     default:
       return "portrait_4_3";
   }
+}
+
+function mapSizeToAspectRatio(size?: string | null) {
+  switch (String(size || "").toLowerCase()) {
+    case "1536x1024":
+    case "16:9":
+      return "16:9";
+    case "1024x1536":
+    default:
+      return "2:3";
+  }
+}
+
+async function fileOutputToUrl(output: any): Promise<string | null> {
+  if (!output) return null;
+
+  if (typeof output === "string") return output;
+
+  if (Array.isArray(output)) {
+    for (const item of output) {
+      const url = await fileOutputToUrl(item);
+      if (url) return url;
+    }
+    return null;
+  }
+
+  if (typeof output?.url === "function") {
+    const url = await output.url();
+    return typeof url === "string" ? url : String(url || "");
+  }
+
+  if (typeof output?.url === "string") return output.url;
+  if (typeof output?.href === "string") return output.href;
+
+  if (output?.output) {
+    return await fileOutputToUrl(output.output);
+  }
+
+  const asString = String(output || "").trim();
+  if (asString.startsWith("http://") || asString.startsWith("https://")) {
+    return asString;
+  }
+
+  return null;
 }
 
 async function updateGenerationRow(
@@ -231,7 +275,7 @@ function buildViewPrompt(viewPrompt: string, negativePrompt = "") {
     .join("\n\n");
 }
 
-async function generateFalImage({
+async function generateReplicateImage({
   prompt,
   refs,
   size,
@@ -240,33 +284,19 @@ async function generateFalImage({
   refs: string[];
   size: string;
 }) {
-  const input =
-    refs.length > 0
-      ? {
-          prompt,
-          image_size: mapSizeToSeedreamImageSize(size),
-          num_images: 1,
-          image_urls: refs,
-          sync_mode: true,
-        }
-      : {
-          prompt,
-          image_size: mapSizeToSeedreamImageSize(size),
-          num_images: 1,
-          sync_mode: true,
-        };
+  void refs;
 
-  const output = await fal.subscribe(MODEL, { input });
-  const image =
-    output?.data?.images?.[0] ||
-    output?.data?.image ||
-    output?.images?.[0] ||
-    output?.image ||
-    null;
+  const output = await replicate.run(MODEL, {
+    input: {
+      prompt,
+      aspect_ratio: mapSizeToAspectRatio(size),
+      output_format: "png",
+    },
+  });
 
-  const url = image?.url || null;
+  const url = await fileOutputToUrl(output);
   if (!url) {
-    throw new Error("No image URL returned from fal");
+    throw new Error("No image URL returned from Replicate");
   }
 
   return url;
@@ -409,7 +439,7 @@ export const generateCharacterPack = task({
     );
 
     try {
-      const frontTempUrl = await generateFalImage({
+      const frontTempUrl = await generateReplicateImage({
         prompt: buildViewPrompt(CORE_VIEWS[0].prompt, negativePrompt),
         refs,
         size: CORE_VIEWS[0].size,
@@ -440,7 +470,7 @@ export const generateCharacterPack = task({
 
       const remainingResults = await Promise.all(
         remainingViews.map(async (view) => {
-          const tempUrl = await generateFalImage({
+          const tempUrl = await generateReplicateImage({
             prompt: buildViewPrompt(view.prompt, negativePrompt),
             refs: remainingRefs,
             size: view.size,

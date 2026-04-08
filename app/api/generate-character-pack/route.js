@@ -1,7 +1,8 @@
-import { fal } from "@fal-ai/client";
+import Replicate from "replicate";
 import { tasks } from "@trigger.dev/sdk/v3";
 import { createClient } from "@supabase/supabase-js";
 import { IMAGE_TYPES, IMAGE_ORDER, PACK_VIEWS } from "../../../lib/character-constants";
+import { FLUX_MODEL } from "../../../lib/image-generation-rules";
 import { after } from "next/server";
 import sharp from "sharp";
 
@@ -9,13 +10,12 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
-
-fal.config({
-  credentials: process.env.FAL_KEY,
+const replicate = new Replicate({
+  auth: process.env.REPLICATE_API_TOKEN,
 });
 
 const JOB_TIMEOUT_MS = 3 * 60 * 1000;
-const MODEL = "fal-ai/bytedance/seedream/v4.5/edit";
+const MODEL = FLUX_MODEL;
 
 const REQUIRED_PACK_VIEWS = [
   IMAGE_TYPES.FRONT,
@@ -120,7 +120,7 @@ async function runProviderWithBackoff(fn, maxRetries = 2) {
 
       if (isProviderBillingError(err)) {
         throw new Error(
-          "fal credit/billing issue. Wait a few minutes after adding credit, then try again."
+          "Replicate credit/billing issue. Wait a few minutes after adding credit, then try again."
         );
       }
 
@@ -164,15 +164,37 @@ function getViewPrompt(viewKey) {
   }
 }
 
-function extractFalImageUrl(result) {
-  const image =
-    result?.data?.images?.[0] ||
-    result?.data?.image ||
-    result?.images?.[0] ||
-    result?.image ||
-    null;
+async function fileOutputToUrl(output) {
+  if (!output) return null;
 
-  return image?.url || null;
+  if (typeof output === "string") return output;
+
+  if (Array.isArray(output)) {
+    for (const item of output) {
+      const url = await fileOutputToUrl(item);
+      if (url) return url;
+    }
+    return null;
+  }
+
+  if (typeof output?.url === "function") {
+    const url = await output.url();
+    return typeof url === "string" ? url : String(url || "");
+  }
+
+  if (typeof output?.url === "string") return output.url;
+  if (typeof output?.href === "string") return output.href;
+
+  if (output?.output) {
+    return await fileOutputToUrl(output.output);
+  }
+
+  const asString = String(output || "").trim();
+  if (asString.startsWith("http://") || asString.startsWith("https://")) {
+    return asString;
+  }
+
+  return null;
 }
 
 function mapSizeToSeedreamImageSize(size) {
@@ -2459,20 +2481,11 @@ const cleanedRefs = refs
   .filter(Boolean)
   .slice(0, 8);
 
-const input = cleanedRefs.length > 0
-  ? {
-      prompt: finalPrompt,
-      image_size: mapSizeToSeedreamImageSize(size),
-      num_images: 1,
-      image_urls: cleanedRefs,
-      sync_mode: true,
-    }
-  : {
-      prompt: finalPrompt,
-      image_size: mapSizeToSeedreamImageSize(size),
-      num_images: 1,
-      sync_mode: true,
-    };
+const input = {
+  prompt: finalPrompt,
+  aspect_ratio,
+  output_format: "png",
+};
 
 const modelToUse = getModelForView(viewType);
 
@@ -2493,10 +2506,10 @@ const output = await runProviderWithBackoff(async () => {
   promptLength: finalPrompt.length,
 });
 
-  return await fal.subscribe(modelToUse, { input });
+  return await replicate.run(modelToUse, { input });
 }, 1);
 
-const tempUrl = extractFalImageUrl(output);
+const tempUrl = await fileOutputToUrl(output);
 
 console.log("PROVIDER OUTPUT DEBUG", {
   model: modelToUse,
@@ -3672,7 +3685,7 @@ console.log("PACK FAILURE SUMMARY", {
     failedReasons.includes("Payment Required")
   ) {
     throw new Error(
-      "fal credit is insufficient. Add billing credit, wait a few minutes, and try again."
+      "Replicate credit is insufficient. Add billing credit, wait a few minutes, and try again."
     );
   }
 
@@ -3681,7 +3694,7 @@ console.log("PACK FAILURE SUMMARY", {
     failedReasons.includes("429")
   ) {
     throw new Error(
-      "fal rate limit hit. Wait about 10 seconds and try again."
+      "Replicate rate limit hit. Wait about 10 seconds and try again."
     );
   }
 
