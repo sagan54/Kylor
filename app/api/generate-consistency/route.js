@@ -25,7 +25,7 @@ fal.config({
   credentials: process.env.FAL_KEY,
 });
 
-const MODEL = "fal-ai/flux-pro"
+const MODEL = "black-forest-labs/flux-2-pro"
 const STORAGE_BUCKET = "character-refs";
 const JOB_TIMEOUT_MS = 90 * 1000;
 

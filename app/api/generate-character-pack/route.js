@@ -18,7 +18,7 @@ const STALE_PACK_JOB_MS = 10 * 60 * 1000;
 const INTER_VIEW_COOLDOWN_MS = 11000;
 const MODEL =
   process.env.REPLICATE_CHARACTER_PACK_MODEL ||
-  "grandlineai/instant-id-photorealistic:03914a0c3326bf44383d0cd84b06822618af879229ce5d1d53bef38d93b68279";
+  "black-forest-labs/flux-2-pro";
 
 const REQUIRED_PACK_VIEWS = [
   IMAGE_TYPES.FRONT,

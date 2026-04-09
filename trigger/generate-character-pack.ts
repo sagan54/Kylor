@@ -440,7 +440,7 @@ export const generateCharacterPack = task({
 
     try {
       const frontTempUrl = await generateReplicateImage({
-        prompt: buildViewPrompt(CORE_VIEWS[0].prompt, negativePrompt),
+        prompt: buildViewPrompt(CORE_VIEWS[0].prompt, negativePrompt ?? undefined),
         refs,
         size: CORE_VIEWS[0].size,
       });
@@ -471,7 +471,7 @@ export const generateCharacterPack = task({
       const remainingResults = await Promise.all(
         remainingViews.map(async (view) => {
           const tempUrl = await generateReplicateImage({
-            prompt: buildViewPrompt(view.prompt, negativePrompt),
+            prompt: buildViewPrompt(view.prompt, negativePrompt ?? undefined),
             refs: remainingRefs,
             size: view.size,
           });
