@@ -25,7 +25,7 @@ fal.config({
   credentials: process.env.FAL_KEY,
 });
 
-const MODEL = "fal-ai/bytedance/seedream/v4.5/edit";
+const MODEL = "fal-ai/flux-pro"
 const STORAGE_BUCKET = "character-refs";
 const JOB_TIMEOUT_MS = 90 * 1000;
 
@@ -393,28 +393,37 @@ async function runSingleGeneration({
 const viewType = detectViewType(prompt);
 const seedreamSize = mapSizeToSeedreamSize(size);
 
-const finalPrompt = buildFinalPrompt({
+const finalPrompt = `
+CRITICAL:
+This is the SAME EXACT person from the reference image.
+Do NOT change identity.
+Do NOT reinterpret face.
+Do NOT generate a different person.
+
+${buildFinalPrompt({
   prompt,
   hasRefs,
   viewType,
   negativePrompt,
   strictIdentity,
-});
+})}
+`;
 
-  const input = hasRefs
-    ? {
-        prompt: finalPrompt,
-        image_size: seedreamSize,
-        num_images: 1,
-        image_urls: refs,
-        sync_mode: true,
-      }
-    : {
-        prompt: finalPrompt,
-        image_size: seedreamSize,
-        num_images: 1,
-        sync_mode: true,
-      };
+const masterImage = refs[0]; // 🔥 always use first as master
+
+if (!masterImage) {
+  throw new Error("Master identity image is required");
+}
+
+const input = {
+  prompt: finalPrompt,
+  image_size: seedreamSize,
+  num_images: 1,
+
+  image_urls: [masterImage], // 🔥 ONLY ONE IMAGE
+
+  sync_mode: true,
+};
 
   const output = await fal.subscribe(MODEL, { input });
   const tempUrl = extractFalImageUrl(output);
@@ -550,9 +559,9 @@ async function runGenerationJob(generationId, payload) {
   } = payload || {};
 
   try {
-    const refs = Array.isArray(referenceImages)
-      ? referenceImages.map(normalizeReferenceImage).filter(Boolean).slice(0, 8)
-      : [];
+const refs = Array.isArray(referenceImages)
+  ? referenceImages.map(normalizeReferenceImage).filter(Boolean).slice(0, 1)
+  : [];
 
     const safeAttempts = Math.min(Math.max(Number(attempts) || 1, 1), 4);
     const results = [];
