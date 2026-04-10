@@ -1,33 +1,18 @@
 import Replicate from "replicate";
+import { IMAGE_TYPES, IMAGE_ORDER, PACK_VIEWS } from "../../../lib/character-constants";
+import { createClient } from "@supabase/supabase-js";
 
 const replicate = new Replicate({
   auth: process.env.REPLICATE_API_TOKEN,
 });
-import { IMAGE_TYPES, IMAGE_ORDER, PACK_VIEWS } from "../../../lib/character-constants";
-import { createClient } from "@supabase/supabase-js";
-import { after } from "next/server";
-import {
-  buildCameraRealismBlock,
-  buildExpressionBlock,
-  buildExpressionNegativeBlock,
-  buildLightingBlock,
-  buildLightingNegativeBlock,
-  buildNegativeRealismBlock,
-  buildRealismBlock,
-  buildRealismLightingBlock,
-  buildSceneIntegrationBlock,
-  buildShadowInteractionBlock,
-  buildSkinRealismBlock,
-} from "../../../lib/image-generation-rules";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-const MODEL = "black-forest-labs/flux-1.1-pro-ultra";
+const MODEL = "black-forest-labs/flux-2-pro";
 const STORAGE_BUCKET = "character-refs";
-const JOB_TIMEOUT_MS = 90 * 1000;
 
 function normalizeReferenceImage(image) {
   if (!image || typeof image !== "string") return null;
@@ -51,15 +36,28 @@ function mapSizeToAspectRatio(size) {
   }
 }
 
-function extractFalImageUrl(result) {
-  const image =
-    result?.data?.images?.[0] ||
-    result?.data?.image ||
-    result?.images?.[0] ||
-    result?.image ||
-    null;
+async function fileOutputToUrl(output) {
+  if (!output) return null;
 
-  return image?.url || null;
+  if (typeof output === "string") return output;
+
+  if (Array.isArray(output)) {
+    const first = output[0];
+    if (!first) return null;
+
+    if (typeof first === "string") return first;
+    if (typeof first.url === "function") return await first.url();
+    if (typeof first.url === "string") return first.url;
+
+    const s = typeof first.toString === "function" ? first.toString() : null;
+    return s && s !== "[object Object]" ? s : null;
+  }
+
+  if (typeof output.url === "function") return await output.url();
+  if (typeof output.url === "string") return output.url;
+
+  const s = typeof output.toString === "function" ? output.toString() : null;
+  return s && s !== "[object Object]" ? s : null;
 }
 
 function detectViewType(prompt = "") {
@@ -201,10 +199,7 @@ function buildIdentityLockBlock(hasRefs, strictIdentity = true) {
 
   const strictLines = strictIdentity
     ? [
-        "CRITICAL: Reconstruct the exact same face from the reference image. Identity must match at pixel-level similarity.",
-"Do not approximate. Do not reinterpret. Do not generate a similar face.",
-"The generated face must be indistinguishable from the reference identity.",
-"Use the FIRST reference image as the PRIMARY identity anchor. Other references are secondary.",
+        "This is the SAME EXACT person from the reference image(s), not a similar-looking person.",
         "Preserve exact identity from the reference image(s).",
         "Preserve exact face shape, jawline, cheek structure, forehead, hairline, eyebrows, eyes, eyelids, nose shape, nostrils, lips, chin, ears, skin tone, hairstyle, hair texture, hair volume, neck, shoulders, and body proportions.",
         "If facial hair is present in the reference, preserve the same moustache, beard, stubble pattern, density, and placement.",
@@ -242,10 +237,8 @@ function buildNegativeBlock(negativePrompt = "", viewType = "auto") {
     "different hairline",
     "different skin tone",
     "beauty filter",
-    "airbrushed skin",
     "plastic skin",
     "waxy skin",
-    "excessive skin smoothing",
     "cgi look",
     "3d render",
     "stylized face",
@@ -263,7 +256,6 @@ function buildNegativeBlock(negativePrompt = "", viewType = "auto") {
     "character sheet",
     "text",
     "watermark",
-    "emotion mismatch",
   ];
 
   if (
@@ -291,23 +283,14 @@ function buildFinalPrompt({
 }) {
   const identityBlock = buildIdentityLockBlock(hasRefs, strictIdentity);
   const shotBlock = buildShotInstruction(viewType);
-  const safePrompt = String(prompt || "").trim();
-  const lightingBlock = buildLightingBlock(safePrompt);
-  const realismLightingBlock = buildRealismLightingBlock(safePrompt);
-  const sceneIntegrationBlock = buildSceneIntegrationBlock(safePrompt);
-  const skinRealismBlock = buildSkinRealismBlock(safePrompt);
-  const cameraRealismBlock = buildCameraRealismBlock();
-  const shadowInteractionBlock = buildShadowInteractionBlock();
-  const realismBlock = buildRealismBlock(safePrompt);
-  const expressionBlock = buildExpressionBlock(safePrompt);
-  const negativeBlock = [
-    buildNegativeBlock(negativePrompt, viewType),
-    buildLightingNegativeBlock(safePrompt),
-    buildExpressionNegativeBlock(safePrompt),
-    buildNegativeRealismBlock(),
-  ]
-    .filter(Boolean)
-    .join(", ");
+  const negativeBlock = buildNegativeBlock(negativePrompt, viewType);
+
+  const realismBlock = [
+    "Highly realistic human photography.",
+    "Natural skin texture, natural pores, realistic hair strands, realistic facial detail.",
+    "Grounded lighting, physically believable skin and hair.",
+    "No over-stylization.",
+  ].join(" ");
 
   const strictBlock = strictIdentity
     ? [
@@ -319,28 +302,12 @@ function buildFinalPrompt({
       ].join(" ")
     : "";
 
-const faceLockBlock = hasRefs
-  ? [
-      "Face identity priority: MAXIMUM.",
-      "Body, pose, clothing, and environment are secondary.",
-      "If conflict occurs, ALWAYS preserve face identity over everything else.",
-    ].join(" ")
-  : "";
-
   return [
     identityBlock,
     strictBlock,
     shotBlock,
-    faceLockBlock,
-    lightingBlock,
-    realismLightingBlock,
-    sceneIntegrationBlock,
-    skinRealismBlock,
-    cameraRealismBlock,
-    shadowInteractionBlock,
     realismBlock,
-    expressionBlock,
-    `User request: ${safePrompt}`,
+    `User request: ${String(prompt || "").trim()}`,
     `Avoid: ${negativeBlock}`,
   ]
     .filter(Boolean)
@@ -362,7 +329,7 @@ async function savePermanentImage({ imageUrl, userId = "anonymous", folder = "co
 
   const response = await fetch(imageUrl);
   if (!response.ok) {
-    throw new Error(`Failed to download generated image: ${response.status}`);
+    throw new Error(`Failed to download Replicate image: ${response.status}`);
   }
 
   const contentType = response.headers.get("content-type") || "image/png";
@@ -401,54 +368,35 @@ async function runSingleGeneration({
   userId,
 }) {
  const hasRefs = refs.length > 0;
- const aspect_ratio = mapSizeToAspectRatio(size);
+const aspect_ratio = mapSizeToAspectRatio(size);
 const viewType = detectViewType(prompt);
-const seedreamSize = mapSizeToSeedreamSize(size);
 
-const finalPrompt = `
-CRITICAL:
-This is the SAME EXACT person from the reference image.
-Do NOT change identity.
-Do NOT reinterpret face.
-Do NOT generate a different person.
-
-${buildFinalPrompt({
+const finalPrompt = buildFinalPrompt({
   prompt,
   hasRefs,
   viewType,
   negativePrompt,
   strictIdentity,
-})}
-`;
-
-const masterImage = refs[0]; // 🔥 always use first as master
-
-if (!masterImage) {
-  throw new Error("Master identity image is required");
-}
-
-const input = {
-  prompt: finalPrompt,
-  image_size: seedreamSize,
-  num_images: 1,
-
-  image_urls: [masterImage], // 🔥 ONLY ONE IMAGE
-
-  sync_mode: true,
-};
-
-  const output = await replicate.run(MODEL, {
-  input: {
-    prompt: finalPrompt,
-    input_images: refs, // 🔥 IMPORTANT (replicate uses input_images)
-    num_outputs: 1,
-    aspect_ratio: aspect_ratio,
-  },
 });
-  const tempUrl = Array.isArray(output) ? output[0] : output;
+
+  const input = hasRefs
+    ? {
+        prompt: finalPrompt,
+        aspect_ratio,
+        output_format: "png",
+        reference_images: refs,
+      }
+    : {
+        prompt: finalPrompt,
+        aspect_ratio,
+        output_format: "png",
+      };
+
+  const output = await replicate.run(MODEL, { input });
+  const tempUrl = await fileOutputToUrl(output);
 
   if (!tempUrl) {
-    throw new Error("No image URL returned from fal");
+    throw new Error("No image URL returned from Replicate");
   }
 
   const permanentUrl = await savePermanentImage({
@@ -484,129 +432,33 @@ function dedupeResults(results) {
   }));
 }
 
-async function createPendingGeneration({
-  userId = "anonymous",
-  prompt,
-  negativePrompt = "",
-  size = "1024x1024",
-  metadata = {},
-}) {
-  const payload = {
-    user_id: userId || "anonymous",
-    prompt: String(prompt || "").trim(),
-    negative_prompt: String(negativePrompt || "").trim(),
-    images: [],
-    mode: "consistency",
-    ratio: mapSizeToAspectRatio(size),
-    style: "photorealistic",
-    metadata: {
-      state: "processing",
-      progressStage: "queued",
-      startedAt: new Date().toISOString(),
-      ...metadata,
-    },
-  };
-
-  const { data, error } = await supabase
-    .from("image_generations")
-    .insert(payload)
-    .select("*")
-    .single();
-
-  if (error) {
-    throw new Error(error.message || "Failed to create generation job");
-  }
-
-  return data;
-}
-
-async function updateGenerationJob(generationId, patch) {
-  const { data: existing } = await supabase
-    .from("image_generations")
-    .select("metadata")
-    .eq("id", generationId)
-    .single();
-
-  const nextPatch =
-    patch?.metadata && typeof patch.metadata === "object"
-      ? {
-          ...patch,
-          metadata: {
-            ...(existing?.metadata || {}),
-            ...patch.metadata,
-          },
-        }
-      : patch;
-
-  const { error } = await supabase
-    .from("image_generations")
-    .update(nextPatch)
-    .eq("id", generationId);
-
-  if (error) {
-    throw new Error(error.message || "Failed to update generation job");
-  }
-}
-
-function mapSizeToSeedreamSize(size) {
-  switch (size) {
-    case "1024x1024":
-      return "square_hd";
-    case "1536x1024":
-      return "landscape_16_9";
-    case "1024x1536":
-      return "portrait_4_3";
-    default:
-      return "square_hd";
-  }
-}
-
-function isTimedOut(startedAtMs) {
-  return Date.now() - startedAtMs >= JOB_TIMEOUT_MS;
-}
-
-async function runGenerationJob(generationId, payload) {
-  const startedAtMs = Date.now();
-  const {
-    prompt,
-    size = "1024x1024",
-    referenceImages = [],
-    negativePrompt = "",
-    strictIdentity = true,
-    attempts = 2,
-    userId = "anonymous",
-  } = payload || {};
-
+export async function POST(req) {
   try {
-let refs = Array.isArray(referenceImages)
-  ? referenceImages.map(normalizeReferenceImage).filter(Boolean).slice(0, 8)
-  : [];
+    const {
+      prompt,
+      size = "1024x1024",
+      referenceImages = [],
+      negativePrompt = "",
+      strictIdentity = true,
+      attempts = 2,
+      userId = "anonymous",
+    } = await req.json();
 
-// 🔥 CRITICAL: Always force master identity as FIRST reference
-if (refs.length > 1) {
-  const master = refs[0]; // assuming first is master identity
-  refs = [master, ...refs.filter(r => r !== master)];
-}
+    if (!prompt || !String(prompt).trim()) {
+      return Response.json({ error: "Prompt is required" }, { status: 400 });
+    }
+
+    const refs = Array.isArray(referenceImages)
+      ? referenceImages.map(normalizeReferenceImage).filter(Boolean).slice(0, 8)
+      : [];
 
     const safeAttempts = Math.min(Math.max(Number(attempts) || 1, 1), 4);
-    const results = [];
+
+    let results = [];
     let lastError = null;
     let debug = null;
 
-    await updateGenerationJob(generationId, {
-      metadata: {
-        state: "processing",
-        progressStage: "running",
-        startedAt: new Date(startedAtMs).toISOString(),
-        strictIdentity: Boolean(strictIdentity),
-        requestedAttempts: safeAttempts,
-        referenceCount: refs.length,
-      },
-    });
-
     for (let i = 0; i < safeAttempts; i += 1) {
-      if (isTimedOut(startedAtMs)) break;
-
       try {
         const generated = await runSingleGeneration({
           prompt,
@@ -637,97 +489,30 @@ if (refs.length > 1) {
       }
     }
 
-    const dedupedResults = dedupeResults(results);
-    const timedOut = isTimedOut(startedAtMs);
+    results = dedupeResults(results);
 
-    if (!dedupedResults.length) {
-      throw new Error(
-        timedOut
-          ? "Generation timed out before any completed image was produced."
-          : lastError?.message || "No image returned from fal"
+    if (!results.length) {
+      return Response.json(
+        {
+          error: lastError?.message || "No image returned from Replicate",
+        },
+        { status: 500 }
       );
     }
 
-    await updateGenerationJob(generationId, {
-      images: dedupedResults.map((item) => item.url).filter(Boolean),
-      metadata: {
-        state: "completed",
-        progressStage: timedOut ? "completed_partial_timeout" : "completed",
-        completedAt: new Date().toISOString(),
-        timedOut,
+    return Response.json({
+      image: results[0].url,
+      images: results,
+      meta: {
         model: MODEL,
         referenceCount: refs.length,
         usedReferences: refs.length > 0,
         strictIdentity: Boolean(strictIdentity),
         attempts: safeAttempts,
-        returnedCount: dedupedResults.length,
+        returnedCount: results.length,
         viewType: debug?.viewType || detectViewType(prompt),
         aspectRatio: debug?.aspect_ratio || mapSizeToAspectRatio(size),
-        finalPrompt: debug?.finalPrompt || null,
-        error: null,
       },
-    });
-  } catch (error) {
-    console.error("Consistency background job error:", error);
-
-    await updateGenerationJob(generationId, {
-      metadata: {
-        state: "failed",
-        progressStage: "failed",
-        failedAt: new Date().toISOString(),
-        error: error?.message || "Failed to generate consistency image",
-      },
-    });
-  }
-}
-
-export async function POST(req) {
-  try {
-    const {
-      prompt,
-      size = "1024x1024",
-      referenceImages = [],
-      negativePrompt = "",
-      strictIdentity = true,
-      attempts = 2,
-      userId = "anonymous",
-    } = await req.json();
-
-    if (!prompt || !String(prompt).trim()) {
-      return Response.json({ error: "Prompt is required" }, { status: 400 });
-    }
-
-    const pending = await createPendingGeneration({
-      userId,
-      prompt,
-      negativePrompt,
-      size,
-      metadata: {
-        route: "generate-consistency",
-        strictIdentity: Boolean(strictIdentity),
-        attempts: Math.min(Math.max(Number(attempts) || 1, 1), 4),
-        referenceCount: Array.isArray(referenceImages)
-          ? referenceImages.filter(Boolean).length
-          : 0,
-      },
-    });
-
-    after(() =>
-      runGenerationJob(pending.id, {
-        prompt,
-        size,
-        referenceImages,
-        negativePrompt,
-        strictIdentity,
-        attempts,
-        userId,
-      }).catch(console.error)
-    );
-
-    return Response.json({
-      success: true,
-      predictionId: pending.id,
-      status: "processing",
     });
   } catch (error) {
     console.error("Consistency generation error:", error);

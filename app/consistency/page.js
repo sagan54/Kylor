@@ -17,7 +17,6 @@ import { supabase } from "../../lib/supabase";
 
 const CHAR_BUCKET = "character-refs";
 const SESSION_KEY = "kylor_chars_cache_v2";
-const PENDING_PACK_KEY = "kylor_pending_character_packs_v1";
 
 const C = {
   accent: "#7c3aed", accentSoft: "rgba(124,58,237,0.15)",
@@ -50,13 +49,12 @@ const HAIR_COLORS = ["Black", "Brown", "Blonde", "Red", "White", "Silver", "Blue
 const EYE_COLORS  = ["Brown", "Blue", "Green", "Hazel", "Grey", "Amber"];
 const BUILD_TYPES = ["Slim", "Athletic", "Average", "Muscular", "Stocky", "Curvy"];
 const CHARACTER_PACK_VIEWS = [
-  { key: "front", label: "Front Full Body", shot: "single person, front-facing, full-body, standing straight, arms relaxed, centered composition", size: "1024x1536" },
-  { key: "closeup", label: "Front Upper Close", shot: "single person, front-facing upper-body close portrait, chest-up framing, face clearly visible, centered composition", size: "1024x1536" },
-  { key: "right", label: "Right Side Profile", shot: "single person, strict right side profile portrait, upper-body framing, facing the right edge of the frame, centered composition", size: "1024x1536" },
-  { key: "left", label: "Left Side Profile", shot: "single person, strict left side profile portrait, upper-body framing, facing the left edge of the frame, centered composition", size: "1024x1536" },
-  { key: "back", label: "Back Side Profile", shot: "single person, upper-body back profile, facing away from camera, centered composition", size: "1024x1536" },
+  { key: "front",   label: "Front Full-Body",         shot: "single person, front-facing, full-body, standing straight, arms relaxed, centered composition",                                                    size: "1024x1536" },
+  { key: "left",    label: "Left Profile Full-Body",  shot: "single person, strict left side profile, facing the left edge of the frame, full-body, standing straight, arms relaxed, centered composition",   size: "1024x1536" },
+  { key: "right",   label: "Right Profile Full-Body", shot: "single person, strict right side profile, facing the right edge of the frame, full-body, standing straight, arms relaxed, centered composition", size: "1024x1536" },
+  { key: "back",    label: "Back Full-Body",          shot: "single person, full-body back view, facing away from camera, standing straight, arms relaxed, centered composition",                             size: "1024x1536" },
+  { key: "closeup", label: "Upper-Body Close-Up",     shot: "single person, upper-body close-up portrait, facing camera, centered composition",                                                               size: "1024x1024" },
 ];
-const CHARACTER_PACK_POLL_TIMEOUT_MS = 3 * 60 * 1000;
 const CARD_GRADIENTS = [
   "linear-gradient(135deg, rgba(79,70,229,0.55), rgba(124,58,237,0.3))",
   "linear-gradient(135deg, rgba(124,58,237,0.5), rgba(17,17,34,0.85))",
@@ -198,14 +196,11 @@ function rowToCharacter(row, imageRows = []) {
     (img) =>
       img.source_type === "generated" ||
       [
-        IMAGE_TYPES.SHEET,
         IMAGE_TYPES.FRONT,
         IMAGE_TYPES.LEFT,
         IMAGE_TYPES.RIGHT,
         IMAGE_TYPES.BACK,
-        IMAGE_TYPES.CLOSEUP_LEFT,
         IMAGE_TYPES.CLOSEUP,
-        IMAGE_TYPES.CLOSEUP_RIGHT,
       ].includes(img.image_type)
   )
   .sort((a, b) => {
@@ -289,10 +284,6 @@ function outputsFromCharacter(char) {
 
 function extractGeneratedUrl(data) {
   if (!data) return null;
-
-  if (Array.isArray(data?.generation?.images) && data.generation.images.length > 0) {
-    return data.generation.images[0];
-  }
 
   if (typeof data.image === "string" && data.image) return data.image;
 
@@ -382,20 +373,6 @@ function buildLockedCharacterPrompt({
 function extractGeneratedUrls(data) {
   if (!data) return [];
 
-  if (Array.isArray(data?.generation?.images) && data.generation.images.length > 0) {
-    return data.generation.images
-      .map((url, i) =>
-        typeof url === "string"
-          ? {
-              id: `img-${i}`,
-              url,
-              attempt: i + 1,
-            }
-          : null
-      )
-      .filter(Boolean);
-  }
-
   if (Array.isArray(data.images)) {
     return data.images
       .map((item, i) => {
@@ -427,42 +404,6 @@ function extractGeneratedUrls(data) {
   return [];
 }
 
-function extractPackResults(data) {
-  const pack = data?.generation?.metadata?.pack;
-  return Array.isArray(pack) ? pack.filter((item) => item?.url) : [];
-}
-
-async function pollGenerationJob(predictionId, { intervalMs = 2500, timeoutMs = 180000 } = {}) {
-  const startedAt = Date.now();
-
-  while (Date.now() - startedAt < timeoutMs) {
-    const res = await fetch(
-      `/api/generate-image-status?predictionId=${encodeURIComponent(predictionId)}`,
-      { cache: "no-store" }
-    );
-
-    const data = await res.json().catch(() => ({}));
-
-    if (!res.ok) {
-      throw new Error(data?.error || "Failed to check generation status");
-    }
-
-    const status = String(data?.status || data?.generation?.status || "").toLowerCase();
-
-    if (status === "completed" || status === "succeeded") {
-      return data;
-    }
-
-    if (status === "failed") {
-      throw new Error(data?.error || data?.generation?.error || "Generation failed");
-    }
-
-    await new Promise((resolve) => setTimeout(resolve, intervalMs));
-  }
-
-  throw new Error("Generation timed out while waiting for completion.");
-}
-
 function getMasterImageForCharacter(char) {
   if (!char) return null;
 
@@ -475,10 +416,6 @@ function getMasterImageForCharacter(char) {
   if (coverRef?.previewUrl) return coverRef.previewUrl;
 
   return char.coverImage || null;
-}
-
-function isPollingTimeoutError(err) {
-  return String(err?.message || "").toLowerCase().includes("timed out while waiting for completion");
 }
 
 function SidebarItem({ item }) {
@@ -965,7 +902,6 @@ export default function ConsistencyPage() {
 
   const canvasRef = useRef(null);
   const generatingRef = useRef(false);
-  const pendingPackPollsRef = useRef(new Set());
 
   const activeChar = characters.find(c => c.id === activeCharId) || null;
   const charOutputs = outputs.filter(o => o.charId === activeCharId);
@@ -974,43 +910,9 @@ export default function ConsistencyPage() {
     .map(view => visibleCharOutputs.find(o => o.scene === view.label))
     .filter(Boolean);
 
-  const frontOutput = visibleCharOutputs.find(o => o.scene === "Front Full Body");
-  const otherOutputs = visibleCharOutputs.filter(o => o.scene !== "Front Full Body");
+  const frontOutput = visibleCharOutputs.find(o => o.scene === "Front Full-Body");
+  const otherOutputs = visibleCharOutputs.filter(o => o.scene !== "Front Full-Body");
   const shouldShowGenerateMorePanel = false;
-
-function loadPendingPackJobs() {
-  if (typeof window === "undefined") return [];
-  try {
-    const raw = localStorage.getItem(PENDING_PACK_KEY);
-    const parsed = JSON.parse(raw || "[]");
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
-
-function savePendingPackJobs(items) {
-  if (typeof window === "undefined") return;
-  try {
-    localStorage.setItem(PENDING_PACK_KEY, JSON.stringify(items || []));
-  } catch {}
-}
-
-function upsertPendingPackJob(item) {
-  const existing = loadPendingPackJobs().filter(
-    (entry) =>
-      String(entry?.predictionId || "") !== String(item?.predictionId || "") &&
-      String(entry?.characterId || "") !== String(item?.characterId || "")
-  );
-  savePendingPackJobs([item, ...existing]);
-}
-
-function removePendingPackJob(predictionId) {
-  const next = loadPendingPackJobs().filter(
-    (entry) => String(entry?.predictionId || "") !== String(predictionId || "")
-  );
-  savePendingPackJobs(next);
-}
 
 const updateCharactersCache = useCallback((chars) => {
   try {
@@ -1063,48 +965,6 @@ const hydrateCachedCharacters = useCallback((cached) => {
     };
   });
 }, []);
-
-const applyCompletedCharacterPack = useCallback(async ({ completedData, characterId, masterRef }) => {
-  const pack = extractPackResults(completedData);
-
-  if (!pack.length) return;
-
-  const nextOutputs = pack
-    .filter((item) => item?.url)
-    .map((item) => ({
-      id: `${characterId}-${item.type}`,
-      charId: characterId,
-      prompt: "",
-      scene: PACK_VIEWS.find((v) => v.key === item.type)?.label || item.type,
-      url: item.url,
-      createdAt: new Date().toISOString(),
-    }));
-
-  setOutputs((prev) => [
-    ...prev.filter((o) => o.charId !== characterId),
-    ...nextOutputs,
-  ]);
-
-  setCharacters((prev) => {
-    const updated = prev.map((c) =>
-      c.id === characterId
-        ? {
-            ...c,
-            masterImage: masterRef || c.masterImage,
-            generatedImages: pack.map((item) => item.url).filter(Boolean),
-            generations: pack.filter((item) => item.url).length,
-          }
-        : c
-    );
-    updateCharactersCache(updated);
-    return updated;
-  });
-
-  await refreshCharacterPackState(
-    characters.find((c) => c.id === characterId) || activeChar,
-    masterRef || null
-  );
-}, [activeChar, characters, refreshCharacterPackState, updateCharactersCache]);
 
   async function loadCharacterImages(characterId, allCharacters = null) {
     if (!characterId && !allCharacters?.length) {
@@ -1175,14 +1035,11 @@ async function refreshCharacterPackState(character, masterRefOverride = null) {
       (r) =>
         r.source_type === "generated" &&
         [
-          IMAGE_TYPES.SHEET,
           IMAGE_TYPES.FRONT,
           IMAGE_TYPES.LEFT,
           IMAGE_TYPES.RIGHT,
           IMAGE_TYPES.BACK,
-          IMAGE_TYPES.CLOSEUP_LEFT,
           IMAGE_TYPES.CLOSEUP,
-          IMAGE_TYPES.CLOSEUP_RIGHT,
         ].includes(r.pack_view)
     );
 
@@ -1386,66 +1243,6 @@ async function autoSaveReferencesForCharacter(characterId, currentEntries) {
     setSavingRefs(false);
   }
 }
-
-const resumePendingCharacterPack = useCallback(async (pendingItem) => {
-  const predictionId = pendingItem?.predictionId;
-  const characterId = pendingItem?.characterId;
-  const masterRef = pendingItem?.masterRef || null;
-
-  if (!predictionId || !characterId) return;
-  if (pendingPackPollsRef.current.has(predictionId)) return;
-
-  pendingPackPollsRef.current.add(predictionId);
-
-  try {
-    const completedData = await pollGenerationJob(predictionId, {
-      intervalMs: 2500,
-      timeoutMs: 15 * 60 * 1000,
-    });
-
-    await applyCompletedCharacterPack({
-      completedData,
-      characterId,
-      masterRef,
-    });
-
-    if (userId) {
-      fetch("/api/process-character-dna", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          characterId,
-          userId,
-        }),
-      }).catch((err) => {
-        console.error("Failed to trigger DNA processing:", err);
-      });
-    }
-
-    removePendingPackJob(predictionId);
-  } catch (err) {
-    if (isPollingTimeoutError(err)) {
-      console.info("resumePendingCharacterPack: still processing in background", {
-        predictionId,
-        characterId,
-      });
-    } else {
-      console.error("resumePendingCharacterPack failed:", err);
-      removePendingPackJob(predictionId);
-    }
-  } finally {
-    pendingPackPollsRef.current.delete(predictionId);
-  }
-}, [applyCompletedCharacterPack, userId]);
-
-  useEffect(() => {
-    const pending = loadPendingPackJobs();
-    pending.forEach((item) => {
-      resumePendingCharacterPack(item);
-    });
-  }, [resumePendingCharacterPack]);
 
   async function persistGeneratedImage(imageUrl, characterId, folder = "generated") {
   if (!imageUrl || !userId || !characterId) return null;
@@ -2084,7 +1881,7 @@ body: JSON.stringify({
   ]
     .filter(Boolean)
     .join(". "),
-  referenceImages: uploadedRefs.slice(0, 1),
+  referenceImages: uploadedRefs,
   negativePrompt:
     "different person, identity drift, generic face, altered hairstyle, altered skin tone, beauty filter, cgi, 3d render, text, watermark",
   strictIdentity: true,
@@ -2273,58 +2070,72 @@ if (!res.ok || !data?.success) {
   throw new Error(data?.error || "Character pack generation failed");
 }
 
-const predictionId = data?.predictionId;
-if (!predictionId) {
-  throw new Error("Character pack job did not return a predictionId.");
-}
+fetch("/api/process-character-dna", {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({
+    characterId: activeChar.id,
+    userId,
+  }),
+})
+  .then(async (dnaRes) => {
+    const dnaRaw = await dnaRes.text();
 
-upsertPendingPackJob({
-  predictionId,
-  characterId: activeChar.id,
-  masterRef,
-  startedAt: new Date().toISOString(),
+    let dnaData = null;
+    try {
+      dnaData = JSON.parse(dnaRaw);
+    } catch {
+      console.error("DNA API NON-JSON RESPONSE:", dnaRaw);
+      return;
+    }
+
+    if (!dnaRes.ok) {
+      console.error("DNA processing failed:", dnaData);
+      return;
+    }
+
+    console.log("DNA processing complete:", dnaData);
+  })
+  .catch((err) => {
+    console.error("Failed to trigger DNA processing:", err);
+  });
+
+const pack = Array.isArray(data?.pack) ? data.pack : [];
+
+const nextOutputs = pack
+  .filter((item) => item?.url)
+  .map((item) => ({
+    id: `${activeChar.id}-${item.type}`,
+    charId: activeChar.id,
+    prompt: "",
+    scene: PACK_VIEWS.find((v) => v.key === item.type)?.label || item.type,
+    url: item.url,
+    createdAt: new Date().toISOString(),
+  }));
+
+setOutputs((prev) => [
+  ...prev.filter((o) => o.charId !== activeChar.id),
+  ...nextOutputs,
+]);
+
+setCharacters((prev) => {
+  const updated = prev.map((c) =>
+    c.id === activeChar.id
+      ? {
+          ...c,
+          masterImage: masterRef,
+          generatedImages: pack.map((item) => item.url).filter(Boolean),
+          generations: pack.filter((item) => item.url).length,
+        }
+      : c
+  );
+  updateCharactersCache(updated);
+  return updated;
 });
 
-try {
-  const completedData = await pollGenerationJob(predictionId, {
-    intervalMs: 2500,
-    timeoutMs: CHARACTER_PACK_POLL_TIMEOUT_MS,
-  });
-
-  await applyCompletedCharacterPack({
-    completedData,
-    characterId: activeChar.id,
-    masterRef,
-  });
-
-  removePendingPackJob(predictionId);
-
-  fetch("/api/process-character-dna", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      characterId: activeChar.id,
-      userId,
-    }),
-  })
-    .catch((err) => {
-      console.error("Failed to trigger DNA processing:", err);
-    });
-} catch (pollErr) {
-  if (isPollingTimeoutError(pollErr)) {
-    resumePendingCharacterPack({
-      predictionId,
-      characterId: activeChar.id,
-      masterRef,
-    });
-    alert("Character pack is still processing in the background. It will appear automatically when ready.");
-    return;
-  }
-
-  throw pollErr;
-}
+await refreshCharacterPackState(activeChar, masterRef);
   } catch (err) {
     console.error("Character pack generation failed:", err);
     alert(err?.message || "Failed to generate character pack.");
@@ -2381,7 +2192,11 @@ try {
 
         const masterRef = masterIdentityImage || getMasterImageForCharacter(activeChar);
 
-const sharedReferenceImages = masterRef ? [masterRef] : [];
+    const sharedReferenceImages = [
+      ...uploadedRefs.filter(Boolean),
+      masterRef,
+      existingFront.url,
+    ].filter(Boolean);
 
     try {
       for (const view of views) {
@@ -2413,7 +2228,7 @@ const sharedReferenceImages = masterRef ? [masterRef] : [];
           body: JSON.stringify({
   prompt: finalPrompt,
   size: view.size,
-  referenceImages: masterRef ? [masterRef] : [],
+  referenceImages: sharedReferenceImages,
   negativePrompt:
     "different person, identity drift, altered face shape, altered hairline, altered hairstyle, altered skin tone, changed beard, generic face, beauty filter, CGI, 3D render, multiple people, collage, split screen, text, watermark",
   strictIdentity: true,
@@ -2423,18 +2238,9 @@ const sharedReferenceImages = masterRef ? [masterRef] : [];
         });
 
         const data = await res.json();
-        const predictionId = data?.predictionId;
-        if (!res.ok || !data?.success || !predictionId) {
-          throw new Error(data?.error || "Profile generation failed");
-        }
+        console.log("PROFILE RESPONSE:", data);
 
-        const completedData = await pollGenerationJob(predictionId, {
-          intervalMs: 2500,
-          timeoutMs: 180000,
-        });
-        console.log("PROFILE RESPONSE:", completedData);
-
-const savedUrl = extractGeneratedUrl(completedData);
+const savedUrl = extractGeneratedUrl(data);
 setOutputs(prev =>
   prev.map(o =>
     o.id === placeholder.id ? { ...o, url: savedUrl || "__FAILED__" } : o
@@ -2506,7 +2312,7 @@ if (savedUrl) {
     try {
 const uploadedRefs = await entriesToReferenceImages(effectiveRefs);
 const masterRef = masterIdentityImage || getMasterImageForCharacter(activeChar);
-const finalRefs = masterRef ? [masterRef] : [];
+const finalRefs = [...uploadedRefs, masterRef].filter(Boolean);
 const hasRefs = finalRefs.length > 0;
       const finalPrompt = buildLockedCharacterPrompt({
         char: activeChar,
@@ -2528,10 +2334,7 @@ const hasRefs = finalRefs.length > 0;
         body: JSON.stringify({
   prompt: finalPrompt,
   size: frontView.size,
-  referenceImages: [
-  masterRef,   // 🔥 ALWAYS FIRST
-  ...finalRefs.filter(r => r !== masterRef)
-],
+  referenceImages: finalRefs,
   negativePrompt:
     "different person, identity drift, generic face, altered hairstyle, altered skin tone, beauty filter, CGI, 3D render, duplicate person, collage, split screen, text, watermark",
   strictIdentity: true,
@@ -2545,18 +2348,9 @@ const hasRefs = finalRefs.length > 0;
         clearTimeout(timeout);
       }
 
-      if (!data?.success || !data?.predictionId) {
-        throw new Error(data?.error || "Front generation failed");
-      }
+      console.log("GEN RESPONSE:", data);
 
-      const completedData = await pollGenerationJob(data.predictionId, {
-        intervalMs: 2500,
-        timeoutMs: 180000,
-      });
-
-      console.log("GEN RESPONSE:", completedData);
-
-const savedUrl = extractGeneratedUrl(completedData);
+const savedUrl = extractGeneratedUrl(data);
 
 setOutputs(prev =>
   prev.map(o =>
@@ -3097,7 +2891,7 @@ cover_image: savedUrl,
                     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} style={{ textAlign: "center", maxWidth: 300 }}>
                       <div style={{ width: 72, height: 72, borderRadius: 999, margin: "0 auto 16px", display: "grid", placeItems: "center", border: `1px solid ${C.border}`, background: C.surface }}><ImageIcon size={28} color={C.textDim} /></div>
                       <p style={{ margin: "0 0 6px", color: C.text, fontSize: 15, fontWeight: 700 }}>Ready to generate</p>
-                      <p style={{ margin: "0 0 18px", color: C.textMuted, fontSize: 12.5, lineHeight: 1.7 }}>Generate the 5-image consistency pack: front full body, front upper close, right profile, left profile, and back profile.</p>
+                      <p style={{ margin: "0 0 18px", color: C.textMuted, fontSize: 12.5, lineHeight: 1.7 }}>Generate the fixed 5-view character pack, then use it in the Image section.</p>
                       <motion.button whileTap={{ scale: 0.96 }} onClick={() => setFormSection("generate")}
                         style={{ height: 36, padding: "0 16px", borderRadius: radius.md, border: `1px solid ${C.accentBorder}`, background: C.accentSoft, color: "#c4b5fd", fontSize: 13, cursor: "pointer", fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: 6 }}>
                         <Wand2 size={13} /> Set up generation

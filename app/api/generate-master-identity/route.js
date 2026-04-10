@@ -1,43 +1,17 @@
 import Replicate from "replicate";
+import { createClient } from "@supabase/supabase-js";
 
 const replicate = new Replicate({
   auth: process.env.REPLICATE_API_TOKEN,
 });
-import { createClient } from "@supabase/supabase-js";
-import {
-  buildCameraRealismBlock,
-  buildLightingNegativeBlock,
-  buildNegativeRealismBlock,
-  buildRealismLightingBlock,
-  buildShadowInteractionBlock,
-  buildSkinRealismBlock,
-} from "../../../lib/image-generation-rules";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-const MODEL = "black-forest-labs/flux-1.1-pro-ultra";
+const MODEL = "black-forest-labs/flux-2-pro";
 const STORAGE_BUCKET = "character-refs";
-
-function getSeedreamSize(size = "1024x1536") {
-  switch (String(size || "").toLowerCase()) {
-    case "1024x1024":
-    case "square":
-    case "1:1":
-      return "square_hd";
-    case "1536x1024":
-    case "landscape":
-    case "16:9":
-      return "landscape_16_9";
-    case "1024x1536":
-    case "portrait":
-    case "2:3":
-    default:
-      return "portrait_4_3";
-  }
-}
 
 function normalizeReferenceImage(image) {
   if (!image || typeof image !== "string") return null;
@@ -48,15 +22,28 @@ function normalizeReferenceImage(image) {
   return null;
 }
 
-function extractFalImageUrl(result) {
-  const image =
-    result?.data?.images?.[0] ||
-    result?.data?.image ||
-    result?.images?.[0] ||
-    result?.image ||
-    null;
+async function fileOutputToUrl(output) {
+  if (!output) return null;
 
-  return image?.url || null;
+  if (typeof output === "string") return output;
+
+  if (Array.isArray(output)) {
+    const first = output[0];
+    if (!first) return null;
+
+    if (typeof first === "string") return first;
+    if (typeof first.url === "function") return await first.url();
+    if (typeof first.url === "string") return first.url;
+
+    const s = typeof first.toString === "function" ? first.toString() : null;
+    return s && s !== "[object Object]" ? s : null;
+  }
+
+  if (typeof output.url === "function") return await output.url();
+  if (typeof output.url === "string") return output.url;
+
+  const s = typeof output.toString === "function" ? output.toString() : null;
+  return s && s !== "[object Object]" ? s : null;
 }
 
 function buildMasterIdentityPrompt({
@@ -65,7 +52,6 @@ function buildMasterIdentityPrompt({
   strictIdentity = true,
   hasRefs = false,
 }) {
-  const safePrompt = String(prompt || "").trim();
   const identityBlock = hasRefs
     ? [
         "Generate the EXACT SAME real person as the provided reference image(s).",
@@ -97,18 +83,14 @@ function buildMasterIdentityPrompt({
     "Clean close-up or upper-body portrait.",
     "Facing camera or very slight 3/4 angle only.",
     "Neutral expression.",
-    "Simple clean background with realistic portrait framing.",
+    "Plain light studio background.",
     "Reference-photo style.",
     "Natural realistic photography.",
   ].join(" ");
 
-  const realismLightingBlock = buildRealismLightingBlock(safePrompt || shotBlock);
-  const skinRealismBlock = buildSkinRealismBlock(safePrompt || shotBlock);
-  const cameraRealismBlock = buildCameraRealismBlock();
-  const shadowInteractionBlock = buildShadowInteractionBlock();
   const realismBlock = [
     "Photorealistic real human portrait.",
-    "Natural facial depth, grounded exposure, realistic hair strands, and physically believable portrait rendering.",
+    "Natural skin texture, realistic pores, realistic facial detail, realistic hair strands.",
     "No beauty retouching, no glamour look, no CGI, no 3D render, no stylized face.",
   ].join(" ");
 
@@ -133,17 +115,11 @@ function buildMasterIdentityPrompt({
     "changed hairline",
     "changed facial proportions",
     "beauty filter",
-    "airbrushed skin",
     "glamour portrait",
     "waxy skin",
     "plastic skin",
-    "skin smoothing",
     "cgi",
     "3d render",
-    "flat frontal lighting",
-    "studio-lit face in a dark scene",
-    buildLightingNegativeBlock(safePrompt || shotBlock),
-    buildNegativeRealismBlock(),
     "multiple people",
     "collage",
     "split screen",
@@ -158,12 +134,8 @@ function buildMasterIdentityPrompt({
     identityBlock,
     strictBlock,
     shotBlock,
-    realismLightingBlock,
-    skinRealismBlock,
-    cameraRealismBlock,
-    shadowInteractionBlock,
     realismBlock,
-    `User request: ${safePrompt || "exact same real-person master identity portrait"}`,
+    `User request: ${String(prompt || "").trim() || "exact same real-person master identity portrait"}`,
     `Avoid: ${avoidBlock}`,
   ]
     .filter(Boolean)
@@ -185,7 +157,7 @@ async function savePermanentImage({ imageUrl, userId = "anonymous", folder = "ma
 
   const response = await fetch(imageUrl);
   if (!response.ok) {
-    throw new Error(`Failed to download generated image: ${response.status}`);
+    throw new Error(`Failed to download Replicate image: ${response.status}`);
   }
 
   const contentType = response.headers.get("content-type") || "image/png";
@@ -233,30 +205,21 @@ async function runSingleCandidate({
     refs.length > 0
       ? {
           prompt: finalPrompt,
-          image_size: getSeedreamSize("1024x1536"),
-          num_images: 1,
-          image_urls: refs,
-          sync_mode: true,
+          aspect_ratio: "2:3",
+          output_format: "png",
+          reference_images: refs,
         }
       : {
           prompt: finalPrompt,
-          image_size: getSeedreamSize("1024x1536"),
-          num_images: 1,
-          sync_mode: true,
+          aspect_ratio: "2:3",
+          output_format: "png",
         };
 
-  const output = await replicate.run(MODEL, {
-  input: {
-    prompt: finalPrompt,
-    input_images: refs, // 🔥 IMPORTANT (replicate uses input_images)
-    num_outputs: 1,
-    aspect_ratio: aspect_ratio,
-  },
-});
-  const tempUrl = Array.isArray(output) ? output[0] : output;
+  const output = await replicate.run(MODEL, { input });
+  const tempUrl = await fileOutputToUrl(output);
 
   if (!tempUrl) {
-    throw new Error("No image URL returned from fal");
+    throw new Error("No image URL returned from Replicate");
   }
 
   const permanentUrl = await savePermanentImage({
