@@ -16,7 +16,7 @@ const replicate = new Replicate({
 const JOB_TIMEOUT_MS = 3 * 60 * 1000;
 const STALE_PACK_JOB_MS = 10 * 60 * 1000;
 const INTER_VIEW_COOLDOWN_MS = 11000;
-const MODEL = "fal-ai/flux-pro/v1.1-ultra";
+const MODEL = "black-forest-labs/flux-1.1-pro-ultra";
 
 const REQUIRED_PACK_VIEWS = [
   IMAGE_TYPES.FRONT,

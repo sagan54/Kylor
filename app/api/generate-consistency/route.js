@@ -1,4 +1,8 @@
-import { fal } from "@fal-ai/client";
+import Replicate from "replicate";
+
+const replicate = new Replicate({
+  auth: process.env.REPLICATE_API_TOKEN,
+});
 import { IMAGE_TYPES, IMAGE_ORDER, PACK_VIEWS } from "../../../lib/character-constants";
 import { createClient } from "@supabase/supabase-js";
 import { after } from "next/server";
@@ -25,7 +29,7 @@ fal.config({
   credentials: process.env.FAL_KEY,
 });
 
-const MODEL = "fal-ai/flux-pro/v1.1-ultra";
+const MODEL = "black-forest-labs/flux-1.1-pro-ultra";
 const STORAGE_BUCKET = "character-refs";
 const JOB_TIMEOUT_MS = 90 * 1000;
 
@@ -437,8 +441,15 @@ const input = {
   sync_mode: true,
 };
 
-  const output = await fal.subscribe(MODEL, { input });
-  const tempUrl = extractFalImageUrl(output);
+  const output = await replicate.run(MODEL, {
+  input: {
+    prompt: finalPrompt,
+    input_images: refs, // 🔥 IMPORTANT (replicate uses input_images)
+    num_outputs: 1,
+    aspect_ratio: aspect_ratio,
+  },
+});
+  const tempUrl = Array.isArray(output) ? output[0] : output;
 
   if (!tempUrl) {
     throw new Error("No image URL returned from fal");

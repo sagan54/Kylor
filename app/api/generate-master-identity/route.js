@@ -1,4 +1,8 @@
-import { fal } from "@fal-ai/client";
+import Replicate from "replicate";
+
+const replicate = new Replicate({
+  auth: process.env.REPLICATE_API_TOKEN,
+});
 import { createClient } from "@supabase/supabase-js";
 import {
   buildCameraRealismBlock,
@@ -18,7 +22,7 @@ fal.config({
   credentials: process.env.FAL_KEY,
 });
 
-const MODEL = "fal-ai/bytedance/seedream/v4.5/edit";
+const MODEL = "black-forest-labs/flux-1.1-pro-ultra";
 const STORAGE_BUCKET = "character-refs";
 
 function getSeedreamSize(size = "1024x1536") {
@@ -245,8 +249,15 @@ async function runSingleCandidate({
           sync_mode: true,
         };
 
-  const output = await fal.subscribe(MODEL, { input });
-  const tempUrl = extractFalImageUrl(output);
+  const output = await replicate.run(MODEL, {
+  input: {
+    prompt: finalPrompt,
+    input_images: refs, // 🔥 IMPORTANT (replicate uses input_images)
+    num_outputs: 1,
+    aspect_ratio: aspect_ratio,
+  },
+});
+  const tempUrl = Array.isArray(output) ? output[0] : output;
 
   if (!tempUrl) {
     throw new Error("No image URL returned from fal");
