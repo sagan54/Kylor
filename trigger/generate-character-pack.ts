@@ -21,7 +21,7 @@ const replicate = new Replicate({
   auth: process.env.REPLICATE_API_TOKEN!,
 });
 
-const MODEL = FLUX_MODEL;
+const MODEL = "fal-ai/flux-pro/v1.1-ultra";
 const STORAGE_BUCKET = "character-refs";
 
 const CORE_VIEWS = [
