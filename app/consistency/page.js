@@ -2021,7 +2021,7 @@ console.log("PACK MASTER DEBUG", {
   setGenerating(true);
 
   try {
-    const res = await fetch("/api/generate-character-pack", {
+    const res = await fetch("/api/generate-consistency", {
   method: "POST",
   headers: {
     "Content-Type": "application/json",
