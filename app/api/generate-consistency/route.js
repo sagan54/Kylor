@@ -25,10 +25,6 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-fal.config({
-  credentials: process.env.FAL_KEY,
-});
-
 const MODEL = "black-forest-labs/flux-1.1-pro-ultra";
 const STORAGE_BUCKET = "character-refs";
 const JOB_TIMEOUT_MS = 90 * 1000;
