@@ -897,6 +897,8 @@ export default function ConsistencyPage() {
   const [masterIdentityImage, setMasterIdentityImage] = useState(null);
   const [generatingMaster, setGeneratingMaster] = useState(false);
   const [savingMaster, setSavingMaster] = useState(false);
+  const [savingRefs, setSavingRefs] = useState(false);
+  
 
   const canvasRef = useRef(null);
   const generatingRef = useRef(false);
@@ -991,6 +993,124 @@ const hydrateCachedCharacters = useCallback((cached) => {
     return data || [];
   }
 
+async function markCharacterDnaStale(characterId) {
+  if (!userId || !characterId) return;
+
+  const currentChar = characters.find((c) => c.id === characterId);
+
+  const nextMetadata = {
+    ...(currentChar?.metadata || {}),
+    dna_stale: true,
+    refs_updated_at: new Date().toISOString(),
+  };
+
+  const { error } = await supabase
+    .from("characters")
+    .update({ metadata: nextMetadata })
+    .eq("id", characterId)
+    .eq("user_id", userId);
+
+  if (error) {
+    console.error("Failed to mark DNA stale:", error);
+  }
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function refreshCharacterPackState(character, masterRefOverride = null) {
+  if (!character?.id) return null;
+
+  let rows = [];
+
+  for (let attempt = 0; attempt < 6; attempt++) {
+    rows = await loadCharacterImages(character.id);
+
+    const filteredRows = (rows || []).filter(
+      (r) => r.character_id === character.id
+    );
+
+    const hasGenerated = filteredRows.some(
+      (r) =>
+        r.source_type === "generated" &&
+        [
+          IMAGE_TYPES.FRONT,
+          IMAGE_TYPES.LEFT,
+          IMAGE_TYPES.RIGHT,
+          IMAGE_TYPES.BACK,
+          IMAGE_TYPES.CLOSEUP,
+        ].includes(r.pack_view)
+    );
+
+    if (hasGenerated) {
+      const mapped = rowToCharacter(
+        {
+          ...character,
+          master_image:
+            masterRefOverride ||
+            character.masterImage ||
+            character.coverImage ||
+            null,
+        },
+        filteredRows
+      );
+
+      setCharacters((prev) => {
+        const updated = prev.map((c) =>
+          c.id === character.id ? mapped : c
+        );
+        updateCharactersCache(updated);
+        return updated;
+      });
+
+      setCharacterImages(filteredRows);
+
+      setOutputs((prev) => [
+        ...prev.filter((o) => o.charId !== character.id),
+        ...outputsFromCharacter(mapped),
+      ]);
+
+      return mapped;
+    }
+
+    await sleep(1000);
+  }
+
+  const filteredRows = (rows || []).filter(
+    (r) => r.character_id === character.id
+  );
+
+  const mapped = rowToCharacter(
+    {
+      ...character,
+      master_image:
+        masterRefOverride ||
+        character.masterImage ||
+        character.coverImage ||
+        null,
+    },
+    filteredRows
+  );
+
+  setCharacters((prev) => {
+    const updated = prev.map((c) =>
+      c.id === character.id ? mapped : c
+    );
+    updateCharactersCache(updated);
+    return updated;
+  });
+
+  setCharacterImages(filteredRows);
+
+  setOutputs((prev) => [
+    ...prev.filter((o) => o.charId !== character.id),
+    ...outputsFromCharacter(mapped),
+  ]);
+
+  return mapped;
+}
+
   async function uploadCharacterRefs(characterId, entries) {
     if (!userId || !characterId || !entries?.length) return [];
 
@@ -1061,6 +1181,68 @@ if (rowError) {
 
     return rows;
   }
+
+async function autoSaveReferencesForCharacter(characterId, currentEntries) {
+  if (!userId || !characterId) return null;
+
+  const unsavedEntries = (currentEntries || []).filter((entry) => entry?.file);
+  if (!unsavedEntries.length) return null;
+
+  setSavingRefs(true);
+
+  try {
+    const uploadedRows = await uploadCharacterRefs(characterId, unsavedEntries);
+    if (!uploadedRows.length) return null;
+
+    const rows = await loadCharacterImages(characterId);
+    const filteredRows = (rows || []).filter((r) => r.character_id === characterId);
+
+    const currentChar =
+      characters.find((c) => c.id === characterId) ||
+      activeChar ||
+      null;
+
+    if (!currentChar) {
+      setCharacterImages(filteredRows);
+      await markCharacterDnaStale(characterId);
+      return null;
+    }
+
+    const mapped = rowToCharacter(
+      {
+        ...currentChar,
+        master_image:
+          currentChar.masterImage ||
+          currentChar.coverImage ||
+          currentChar.refEntries?.[0]?.previewUrl ||
+          null,
+      },
+      filteredRows
+    );
+
+    setCharacters((prev) => {
+      const updated = prev.map((c) =>
+        c.id === characterId ? mapped : c
+      );
+      updateCharactersCache(updated);
+      return updated;
+    });
+
+    if (activeCharId === characterId) {
+      setCharacterImages(filteredRows);
+      setRefEntries(mapped.refEntries || []);
+    }
+
+    await markCharacterDnaStale(characterId);
+
+    return mapped;
+  } catch (err) {
+    console.error("Auto-save references failed:", err);
+    return null;
+  } finally {
+    setSavingRefs(false);
+  }
+}
 
   async function persistGeneratedImage(imageUrl, characterId, folder = "generated") {
   if (!imageUrl || !userId || !characterId) return null;
@@ -1222,7 +1404,14 @@ useEffect(() => {
     updateCharactersCache(updated);
     return updated;
   });
-}, [refEntries, activeCharId, updateCharactersCache]);
+
+  const hasUnsavedFiles = (refEntries || []).some((entry) => entry?.file);
+
+  if (!hasUnsavedFiles) return;
+  if (savingRefs) return;
+
+  autoSaveReferencesForCharacter(activeCharId, refEntries);
+}, [refEntries, activeCharId, savingRefs, updateCharactersCache]);
 
   useEffect(() => {
     if (!activeCharId) {
@@ -1419,11 +1608,21 @@ const { data, error } = await supabase
         return;
       }
 
-      const uploadedRows = await uploadCharacterRefs(data.id, refEntries);
-      if (refEntries.length > 0 && uploadedRows.length === 0) {
-  alert("Reference image upload failed. Check the storage bucket name and policies.");
-  setSaving(false);
-  return;
+      let uploadedRows = [];
+const isNewCharacter = !existingChar?.id;
+
+if (isNewCharacter) {
+  uploadedRows = await uploadCharacterRefs(data.id, refEntries);
+
+  if (refEntries.length > 0 && uploadedRows.length === 0) {
+    alert("Reference image upload failed. Check the storage bucket name and policies.");
+    setSaving(false);
+    return;
+  }
+
+  if (uploadedRows.length > 0) {
+    await markCharacterDnaStale(data.id);
+  }
 }
 
 console.log("SAVE CHARACTER DEBUG", {
@@ -1844,55 +2043,30 @@ try {
 } catch {
   console.error("PACK API NON-JSON RESPONSE:", raw);
 
-  // wait a moment, then reload saved character data because generation
-  // may have completed even though the route failed to return JSON
   try {
-    const rows = await loadCharacterImages(activeChar.id);
-
-    const mapped = rowToCharacter(
-      {
-        ...activeChar,
-        master_image: masterRef,
-      },
-      rows
-    );
-
-    setCharacters((prev) => {
-      const updated = prev.map((c) => (c.id === activeChar.id ? mapped : c));
-      updateCharactersCache(updated);
-      return updated;
-    });
-
-    setCharacterImages(rows.filter((r) => r.character_id === activeChar.id));
-
-    const refreshedOutputs = (mapped.generatedImages || []).map((url, i) => ({
-      id: `${activeChar.id}-${PACK_VIEWS[i]?.key || i}`,
-      charId: activeChar.id,
-      prompt: "",
-      scene: PACK_VIEWS[i]?.label || `View ${i + 1}`,
-      url,
-      createdAt: new Date().toISOString(),
-    }));
-
-    if (refreshedOutputs.length > 0) {
-      setOutputs((prev) => [
-        ...prev.filter((o) => o.charId !== activeChar.id),
-        ...refreshedOutputs,
-      ]);
-      return;
-    }
-  } catch (refreshErr) {
+  const mapped = await refreshCharacterPackState(activeChar, masterRef);
+  if ((mapped?.generatedImages || []).length > 0) {
+    return;
+  }
+} catch (refreshErr) {
     console.error("Post-failure refresh also failed:", refreshErr);
   }
 
-  throw new Error("Generation may have completed, but the server returned an invalid response. Refreshing may show saved images.");
+  return;
 }
 
-if (!res.ok) {
-  throw new Error(data?.error || "Failed to generate character pack");
-}
+if (!res.ok || !data?.success) {
+  console.error("PACK GENERATION ERROR RESPONSE:", data);
 
-if (!data?.success) {
+ try {
+  const mapped = await refreshCharacterPackState(activeChar, masterRef);
+  if ((mapped?.generatedImages || []).length > 0) {
+    return;
+  }
+} catch (refreshErr) {
+    console.error("Refresh after failed pack response also failed:", refreshErr);
+  }
+
   throw new Error(data?.error || "Character pack generation failed");
 }
 
@@ -1930,37 +2104,38 @@ fetch("/api/process-character-dna", {
 
 const pack = Array.isArray(data?.pack) ? data.pack : [];
 
-    const nextOutputs = pack.map((item) => ({
-      id: `${activeChar.id}-${item.type}`,
-      charId: activeChar.id,
-      prompt: "",
-      scene: PACK_VIEWS.find((v) => v.key === item.type)?.label || item.type,
-      url: item.url,
-      createdAt: new Date().toISOString(),
-    }));
+const nextOutputs = pack
+  .filter((item) => item?.url)
+  .map((item) => ({
+    id: `${activeChar.id}-${item.type}`,
+    charId: activeChar.id,
+    prompt: "",
+    scene: PACK_VIEWS.find((v) => v.key === item.type)?.label || item.type,
+    url: item.url,
+    createdAt: new Date().toISOString(),
+  }));
 
-    setOutputs((prev) => [
-      ...prev.filter((o) => o.charId !== activeChar.id),
-      ...nextOutputs,
-    ]);
+setOutputs((prev) => [
+  ...prev.filter((o) => o.charId !== activeChar.id),
+  ...nextOutputs,
+]);
 
-    const rows = await loadCharacterImages(activeChar.id);
+setCharacters((prev) => {
+  const updated = prev.map((c) =>
+    c.id === activeChar.id
+      ? {
+          ...c,
+          masterImage: masterRef,
+          generatedImages: pack.map((item) => item.url).filter(Boolean),
+          generations: pack.filter((item) => item.url).length,
+        }
+      : c
+  );
+  updateCharactersCache(updated);
+  return updated;
+});
 
-    const mapped = rowToCharacter(
-      {
-        ...activeChar,
-        master_image: masterRef,
-      },
-      rows
-    );
-
-    setCharacters((prev) => {
-      const updated = prev.map((c) => (c.id === activeChar.id ? mapped : c));
-      updateCharactersCache(updated);
-      return updated;
-    });
-
-    setCharacterImages(rows.filter((r) => r.character_id === activeChar.id));
+await refreshCharacterPackState(activeChar, masterRef);
   } catch (err) {
     console.error("Character pack generation failed:", err);
     alert(err?.message || "Failed to generate character pack.");
@@ -2421,12 +2596,44 @@ cover_image: savedUrl,
 
               {formSection === "refs" && (<>
                 <p style={{ margin: 0, fontSize: 12.5, color: C.textMuted, lineHeight: 1.65 }}>Upload reference photos of the character. More consistent references = more accurate generations.</p>
+                <div
+  style={{
+    fontSize: 11.5,
+    color: savingRefs ? "#c4b5fd" : C.textMuted,
+    lineHeight: 1.6,
+    padding: "8px 10px",
+    borderRadius: radius.sm,
+    border: `1px solid ${savingRefs ? C.accentBorder : C.border}`,
+    background: savingRefs ? C.accentSoft : "rgba(255,255,255,0.02)",
+  }}
+>
+  {activeChar
+    ? savingRefs
+      ? "Saving references… They will be used instantly in generation."
+      : "References auto-save and are used instantly in generation."
+    : "Save character first to permanently attach references."}
+</div>
                 <RefUpload entries={refEntries} onEntries={setRefEntries} label="Face references" hint="Clear, front-facing photos · best results" max={5} />
-                {refEntries.length > 0 && (
-                  <div style={{ padding: "10px 12px", borderRadius: radius.sm, border: `1px solid rgba(34,197,94,0.25)`, background: "rgba(34,197,94,0.06)", display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "#86efac" }}>
-                    <Check size={13} /> {refEntries.length} reference image{refEntries.length > 1 ? "s" : ""} ready — will be saved with character.
-                  </div>
-                )}
+{refEntries.length > 0 && (
+  <div
+    style={{
+      padding: "10px 12px",
+      borderRadius: radius.sm,
+      border: `1px solid rgba(34,197,94,0.25)`,
+      background: "rgba(34,197,94,0.06)",
+      display: "flex",
+      alignItems: "center",
+      gap: 8,
+      fontSize: 12,
+      color: "#86efac",
+    }}
+  >
+    <Check size={13} />
+    {activeChar
+      ? `${refEntries.length} reference image${refEntries.length > 1 ? "s" : ""} attached and ready.`
+      : `${refEntries.length} reference image${refEntries.length > 1 ? "s" : ""} ready — save character first.`}
+  </div>
+)}
                 <div style={{ padding: 14, borderRadius: radius.md, border: `1px solid ${C.border}`, background: C.surface }}>
                   <div style={{ fontSize: 12, fontWeight: 600, color: C.text, marginBottom: 8 }}>Tips for better consistency</div>
                   {["Use clear, well-lit photos", "Include front and 3/4 angles", "Avoid obscured faces or masks", "2–5 references works best"].map((tip, i, arr) => (
@@ -2839,42 +3046,49 @@ cover_image: savedUrl,
               padding: 24,
             }}
           >
-            <motion.div
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
-              onClick={(e) => e.stopPropagation()}
-              style={{
-                position: "relative",
-                maxWidth: "90vw",
-                maxHeight: "90vh",
-                borderRadius: radius.xl,
-                overflow: "hidden",
-                boxShadow: "0 40px 100px rgba(0,0,0,0.7)",
-              }}
-            >
-              <img
-                src={lightboxItem.url}
-                alt={lightboxItem.scene}
-                style={{
-                  display: "block",
-                  maxWidth: "90vw",
-                  maxHeight: "88vh",
-                  objectFit: "contain",
-                }}
-              />
+<motion.div
+  initial={{ scale: 0.9, opacity: 0 }}
+  animate={{ scale: 1, opacity: 1 }}
+  exit={{ scale: 0.9, opacity: 0 }}
+  transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
+  onClick={(e) => e.stopPropagation()}
+  style={{
+    position: "relative",
+    width: "90vw",
+    height: "88vh",
+    maxWidth: "90vw",
+    maxHeight: "88vh",
+    borderRadius: radius.xl,
+    overflow: "hidden",
+    boxShadow: "0 40px 100px rgba(0,0,0,0.7)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    background: "rgba(255,255,255,0.02)",
+  }}
+>
+  <img
+    src={lightboxItem.url}
+    alt={lightboxItem.scene}
+    style={{
+      width: "100%",
+      height: "100%",
+      objectFit: "contain",
+      display: "block",
+    }}
+  />
 
               {orderedVisibleOutputs.length > 1 && (
                 <>
                   <motion.button
                     whileTap={{ scale: 0.92 }}
                     onClick={goPrevLightbox}
-                    style={{
-                      position: "absolute",
-                      left: 18,
-                      top: "50%",
-                      transform: "translateY(-50%)",
+style={{
+  position: "absolute",
+  left: 20,
+  top: "50%",
+  transform: "translateY(-50%)",
+  zIndex: 5,
                       width: 44,
                       height: 44,
                       borderRadius: 14,
@@ -2893,11 +3107,12 @@ cover_image: savedUrl,
                   <motion.button
                     whileTap={{ scale: 0.92 }}
                     onClick={goNextLightbox}
-                    style={{
-                      position: "absolute",
-                      right: 18,
-                      top: "50%",
-                      transform: "translateY(-50%)",
+style={{
+  position: "absolute",
+  right: 20,
+  top: "50%",
+  transform: "translateY(-50%)",
+  zIndex: 5,
                       width: 44,
                       height: 44,
                       borderRadius: 14,
@@ -2931,9 +3146,10 @@ cover_image: savedUrl,
                       }
                       if (i === 1) setLightboxItem(null);
                     }}
-                    style={{
-                      width: 40,
-                      height: 40,
+style={{
+  width: 40,
+  height: 40,
+  zIndex: 5,
                       borderRadius: 12,
                       border: "1px solid rgba(255,255,255,0.12)",
                       background: "rgba(0,0,0,0.6)",

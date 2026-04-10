@@ -22,9 +22,6 @@ function getTimeMs(value) {
 function buildGenerationPayload(data) {
   return {
     id: data.id,
-    status:
-      data.metadata?.state ||
-      (Array.isArray(data.images) && data.images.length > 0 ? "completed" : "processing"),
     prompt: data.prompt,
     negative_prompt: data.negative_prompt,
     ratio: data.ratio,
@@ -32,7 +29,6 @@ function buildGenerationPayload(data) {
     style: data.style,
     created_at: data.created_at,
     images: data.images || [],
-    error: data.error || data.metadata?.error || null,
     metadata: data.metadata || {},
   };
 }
@@ -389,22 +385,10 @@ export async function GET(req) {
       (createdAtMs ? now - createdAtMs : null);
     const errorMessage = metadata?.error || "";
 
-    if (state === "completed" || hasImages || completedAtMs) {
+    if (hasImages || completedAtMs) {
       return Response.json({
         success: true,
-        status: data?.mode === "image" ? "succeeded" : "completed",
-        images: data?.images || [],
-        generation: buildGenerationPayload(data),
-      });
-    }
-
-    if (state === "failed" && !isRecoverableSyncError(errorMessage)) {
-      return Response.json({
-        success: false,
-        status: "failed",
-        error: errorMessage || "Generation failed",
-        images: data?.images || [],
-        errorType: metadata?.errorType || "generation_failure",
+        status: "succeeded",
         generation: buildGenerationPayload(data),
       });
     }
@@ -415,7 +399,6 @@ export async function GET(req) {
         return Response.json({
           success: true,
           status: "succeeded",
-          images: replicateResult?.images || [],
           generation: buildGenerationPayload(replicateResult),
           syncState: "replicate_finalized",
         });
@@ -426,7 +409,6 @@ export async function GET(req) {
           success: false,
           status: "failed",
           error: replicateResult?.metadata?.error || "Generation failed",
-          images: replicateResult?.images || [],
           errorType:
             replicateResult?.metadata?.errorType || "generation_failure",
           generation: buildGenerationPayload(replicateResult),
@@ -443,9 +425,18 @@ export async function GET(req) {
       return Response.json({
         success: true,
         status: "succeeded",
-        images: reconciled?.images || [],
         generation: buildGenerationPayload(reconciled),
         syncState: "reconciled",
+      });
+    }
+
+    if (state === "failed" && !isRecoverableSyncError(errorMessage)) {
+      return Response.json({
+        success: false,
+        status: "failed",
+        error: errorMessage || "Generation failed",
+        errorType: metadata?.errorType || "generation_failure",
+        generation: buildGenerationPayload(data),
       });
     }
 
@@ -455,7 +446,6 @@ export async function GET(req) {
         status: "failed",
         error:
           "Generation did not start in time. The background worker may be offline. Please try again.",
-        images: data?.images || [],
         errorType: "generation_failure",
         generation: buildGenerationPayload(data),
       });
@@ -475,7 +465,6 @@ export async function GET(req) {
       return Response.json({
         success: true,
         status: "processing",
-        images: data?.images || [],
         recoverable: true,
         syncState: isRecoverableSyncError(errorMessage)
           ? "recovering_db_sync"
@@ -485,20 +474,9 @@ export async function GET(req) {
       });
     }
 
-    if (data?.mode && data.mode !== "image") {
-      return Response.json({
-        success: true,
-        status: "processing",
-        images: data?.images || [],
-        error: errorMessage || null,
-        generation: buildGenerationPayload(data),
-      });
-    }
-
     return Response.json({
       success: true,
       status: "processing",
-      images: data?.images || [],
       recoverable: isRecoverableSyncError(errorMessage),
       syncState: isRecoverableSyncError(errorMessage)
         ? "recovering_db_sync"
