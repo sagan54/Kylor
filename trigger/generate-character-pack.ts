@@ -262,7 +262,8 @@ async function savePermanentBuffer({
 
 function buildViewPrompt(viewPrompt: string, negativePrompt = "") {
   return [
-    "Generate the SAME EXACT person from the reference image(s).",
+    "CRITICAL: Reconstruct the exact same person from the FIRST reference image.",
+"The face must match exactly. Do not generate a different person.",
     "Photorealistic studio consistency pack.",
     "Preserve exact face shape, hairline, hairstyle, skin tone, facial hair, body proportions, and identity.",
     "Plain white t-shirt and plain black pants only.",
@@ -286,13 +287,14 @@ async function generateReplicateImage({
 }) {
   void refs;
 
-  const output = await replicate.run(MODEL, {
-    input: {
-      prompt,
-      aspect_ratio: mapSizeToAspectRatio(size),
-      output_format: "png",
-    },
-  });
+const output = await replicate.run(MODEL, {
+  input: {
+    prompt,
+    input_images: refs, // 🔥 THIS IS THE FIX
+    aspect_ratio: mapSizeToAspectRatio(size),
+    output_format: "png",
+  },
+});
 
   const url = await fileOutputToUrl(output);
   if (!url) {
@@ -465,7 +467,7 @@ export const generateCharacterPack = task({
         metadataCache
       );
 
-      const remainingRefs = dedupeUrls([...refs, frontSaved]);
+     const remainingRefs = refs; // 🔥 ONLY MASTER IDENTITY
       const remainingViews = CORE_VIEWS.slice(1);
 
       const remainingResults = await Promise.all(
