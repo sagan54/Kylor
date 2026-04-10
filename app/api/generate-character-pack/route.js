@@ -1,52 +1,69 @@
 import Replicate from "replicate";
 import { createClient } from "@supabase/supabase-js";
 import { IMAGE_TYPES, IMAGE_ORDER, PACK_VIEWS } from "../../../lib/character-constants";
-import { INSTANTID_MODEL } from "../../../lib/image-generation-rules";
-import { after } from "next/server";
-import sharp from "sharp";
+
+const replicate = new Replicate({
+  auth: process.env.REPLICATE_API_TOKEN,
+});
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
-const replicate = new Replicate({
-  auth: process.env.REPLICATE_API_TOKEN,
-});
 
-const JOB_TIMEOUT_MS = 3 * 60 * 1000;
-const STALE_PACK_JOB_MS = 10 * 60 * 1000;
-const INTER_VIEW_COOLDOWN_MS = 11000;
-const MODEL = "black-forest-labs/flux-1.1-pro-ultra";
-
-const REQUIRED_PACK_VIEWS = [
-  IMAGE_TYPES.FRONT,
-  IMAGE_TYPES.CLOSEUP,
-  IMAGE_TYPES.RIGHT,
-  IMAGE_TYPES.LEFT,
-  IMAGE_TYPES.BACK,
-];
-
-const GENERATION_VIEW_ORDER = [
-  IMAGE_TYPES.FRONT,
-  IMAGE_TYPES.CLOSEUP,
-  IMAGE_TYPES.RIGHT,
-  IMAGE_TYPES.LEFT,
-  IMAGE_TYPES.BACK,
-];
+const MODEL = "black-forest-labs/flux-2-pro";
 
 function getModelForView(viewType) {
-  void viewType;
-  return MODEL;
+  switch (viewType) {
+    case IMAGE_TYPES.FRONT:
+    case IMAGE_TYPES.CLOSEUP:
+      return "black-forest-labs/flux-2-pro";
+
+    case IMAGE_TYPES.LEFT:
+    case IMAGE_TYPES.RIGHT:
+      return "black-forest-labs/flux-2-pro";
+
+    case IMAGE_TYPES.BACK:
+      return "black-forest-labs/flux-2-dev";
+
+    default:
+      return "black-forest-labs/flux-2-pro";
+  }
 }
 
 function shouldEvaluateViewOnFirstPass(viewType) {
-  void viewType;
-  return false;
+  return (
+    viewType === IMAGE_TYPES.FRONT ||
+    viewType === IMAGE_TYPES.CLOSEUP
+  );
 }
 
 function shouldRepairFailedView(failedView) {
-  if (!failedView || failedView.accepted) return false;
-  return REQUIRED_PACK_VIEWS.includes(failedView.type);
+  if (!failedView) return false;
+
+  if (
+    failedView.type === IMAGE_TYPES.FRONT ||
+    failedView.type === IMAGE_TYPES.CLOSEUP
+  ) {
+    return true;
+  }
+
+  if (
+    failedView.type === IMAGE_TYPES.LEFT ||
+    failedView.type === IMAGE_TYPES.RIGHT
+  ) {
+    return (
+      failedView.failureType === "wrong_shot" ||
+      failedView.failureType === "identity_drift" ||
+      failedView.failureType === "multiple_people"
+    );
+  }
+
+  if (failedView.type === IMAGE_TYPES.BACK) {
+    return false;
+  }
+
+  return false;
 }
 
 const STORAGE_BUCKET = "character-refs";
@@ -68,7 +85,7 @@ function mapSizeToAspectRatio(size) {
     case "1024x1536":
       return "2:3";
     case "1536x1024":
-      return "16:9";
+      return "3:2";
     case "1024x1024":
       return "1:1";
     default:
@@ -80,17 +97,7 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function nowMs() {
-  return Date.now();
-}
-
-function getTimeMs(value) {
-  if (!value) return null;
-  const parsed = new Date(value).getTime();
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
-function isProviderRateLimitError(err) {
+function isReplicateRateLimitError(err) {
   const msg = String(err?.message || err || "").toLowerCase();
   return (
     msg.includes("rate limit") ||
@@ -99,69 +106,38 @@ function isProviderRateLimitError(err) {
   );
 }
 
-function isProviderBillingError(err) {
+function isReplicateBillingError(err) {
   const msg = String(err?.message || err || "").toLowerCase();
   return (
     msg.includes("insufficient credit") ||
-    msg.includes("credits") ||
-    msg.includes("balance") ||
     msg.includes("payment required") ||
     msg.includes("402")
   );
 }
 
-function getReplicateRetryAfterMs(err) {
-  const msg = String(err?.message || err || "");
-  const match =
-    msg.match(/retry_after["']?\s*:\s*(\d+)/i) ||
-    msg.match(/retry after["']?\s*:\s*(\d+)/i) ||
-    msg.match(/resets in ~?(\d+)s/i);
-
-  if (!match) return null;
-
-  const seconds = Number(match[1]);
-  if (!Number.isFinite(seconds) || seconds <= 0) return null;
-
-  return seconds * 1000;
-}
-
-function formatReplicateRateLimitMessage(err) {
-  const retryAfterMs = getReplicateRetryAfterMs(err);
-  const retryAfterSeconds = retryAfterMs
-    ? Math.max(1, Math.ceil(retryAfterMs / 1000))
-    : 10;
-
-  return `Replicate rate limit hit. Wait about ${retryAfterSeconds} seconds and try again.`;
-}
-
 function shouldStopPackEarly(err) {
-  return isProviderRateLimitError(err) || isProviderBillingError(err);
+  return isReplicateRateLimitError(err) || isReplicateBillingError(err);
 }
 
-async function runProviderWithBackoff(fn, maxRetries = 2) {
+async function runReplicateWithBackoff(fn, maxRetries = 2) {
   let lastError;
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       if (attempt > 0) {
-        const retryAfterMs = getReplicateRetryAfterMs(lastError);
-        await sleep(retryAfterMs || INTER_VIEW_COOLDOWN_MS);
+        await sleep(10000); // 10 sec cooldown before retry
       }
       return await fn();
     } catch (err) {
       lastError = err;
 
-      if (isProviderBillingError(err)) {
+      if (isReplicateBillingError(err)) {
         throw new Error(
           "Replicate credit/billing issue. Wait a few minutes after adding credit, then try again."
         );
       }
 
-      if (isProviderRateLimitError(err) && attempt === maxRetries) {
-        throw new Error(formatReplicateRateLimitMessage(err));
-      }
-
-      if (!isProviderRateLimitError(err)) {
+      if (!isReplicateRateLimitError(err) || attempt === maxRetries) {
         throw err;
       }
     }
@@ -175,40 +151,30 @@ function getViewPrompt(viewKey) {
     case IMAGE_TYPES.FRONT:
       return "front-facing full body of the same exact person, standing straight, neutral pose, relaxed arms, centered composition, plain studio-like framing";
 
-    case IMAGE_TYPES.CLOSEUP:
-      return "front-facing upper-body close portrait of the same exact person, chest-up framing, face clearly visible, highly recognizable identity, centered composition, plain studio-like framing";
-
     case IMAGE_TYPES.LEFT:
-      return "strict left side profile portrait of the same exact person, upper-body framing, facing left, centered composition";
+      return "strict left side profile of the same exact person, full body, facing left, standing straight, neutral pose, relaxed arms, centered composition";
 
     case IMAGE_TYPES.RIGHT:
-      return "strict right side profile portrait of the same exact person, upper-body framing, facing right, centered composition";
+      return "strict right side profile of the same exact person, full body, facing right, standing straight, neutral pose, relaxed arms, centered composition";
 
     case IMAGE_TYPES.BACK:
-      return "back side profile portrait of the same exact person, upper-body framing, facing away from camera, centered composition";
+      return "back view of the same exact person, full body, facing away from camera, standing straight, neutral pose, relaxed arms, centered composition";
+
+    case IMAGE_TYPES.CLOSEUP:
+      return "tight close-up portrait of the same exact person, face clearly visible, highly recognizable identity, neutral expression, realistic photography";
 
     default:
       return "full body portrait of the same exact person, natural realistic photography";
   }
 }
 
-function mapSizeToDimensions(size) {
-  switch (String(size || "").toLowerCase()) {
-    case "1536x1024":
-      return { width: 1024, height: 1536 };
-    case "1024x1024":
-      return { width: 1024, height: 1024 };
-    case "1024x1536":
-    default:
-      return { width: 1024, height: 1536 };
-  }
-}
-
 async function fileOutputToUrl(output) {
   if (!output) return null;
 
+  // direct string
   if (typeof output === "string") return output;
 
+  // array output
   if (Array.isArray(output)) {
     for (const item of output) {
       const url = await fileOutputToUrl(item);
@@ -217,61 +183,34 @@ async function fileOutputToUrl(output) {
     return null;
   }
 
+  // Replicate FileOutput with url()
   if (typeof output?.url === "function") {
-    const url = await output.url();
-    return typeof url === "string" ? url : String(url || "");
+    const u = await output.url();
+    return typeof u === "string" ? u : String(u || "");
   }
 
-  if (typeof output?.url === "string") return output.url;
-  if (typeof output?.href === "string") return output.href;
+  // plain object with url string
+  if (typeof output?.url === "string") {
+    return output.url;
+  }
 
+  // plain object with href
+  if (typeof output?.href === "string") {
+    return output.href;
+  }
+
+  // nested output field
   if (output?.output) {
     return await fileOutputToUrl(output.output);
   }
 
-  const asString = String(output || "").trim();
-  if (asString.startsWith("http://") || asString.startsWith("https://")) {
-    return asString;
+  // fallback string conversion
+  const s = String(output || "").trim();
+  if (s.startsWith("http://") || s.startsWith("https://")) {
+    return s;
   }
 
   return null;
-}
-
-function summarizeProviderOutput(output) {
-  if (output == null) return "null";
-  if (typeof output === "string") return `string:${output.slice(0, 120)}`;
-  if (Array.isArray(output)) {
-    const first = output[0];
-    const firstType =
-      first == null
-        ? "null"
-        : Array.isArray(first)
-        ? "array"
-        : typeof first;
-    return `array:length=${output.length},firstType=${firstType}`;
-  }
-  if (typeof output === "object") {
-    return `object:keys=${Object.keys(output).slice(0, 12).join(",")}`;
-  }
-  return typeof output;
-}
-
-function mapSizeToSeedreamImageSize(size) {
-  switch (String(size || "").toLowerCase()) {
-    case "1024x1024":
-    case "square":
-    case "1:1":
-      return "square_hd";
-    case "1536x1024":
-    case "landscape":
-    case "16:9":
-      return "landscape_16_9";
-    case "1024x1536":
-    case "portrait":
-    case "2:3":
-    default:
-      return "portrait_4_3";
-  }
 }
 
 function buildShotInstruction(viewType) {
@@ -287,67 +226,67 @@ function buildShotInstruction(viewType) {
         "Centered composition.",
       ].join(" ");
 
-case IMAGE_TYPES.CLOSEUP:
+case IMAGE_TYPES.RIGHT:
   return [
     "Single person only.",
-    "Front-facing upper-body close portrait.",
-    "Chest-up framing.",
-    "Face clearly visible and highly recognizable.",
-    "Preserve exact facial identity.",
-    "Centered composition.",
-  ].join(" ");
-
-case IMAGE_TYPES.LEFT:
-  return [
-    "Single person only.",
-    "Strict LEFT side profile only.",
-    "The subject must face LEFT.",
-    "The nose must point to the LEFT edge of the frame.",
-    "The chest, hips, knees, and feet must also face LEFT.",
-    "Only the LEFT side of the face is visible.",
-    "The RIGHT side of the face must not be visible.",
-    "This must be a true 90-degree side profile.",
-    "No three-quarter angle.",
-    "No front angle.",
-    "No almost-side angle.",
-    "No mirrored right profile.",
+    "Strict right side profile.",
+    "Face turned to the RIGHT.",
+    "Nose pointing RIGHT.",
+    "Body facing RIGHT.",
+    "Right side of face visible, left side hidden.",
+    "Right shoulder slightly closer to camera, left shoulder slightly farther.",
+    "Full body visible from head to toe.",
+    "Standing straight, neutral pose, relaxed arms.",
+    "Preserve exact facial identity even from the side.",
+    "Preserve exact nose bridge, nose tip, forehead slope, brow line, jawline, chin projection, ear shape, and hairline from the same person.",
     "Do not turn toward camera.",
-    "Preserve exact identity from the same person.",
-    "Preserve exact forehead slope, nose bridge, nose tip, lips, chin projection, jaw contour, ear shape, hairline, hairstyle, and sideburn shape.",
-    "Upper-body portrait framing.",
-    "Centered composition.",
+    "Do not mirror the left profile.",
+    "This must be a true RIGHT profile only.",
   ].join(" ");
 
 case IMAGE_TYPES.RIGHT:
   return [
     "Single person only.",
-    "Strict RIGHT side profile only.",
-    "The subject must face RIGHT.",
-    "The nose must point to the RIGHT edge of the frame.",
-    "The chest, hips, knees, and feet must also face RIGHT.",
-    "Only the RIGHT side of the face is visible.",
-    "The LEFT side of the face must not be visible.",
-    "This must be a true 90-degree side profile.",
-    "No three-quarter angle.",
-    "No front angle.",
-    "No almost-side angle.",
-    "No mirrored left profile.",
+    "Strict right side profile.",
+    "Face turned to the RIGHT.",
+    "Nose pointing RIGHT.",
+    "Body facing RIGHT.",
+    "Right shoulder farther from camera, left shoulder closer to camera.",
+    "Full body visible from head to toe.",
+    "Standing straight, neutral pose, relaxed arms.",
+    "Preserve exact facial identity even from the side.",
+    "Preserve exact nose bridge, nose tip, forehead slope, brow line, jawline, chin projection, ear shape, and hairline from the same person.",
     "Do not turn toward camera.",
-    "Preserve exact identity from the same person.",
-    "Preserve exact forehead slope, nose bridge, nose tip, lips, chin projection, jaw contour, ear shape, hairline, hairstyle, and sideburn shape.",
-    "Upper-body portrait framing.",
-    "Centered composition.",
+    "Do not mirror the left profile.",
+    "This must be a true RIGHT profile only.",
   ].join(" ");
 
     case IMAGE_TYPES.BACK:
       return [
         "Single person only.",
-        "Back side profile portrait.",
+        "Back view.",
         "Facing away from camera.",
-        "Upper-body portrait framing.",
+        "Full body visible from head to toe.",
+        "Standing straight, neutral pose, relaxed arms.",
         "Only the viewing angle changes.",
         "Identity, body type, hairstyle, hair length, neck, shoulders, silhouette, and outfit remain the same person.",
       ].join(" ");
+
+case IMAGE_TYPES.CLOSEUP:
+  return [
+    "Single person only.",
+    "Tight close-up portrait.",
+    "Face clearly visible and highly recognizable.",
+    "Close-up must look unmistakably like the same person as the master identity and front image.",
+    "Preserve exact face shape, cheek structure, jawline, chin, forehead, brow shape, eyebrow thickness, eyelids, eye shape, nose bridge, nose tip, lips, ears, hairline, hairstyle, skin tone, beard or moustache pattern, and natural facial asymmetry.",
+    "Natural real human skin texture.",
+    "Matte skin, not glossy.",
+    "Real pores, subtle natural skin detail, slight real-life imperfections allowed.",
+    "No skin smoothing, no beauty retouching, no airbrushed face, no cosmetic enhancement.",
+    "No glossy skin, no shiny forehead, no waxy skin, no plastic skin, no polished skin, no studio beauty look.",
+    "Realistic passport-photo-like facial rendering.",
+    "Natural realistic photography.",
+  ].join(" ");
 
     default:
       return [
@@ -376,8 +315,7 @@ Also detect:
 - faceNotVisible
 - identityDrift
 - lowQuality
-- hairMismatch
-- facingDirection
+- fakeSkin
 
 Determine ONE primary failureType:
 - "identity_drift"
@@ -389,24 +327,15 @@ Determine ONE primary failureType:
 - "none"
 
 Rules:
- - If face shape, jawline, nose, eyes, hairline, or hairstyle clearly differs from the MASTER identity image, treat it as identity_drift
 - If identity does not match → identity_drift
-- If wrong angle or wrong facing direction → wrong_shot
+- If wrong angle → wrong_shot
 - If >1 person → multiple_people
 - If face hidden → face_not_visible
 - If blurry/artifacts → low_quality
 - If framing bad → bad_composition
-- If hair length, hair mass, hair silhouette, or hairstyle differs from the master/front identity anchor → hairMismatch = true
-- For LEFT view, facingDirection must be "left"
-- For RIGHT view, facingDirection must be "right"
-- For FRONT view, facingDirection must be "front"
-- For BACK view, facingDirection must be "back"
-- LEFT and RIGHT profiles must be opposite directions, not duplicates
-- If LEFT and RIGHT both appear to face the same direction, mark wrongShot = true
-- If a LEFT view looks like a RIGHT view, failureType must be "wrong_shot"
-- If a RIGHT view looks like a LEFT view, failureType must be "wrong_shot"
 - For back view, face_not_visible is expected and should NOT be treated as a failure by itself
 - If skin looks plastic, glossy, waxy, over-smoothed, or beauty-filtered → low_quality
+
 Return STRICT JSON:
 
 {
@@ -421,8 +350,6 @@ Return STRICT JSON:
   "faceNotVisible": false,
   "identityDrift": false,
   "lowQuality": false,
-  "hairMismatch": false,
-  "facingDirection": "front",
   "failureType": "none",
   "reason": ""
 }
@@ -552,11 +479,6 @@ function getEvaluatorSchema() {
         faceNotVisible: { type: "boolean" },
         identityDrift: { type: "boolean" },
         lowQuality: { type: "boolean" },
-                hairMismatch: { type: "boolean" },
-        facingDirection: {
-          type: "string",
-          enum: ["front", "left", "right", "back", "unknown"],
-        },
 
         failureType: {
           type: "string",
@@ -585,8 +507,6 @@ function getEvaluatorSchema() {
         "faceNotVisible",
         "identityDrift",
         "lowQuality",
-        "hairMismatch",
-        "facingDirection",
         "failureType",
         "reason",
       ],
@@ -764,14 +684,6 @@ function getPromptIntensity(attempt = 0) {
 
 function getViewStrategy(viewType) {
   switch (viewType) {
-    case IMAGE_TYPES.SHEET:
-      return {
-        identityPriority: "very_high",
-        shotPriority: "high",
-        compositionPriority: "high",
-        cinematicPriority: "low",
-      };
-
     case IMAGE_TYPES.FRONT:
       return {
         identityPriority: "high",
@@ -798,8 +710,6 @@ function getViewStrategy(viewType) {
       };
 
     case IMAGE_TYPES.CLOSEUP:
-    case IMAGE_TYPES.CLOSEUP_LEFT:
-    case IMAGE_TYPES.CLOSEUP_RIGHT:
       return {
         identityPriority: "very_high",
         shotPriority: "medium",
@@ -822,20 +732,8 @@ function buildGlobalCharacterLockBlock() {
     "Hidden global character lock:",
 
     // 👇 OUTFIT LOCK
-"The outfit must remain a plain white t-shirt and plain black pants in every generated pack view.",
-"No logos, no graphics, no patterns, no printed shirt, no colored shirt, no shorts, no jeans shorts, no costume.",
-"Do not copy outfit from uploaded reference images.",
-"Ignore clothing from source images completely.",
-"Only preserve the person's identity, body, face, hairstyle, and proportions.",
-
-"",
-
-"Hair continuity lock:",
-"Hairstyle, hair length, hair volume, hair density, hairline, sideburns, and overall hair silhouette must remain identical across all pack views.",
-"Do not lengthen the hair in side views or back view.",
-"Do not shorten the hair in front view or close-up.",
-"Do not add extra hair mass, extra layers, mullet shape, ponytail shape, or extended back hair unless clearly present in the approved identity anchor.",
-"Hair must remain the same person, same cut, same length, same structure in every generated image.",
+    "The outfit must remain a plain white t-shirt and plain black pants in every generated pack view.",
+    "No logos, no graphics, no patterns, no printed shirt, no colored shirt, no shorts, no jeans shorts, no costume.",
     "Do not copy outfit from uploaded reference images.",
     "Ignore clothing from source images completely.",
     "Only preserve the person's identity, body, face, hairstyle, and proportions.",
@@ -856,58 +754,14 @@ function buildGlobalCharacterLockBlock() {
 
     // 👇 SKIN REALISM LOCK
     "Skin realism lock:",
-"Skin must be natural, matte, and realistic.",
-"Preserve natural pores and subtle real skin texture.",
-"Skin must be clean, smooth, and healthy.",
-"Do not generate acne, pimples, skin spots, blemishes, or facial marks.",
-"Do not introduce any new skin defects not present in the reference.",
-"Maintain natural skin texture WITHOUT imperfections.",
-"Do not introduce new facial marks that are not visible in the reference image.",
-"Maintain realistic skin variation without artificial imperfections.",
-"Do not over-smooth skin.",
-"Do not beauty-retouch the face.",
+    "Skin must be natural, matte, and realistic.",
+    "No shiny skin, no glossy skin, no oily skin, no plastic skin, no waxy skin, no polished skin.",
+    "Keep natural pores, subtle texture, slight under-eye realism, and normal real-life facial detail.",
+    "Allow mild natural imperfections such as tiny blemishes, pores, slight texture variation, and realistic skin unevenness.",
+    "Do not over-smooth skin.",
+    "Do not beauty-retouch the face.",
     "Do not apply glamour lighting, cosmetic skin cleanup, or commercial skincare-ad style rendering.",
     "Do not make the face look airbrushed, filtered, polished, or hyper-beautified.",
-    
-    "",
-"Side-profile direction lock:",
-"LEFT profile and RIGHT profile must be true opposite directions.",
-"LEFT profile must face left only.",
-"RIGHT profile must face right only.",
-"Do not duplicate the same side for both images.",
-"Do not mirror one side profile into the other.",
-  ].join(" ");
-}
-
-function buildStableCharacterLockBlock() {
-  return [
-    "Hidden global character lock:",
-    "Preserve the same exact face, jawline, cheek structure, forehead, eye spacing, nose shape, lip shape, chin, ears, skin tone, hairstyle, hairline, sideburns, neck, shoulders, and body proportions in every pack view.",
-    "",
-    "Outfit lock:",
-    "The outfit must remain a plain white t-shirt and plain black pants in every generated pack view.",
-    "No logos, graphics, patterns, costume changes, printed shirt, or colored shirt.",
-    "Use reference images for identity only, not for clothing.",
-    "",
-    "Hair continuity lock:",
-    "Hairstyle, hair length, hair volume, hair density, hairline, sideburn shape, and overall hair silhouette must remain identical across all pack views.",
-    "Do not add extra hair mass, remove hair volume, change the parting, or alter the hairline unless clearly visible in the approved master identity.",
-    "",
-    "Background lock:",
-    "Background must be a clean neutral studio background with consistent simple lighting across all views.",
-    "Keep the background flat, non-distracting, and easy to evaluate.",
-    "",
-    "Skin realism lock:",
-    "Skin must stay natural and realistic with subtle real texture.",
-    "Do not beauty-retouch, airbrush, glamorize, polish, or beautify the face.",
-    "Do not invent new blemishes, acne, marks, or spots not visible in the master identity image.",
-    "Do not remove distinctive identity features visible in the master identity image.",
-    "",
-    "Side-profile direction lock:",
-    "LEFT profile and RIGHT profile must be true opposite directions.",
-    "LEFT profile must face left only.",
-    "RIGHT profile must face right only.",
-    "Do not duplicate the same side profile twice and do not mirror one side into the other.",
   ].join(" ");
 }
 
@@ -931,8 +785,7 @@ function buildAdaptiveIdentityBlock({
     lines.push(
       "This must remain the SAME EXACT person from the reference images.",
       "Do not generate a similar person. Do not reinterpret identity.",
-      "Preserve exact face shape, skull shape, jawline, cheek structure, forehead, brow line, eyebrow shape, eye shape, eyelids, nose bridge, nose tip, nostrils, lips, chin, ears, skin tone, hairstyle, hairline, and body proportions.",
-      "Master reference identity overrides any generic beauty, fashion, or portrait tendencies from the model."
+      "Preserve exact face shape, skull shape, jawline, cheek structure, forehead, brow line, eyebrow shape, eye shape, eyelids, nose bridge, nose tip, nostrils, lips, chin, ears, skin tone, hairstyle, hairline, and body proportions."
     );
   }
 
@@ -943,22 +796,13 @@ function buildAdaptiveIdentityBlock({
     );
   }
 
-  if (
-    viewType === IMAGE_TYPES.LEFT ||
-    viewType === IMAGE_TYPES.RIGHT ||
-    viewType === IMAGE_TYPES.CLOSEUP_LEFT ||
-    viewType === IMAGE_TYPES.CLOSEUP_RIGHT
-  ) {
+  if (viewType === IMAGE_TYPES.LEFT || viewType === IMAGE_TYPES.RIGHT) {
     lines.push(
       "Preserve side-profile identity markers exactly: forehead slope, nose projection, nose bridge, lip projection, chin projection, jaw contour, ear shape, and hairline."
     );
   }
 
-  if (
-    viewType === IMAGE_TYPES.CLOSEUP ||
-    viewType === IMAGE_TYPES.CLOSEUP_LEFT ||
-    viewType === IMAGE_TYPES.CLOSEUP_RIGHT
-  ) {
+  if (viewType === IMAGE_TYPES.CLOSEUP) {
     lines.push(
       "Close-up must be highly recognizable and unmistakably the same person.",
       "Facial identity must be preserved with maximum accuracy."
@@ -970,10 +814,6 @@ function buildAdaptiveIdentityBlock({
       "For back view, preserve hairstyle, hair density, hair length, neck shape, shoulder width, body silhouette, and outfit continuity exactly."
     );
   }
-
-  lines.push(
-    "Hair consistency is mandatory. Keep the same hairline, front hair shape, side volume, crown volume, and sideburn structure across every view."
-  );
 
   if (failureType === "identity_drift") {
     lines.push(
@@ -1017,43 +857,21 @@ function buildAdaptiveShotBlock({
 
 if (viewType === IMAGE_TYPES.LEFT) {
   lines.push(
-    "Mandatory direction rule: the person must face LEFT.",
+    "Subject must face LEFT in a strict side profile.",
+    "Left side of face must be visible.",
+    "Right side of face must not be visible.",
     "Nose must point LEFT.",
-    "Torso must face LEFT.",
-    "Feet must face LEFT.",
-    "Only the left facial contour may be visible.",
-    "This must be a true left profile, not an approximate side angle.",
-    "Do not mirror the right profile.",
-    "If the pose resembles a right profile, it is incorrect."
+    "Do not mirror, duplicate, or approximate the right-side angle."
   );
 }
 
 if (viewType === IMAGE_TYPES.RIGHT) {
   lines.push(
-    "Mandatory direction rule: the person must face RIGHT.",
+    "Subject must face RIGHT in a strict side profile.",
+    "Right side of face must be visible.",
+    "Left side of face must not be visible.",
     "Nose must point RIGHT.",
-    "Torso must face RIGHT.",
-    "Feet must face RIGHT.",
-    "Only the right facial contour may be visible.",
-    "This must be a true right profile, not an approximate side angle.",
-    "Do not mirror the left profile.",
-    "If the pose resembles a left profile, it is incorrect."
-  );
-}
-
-if (viewType === IMAGE_TYPES.CLOSEUP_LEFT) {
-  lines.push(
-    "Mandatory direction rule: the person must face LEFT.",
-    "Only the left facial contour may be visible.",
-    "This must be a true left profile portrait, not a three-quarter portrait."
-  );
-}
-
-if (viewType === IMAGE_TYPES.CLOSEUP_RIGHT) {
-  lines.push(
-    "Mandatory direction rule: the person must face RIGHT.",
-    "Only the right facial contour may be visible.",
-    "This must be a true right profile portrait, not a three-quarter portrait."
+    "Do not mirror, duplicate, or approximate the left-side angle."
   );
 }
 
@@ -1093,22 +911,7 @@ function buildAdaptiveCompositionBlock({
     "Centered composition.",
   ];
 
-  if (viewType === IMAGE_TYPES.SHEET) {
-    return [
-      "Single character sheet only.",
-      "Landscape 16:9 composition.",
-      "Seven clearly separated panels with even spacing.",
-      "Top row: four full-body views.",
-      "Bottom row: three portrait views.",
-      "No extra people, no duplicate bonus panels, no text labels, no border captions.",
-    ].join(" ");
-  }
-
-  if (
-    viewType === IMAGE_TYPES.CLOSEUP ||
-    viewType === IMAGE_TYPES.CLOSEUP_LEFT ||
-    viewType === IMAGE_TYPES.CLOSEUP_RIGHT
-  ) {
+  if (viewType === IMAGE_TYPES.CLOSEUP) {
     lines.push(
       "Tight portrait framing.",
       "Face fully visible and clearly readable."
@@ -1284,9 +1087,6 @@ function buildReferenceFusionBlock({
     lines.push(
       "Use the master image as the root identity anchor."
     );
-    lines.push(
-      "MASTER reference has highest authority for face shape, hairline, hairstyle, sideburns, skin tone, and recognizable likeness."
-    );
   }
 
   if (fusion.hasFront) {
@@ -1307,24 +1107,14 @@ function buildReferenceFusionBlock({
     );
   }
 
-  if (
-    (viewType === IMAGE_TYPES.CLOSEUP ||
-      viewType === IMAGE_TYPES.CLOSEUP_LEFT ||
-      viewType === IMAGE_TYPES.CLOSEUP_RIGHT) &&
-    fusion.faceHeavy
-  ) {
+  if (viewType === IMAGE_TYPES.CLOSEUP && fusion.faceHeavy) {
     lines.push(
       "This shot is face-critical. Prioritize exact facial identity over all non-essential styling."
     );
   }
 
   if (
-    (
-      viewType === IMAGE_TYPES.LEFT ||
-      viewType === IMAGE_TYPES.RIGHT ||
-      viewType === IMAGE_TYPES.CLOSEUP_LEFT ||
-      viewType === IMAGE_TYPES.CLOSEUP_RIGHT
-    ) &&
+    (viewType === IMAGE_TYPES.LEFT || viewType === IMAGE_TYPES.RIGHT) &&
     fusion.profileHeavy
   ) {
     lines.push(
@@ -1363,8 +1153,6 @@ function buildPackContextBlock({
   const lines = [
     `Pack context available from accepted views: ${acceptedTypes.join(", ")}.`,
     "Maintain full cross-view identity consistency with the already accepted pack images.",
-    "Hair continuity with accepted pack views is mandatory.",
-    "Do not change hair length, hair mass, hair shape, hairline, sideburns, or back hair silhouette across views.",
   ];
 
   if (acceptedViewMap[IMAGE_TYPES.FRONT]?.url) {
@@ -1437,8 +1225,11 @@ function buildIntelligentPrompt({
     "No CGI look, no 3D render look, no beauty-filtered skin.",
   ].join(" ");
 
+  const globalCharacterLockBlock = buildGlobalCharacterLockBlock();
+
+
 return [
-  buildStableCharacterLockBlock(),
+  globalCharacterLockBlock,
   identityBlock,
   shotBlock,
   compositionBlock,
@@ -1446,9 +1237,6 @@ return [
   fusionBlock,
   packContextBlock,
   realismBlock,
-
-  "Absolute rule: skin must be clean with no acne or pimples under any condition.",
-
   `Shot request: ${String(prompt || "").trim()}`,
 ]
   .filter(Boolean)
@@ -1499,15 +1287,15 @@ function getAdaptiveThresholds({
   };
 
   switch (viewType) {
-case IMAGE_TYPES.FRONT:
-  thresholds = {
-    minIdentityScore: attempt === 0 ? 7.4 : 8.0,
-    minShotScore: 7.4,
-    minCompositionScore: 6.7,
-    minQualityScore: 6.7,
-    minFinalScore: 7.4,
-  };
-  break;
+    case IMAGE_TYPES.FRONT:
+      thresholds = {
+        minIdentityScore: attempt === 0 ? 7.2 : 8.0,
+        minShotScore: 7.5,
+        minCompositionScore: 6.8,
+        minQualityScore: 6.8,
+        minFinalScore: 7.5,
+      };
+      break;
 
     case IMAGE_TYPES.LEFT:
     case IMAGE_TYPES.RIGHT:
@@ -1530,15 +1318,15 @@ case IMAGE_TYPES.FRONT:
       };
       break;
 
-case IMAGE_TYPES.CLOSEUP:
-  thresholds = {
-    minIdentityScore: 8.2,
-    minShotScore: 7.0,
-    minCompositionScore: 6.8,
-    minQualityScore: 7.1,
-    minFinalScore: 7.7,
-  };
-  break;
+    case IMAGE_TYPES.CLOSEUP:
+      thresholds = {
+        minIdentityScore: 8.5,
+        minShotScore: 7.0,
+        minCompositionScore: 7.0,
+        minQualityScore: 7.5,
+        minFinalScore: 8.0,
+      };
+      break;
   }
 
   if (referenceFusion?.strongestIdentityScore >= 8.5) {
@@ -1591,27 +1379,6 @@ function shouldRejectScore(score, thresholds, viewType) {
 
   if (score.multiplePeople) return true;
   if (score.wrongShot) return true;
-  if (score.hairMismatch) return true;
-
-  const facing = String(score.facingDirection || "").toLowerCase();
-  const hasKnownFacing =
-    facing === "left" ||
-    facing === "right" ||
-    facing === "front" ||
-    facing === "back";
-
-  if (viewType === IMAGE_TYPES.LEFT && hasKnownFacing && facing !== "left") return true;
-  if (viewType === IMAGE_TYPES.RIGHT && hasKnownFacing && facing !== "right") return true;
-
-  if (
-  (viewType === IMAGE_TYPES.LEFT || viewType === IMAGE_TYPES.RIGHT) &&
-  score.wrongShot
-) {
-  return true;
-}
-
-  if (viewType === IMAGE_TYPES.FRONT && hasKnownFacing && facing !== "front") return true;
-  if (viewType === IMAGE_TYPES.BACK && hasKnownFacing && facing !== "back") return true;
 
   // Back view should NOT fail just because face is not visible
   if (viewType !== IMAGE_TYPES.BACK && score.faceNotVisible) return true;
@@ -1627,61 +1394,22 @@ function shouldRejectScore(score, thresholds, viewType) {
   return false;
 }
 
-function shouldSoftAcceptScore(score, thresholds, viewType) {
-  if (!score || !thresholds) return false;
-
-  const facing = String(score.facingDirection || "").toLowerCase();
-  const hasKnownFacing =
-    facing === "left" ||
-    facing === "right" ||
-    facing === "front" ||
-    facing === "back";
-
-  if (score.multiplePeople) return false;
-  if (score.wrongShot) return false;
-  if (score.faceNotVisible && viewType !== IMAGE_TYPES.BACK) return false;
-  if (score.identityDrift) return false;
-  if (score.hairMismatch) return false;
-
-  if (viewType === IMAGE_TYPES.LEFT && hasKnownFacing && facing !== "left") return false;
-  if (viewType === IMAGE_TYPES.RIGHT && hasKnownFacing && facing !== "right") return false;
-  if (viewType === IMAGE_TYPES.FRONT && hasKnownFacing && facing !== "front") return false;
-  if (viewType === IMAGE_TYPES.BACK && hasKnownFacing && facing !== "back") return false;
-
-  if (score.identityScore < Math.max(5.8, thresholds.minIdentityScore - 1.2)) return false;
-  if (score.shotScore < Math.max(5.8, thresholds.minShotScore - 1.2)) return false;
-  if (score.compositionScore < Math.max(5.6, thresholds.minCompositionScore - 1.0)) return false;
-  if (score.qualityScore < Math.max(5.6, thresholds.minQualityScore - 1.0)) return false;
-  if (score.finalScore < Math.max(5.9, thresholds.minFinalScore - 1.2)) return false;
-
-  return true;
-}
-
 function getReferencePriority(viewType) {
   switch (viewType) {
-    case IMAGE_TYPES.SHEET:
-      return ["MASTER", IMAGE_TYPES.FRONT, IMAGE_TYPES.LEFT, IMAGE_TYPES.RIGHT, IMAGE_TYPES.BACK];
-
     case IMAGE_TYPES.FRONT:
       return ["MASTER", IMAGE_TYPES.FRONT];
 
     case IMAGE_TYPES.LEFT:
-  return ["MASTER", IMAGE_TYPES.FRONT, IMAGE_TYPES.LEFT];
+      return ["MASTER", IMAGE_TYPES.FRONT, IMAGE_TYPES.RIGHT];
 
-case IMAGE_TYPES.RIGHT:
-  return ["MASTER", IMAGE_TYPES.FRONT, IMAGE_TYPES.RIGHT];
+    case IMAGE_TYPES.RIGHT:
+      return ["MASTER", IMAGE_TYPES.FRONT, IMAGE_TYPES.LEFT];
 
     case IMAGE_TYPES.BACK:
       return ["MASTER", IMAGE_TYPES.FRONT, IMAGE_TYPES.LEFT, IMAGE_TYPES.RIGHT];
 
     case IMAGE_TYPES.CLOSEUP:
       return [IMAGE_TYPES.FRONT, "MASTER", IMAGE_TYPES.LEFT, IMAGE_TYPES.RIGHT];
-
-    case IMAGE_TYPES.CLOSEUP_LEFT:
-      return ["MASTER", IMAGE_TYPES.LEFT, IMAGE_TYPES.FRONT, IMAGE_TYPES.CLOSEUP];
-
-    case IMAGE_TYPES.CLOSEUP_RIGHT:
-      return ["MASTER", IMAGE_TYPES.RIGHT, IMAGE_TYPES.FRONT, IMAGE_TYPES.CLOSEUP];
 
     default:
       return ["MASTER", IMAGE_TYPES.FRONT];
@@ -1692,9 +1420,6 @@ function trimReferencesForView(viewType, refs) {
   const uniqueRefs = Array.from(new Set(refs)).filter(Boolean);
 
   switch (viewType) {
-    case IMAGE_TYPES.SHEET:
-      return uniqueRefs.slice(0, 5);
-
     case IMAGE_TYPES.FRONT:
       return uniqueRefs.slice(0, 4);
 
@@ -1707,10 +1432,6 @@ function trimReferencesForView(viewType, refs) {
 
     case IMAGE_TYPES.CLOSEUP:
       return uniqueRefs.slice(0, 3);
-
-    case IMAGE_TYPES.CLOSEUP_LEFT:
-    case IMAGE_TYPES.CLOSEUP_RIGHT:
-      return uniqueRefs.slice(0, 4);
 
     default:
       return uniqueRefs.slice(0, 3);
@@ -1748,15 +1469,11 @@ function scoreReferenceCandidate({
   }
 
   if (candidate.type === "UPLOAD") {
-    score += 4;
+    score += 14;
   }
 
   if (candidate.type === "MASTER") {
     score += 16;
-  }
-
-  if (candidate.type === IMAGE_TYPES.FRONT) {
-    score += 18;
   }
 
   if (targetViewType === IMAGE_TYPES.CLOSEUP) {
@@ -1767,32 +1484,16 @@ function scoreReferenceCandidate({
     if (candidate.type === IMAGE_TYPES.LEFT || candidate.type === IMAGE_TYPES.RIGHT) score += 4;
   }
 
-  if (targetViewType === IMAGE_TYPES.CLOSEUP_LEFT) {
-    score += identityScore * 2.5;
-    score += qualityScore * 1.5;
-
-    if (candidate.type === IMAGE_TYPES.LEFT) score += 16;
-    if (candidate.type === IMAGE_TYPES.FRONT) score += 8;
-  }
-
-  if (targetViewType === IMAGE_TYPES.CLOSEUP_RIGHT) {
-    score += identityScore * 2.5;
-    score += qualityScore * 1.5;
-
-    if (candidate.type === IMAGE_TYPES.RIGHT) score += 16;
-    if (candidate.type === IMAGE_TYPES.FRONT) score += 8;
-  }
-
   if (targetViewType === IMAGE_TYPES.BACK) {
-    if (candidate.type === IMAGE_TYPES.LEFT || candidate.type === IMAGE_TYPES.RIGHT) score += 8;
-    if (candidate.type === IMAGE_TYPES.FRONT) score += 16;
+    if (candidate.type === IMAGE_TYPES.LEFT || candidate.type === IMAGE_TYPES.RIGHT) score += 6;
+    if (candidate.type === IMAGE_TYPES.FRONT) score += 3;
   }
 
   if (targetViewType === IMAGE_TYPES.LEFT || targetViewType === IMAGE_TYPES.RIGHT) {
     score += identityScore * 2;
     score += shotScore * 1.5;
 
-    if (candidate.type === IMAGE_TYPES.FRONT) score += 18;
+    if (candidate.type === IMAGE_TYPES.FRONT) score += 8;
     if (candidate.type === targetViewType) score += 6;
   }
 
@@ -2079,25 +1780,8 @@ async function savePermanentImage({
   const contentType = response.headers.get("content-type") || "image/png";
   const arrayBuffer = await response.arrayBuffer();
   const buffer = Buffer.from(arrayBuffer);
-  return await savePermanentBuffer({
-    buffer,
-    contentType,
-    userId,
-    characterId,
-    viewType,
-  });
-}
-
-async function savePermanentBuffer({
-  buffer,
-  contentType = "image/png",
-  userId = "anonymous",
-  characterId,
-  viewType,
-}) {
-  if (!buffer) return null;
-
   const ext = getExtensionFromContentType(contentType);
+
   const filePath = `${userId}/${characterId}/pack/${viewType}-${Date.now()}.${ext}`;
 
   const { error: uploadError } = await supabase.storage
@@ -2116,124 +1800,6 @@ async function savePermanentBuffer({
     .getPublicUrl(filePath);
 
   return publicData?.publicUrl || null;
-}
-
-async function fetchImageBuffer(imageUrl) {
-  const response = await fetch(imageUrl);
-  if (!response.ok) {
-    throw new Error(`Failed to fetch image asset: ${response.status}`);
-  }
-
-  const arrayBuffer = await response.arrayBuffer();
-  return Buffer.from(arrayBuffer);
-}
-
-function clampInt(value, min, max) {
-  return Math.max(min, Math.min(max, Math.round(value)));
-}
-
-async function buildPortraitFromFullBody(imageUrl) {
-  const buffer = await fetchImageBuffer(imageUrl);
-  const source = sharp(buffer);
-  const metadata = await source.metadata();
-  const width = metadata.width || 1024;
-  const height = metadata.height || 1536;
-
-  const scale = Math.max(1600 / width, 2400 / height);
-  const scaledWidth = Math.max(1600, Math.round(width * scale));
-  const scaledHeight = Math.max(2400, Math.round(height * scale));
-  const targetWidth = 1024;
-  const targetHeight = 1536;
-  const left = clampInt((scaledWidth - targetWidth) / 2, 0, Math.max(0, scaledWidth - targetWidth));
-  const top = clampInt(scaledHeight * 0.06, 0, Math.max(0, scaledHeight - targetHeight));
-
-  return await source
-    .resize(scaledWidth, scaledHeight, { fit: "cover" })
-    .extract({
-      left,
-      top,
-      width: targetWidth,
-      height: targetHeight,
-    })
-    .jpeg({ quality: 90 })
-    .toBuffer();
-}
-
-async function fitBufferForSheet(imageUrl, width, height) {
-  const buffer = await fetchImageBuffer(imageUrl);
-  return await sharp(buffer)
-    .resize(width, height, {
-      fit: "contain",
-      background: { r: 245, g: 245, b: 245, alpha: 1 },
-    })
-    .png()
-    .toBuffer();
-}
-
-async function buildProfileSheet({
-  frontUrl,
-  leftUrl,
-  rightUrl,
-  backUrl,
-  leftPortraitUrl,
-  frontPortraitUrl,
-  rightPortraitUrl,
-}) {
-  const sheetWidth = 1536;
-  const sheetHeight = 1024;
-  const topY = 48;
-  const bottomY = 622;
-  const topW = 300;
-  const topH = 500;
-  const bottomW = 320;
-  const bottomH = 320;
-  const topXs = [24, 408, 792, 1176];
-  const bottomXs = [128, 608, 1088];
-
-  const [
-    front,
-    left,
-    right,
-    back,
-    leftPortrait,
-    frontPortrait,
-    rightPortrait,
-  ] = await Promise.all([
-    fitBufferForSheet(frontUrl, topW, topH),
-    fitBufferForSheet(leftUrl, topW, topH),
-    fitBufferForSheet(rightUrl, topW, topH),
-    fitBufferForSheet(backUrl, topW, topH),
-    fitBufferForSheet(leftPortraitUrl, bottomW, bottomH),
-    fitBufferForSheet(frontPortraitUrl, bottomW, bottomH),
-    fitBufferForSheet(rightPortraitUrl, bottomW, bottomH),
-  ]);
-
-  const background = {
-    create: {
-      width: sheetWidth,
-      height: sheetHeight,
-      channels: 3,
-      background: { r: 247, g: 247, b: 247 },
-    },
-  };
-
-  return await sharp(background)
-    .composite([
-      { input: front, left: topXs[0], top: topY },
-      { input: left, left: topXs[1], top: topY },
-      { input: right, left: topXs[2], top: topY },
-      { input: back, left: topXs[3], top: topY },
-      { input: leftPortrait, left: bottomXs[0], top: bottomY },
-      { input: frontPortrait, left: bottomXs[1], top: bottomY },
-      { input: rightPortrait, left: bottomXs[2], top: bottomY },
-    ])
-    .jpeg({ quality: 92 })
-    .toBuffer();
-}
-
-async function buildDerivedPackAssets(finalResults = []) {
-  void finalResults;
-  return [];
 }
 
 async function runSingleGeneration({
@@ -2279,6 +1845,12 @@ const basePrompt = buildIntelligentPrompt({
   referenceFusion,
   packContextBlock,
 });
+
+const finalPrompt = [
+  basePrompt,
+  dnaIdentityBlock,
+  lockedTraitsBlock,
+].filter(Boolean).join("\n\n");
 
 const enforcedNegativePrompt = [
   negativePrompt,
@@ -2332,43 +1904,13 @@ const enforcedNegativePrompt = [
 "overexposed background",
 "washed out background",
 "high key background",
-"acne",
-"pimples",
-"skin blemishes",
-"skin spots",
-"face spots",
-"facial acne",
-"breakouts",
-"skin imperfections dots",
 ].filter(Boolean).join(", ");
 
 const viewSpecificNegativePrompt =
   viewType === IMAGE_TYPES.LEFT
-    ? [
-        "facing right",
-        "nose pointing right",
-        "right profile",
-        "mirrored right profile",
-        "wrong side profile",
-        "three-quarter face",
-        "front-facing",
-        "semi-front angle",
-        "partial front view",
-        "camera-facing head",
-      ].join(", ")
+    ? "facing right, nose pointing right, right profile, mirrored profile, three-quarter face, front-facing"
     : viewType === IMAGE_TYPES.RIGHT
-    ? [
-        "facing left",
-        "nose pointing left",
-        "left profile",
-        "mirrored left profile",
-        "wrong side profile",
-        "three-quarter face",
-        "front-facing",
-        "semi-front angle",
-        "partial front view",
-        "camera-facing head",
-      ].join(", ")
+    ? "facing left, nose pointing left, left profile, mirrored profile, three-quarter face, front-facing"
     : viewType === IMAGE_TYPES.CLOSEUP
     ? "beauty lighting, glossy forehead, polished skin, studio glamour retouching, makeup-ad skin"
     : "";
@@ -2378,66 +1920,53 @@ const finalNegativePrompt = [
   viewSpecificNegativePrompt,
 ].filter(Boolean).join(", ");
 
-const finalPrompt = [
-  basePrompt,
-  dnaIdentityBlock,
-  lockedTraitsBlock,
-  finalNegativePrompt ? `Avoid: ${finalNegativePrompt}` : "",
-].filter(Boolean).join("\n\n");
-
 const cleanedRefs = refs
   .map((r) => normalizeReferenceImage(r))
   .filter(Boolean)
   .slice(0, 8);
 
-const input = {
-  prompt: finalPrompt,
-  image: cleanedRefs[0],
-  negative_prompt: finalNegativePrompt,
-  ...mapSizeToDimensions(size),
-  ip_adapter_scale: 0.95,
-  controlnet_conditioning_scale: 0.95,
-  num_inference_steps: 40,
-  guidance_scale: 4.5,
-};
+const input = cleanedRefs.length > 0
+  ? {
+      prompt: finalPrompt,
+      negative_prompt: finalNegativePrompt,
+      aspect_ratio,
+      output_format: "png",
+      input_images: cleanedRefs,
+    }
+  : {
+      prompt: finalPrompt,
+      negative_prompt: finalNegativePrompt,
+      aspect_ratio,
+      output_format: "png",
+    };
 
-const modelToUse = getModelForView(viewType);
+const output = await runReplicateWithBackoff(async () => {
 
-const output = await runProviderWithBackoff(async () => {
-  console.log("PROVIDER DEBUG", {
-    model: modelToUse,
-    viewType,
-    refCount: cleanedRefs.length,
-    refsPreview: cleanedRefs.slice(0, 3),
-    inputKeys: Object.keys(input),
-  });
-
-  console.log("PROVIDER INPUT SUMMARY", {
-  viewType,
+console.log("REPLICATE DEBUG", {
   model: modelToUse,
-  refCount: cleanedRefs.length,
-  hasNegativePrompt: !!finalNegativePrompt,
-  promptLength: finalPrompt.length,
+  viewType,
+refCount: cleanedRefs.length,
+refsPreview: cleanedRefs.slice(0, 3),
+  inputKeys: Object.keys(input),
 });
 
+console.log("REPLICATE INPUT", JSON.stringify(input, null, 2));
+
+  const modelToUse = getModelForView(viewType);
   return await replicate.run(modelToUse, { input });
 }, 1);
-
 const tempUrl = await fileOutputToUrl(output);
 
-console.log("PROVIDER OUTPUT DEBUG", {
+console.log("REPLICATE DEBUG", {
   model: modelToUse,
   viewType,
-  tempUrl,
   refCount: cleanedRefs.length,
   refsPreview: cleanedRefs.slice(0, 3),
   inputKeys: Object.keys(input),
 });
 
 if (!tempUrl) {
-  throw new Error(
-    `No image URL returned for ${viewType}. Provider output summary: ${summarizeProviderOutput(output)}`
-  );
+  throw new Error(`No image URL returned for ${viewType}`);
 }
 
 return {
@@ -2833,8 +2362,6 @@ async function scoreGeneratedView({
     faceNotVisible: !!evaluation?.faceNotVisible,
     identityDrift: !!evaluation?.identityDrift,
     lowQuality: !!evaluation?.lowQuality,
-    hairMismatch: !!evaluation?.hairMismatch,
-    facingDirection: evaluation?.facingDirection || "unknown",
 
     failureType: normalizeFailureType(evaluation?.failureType),
     reason: evaluation?.reason || "no_reason_provided",
@@ -2849,16 +2376,6 @@ async function scoreGeneratedView({
   const thresholdFailureReasons = getThresholdFailureReasons(normalized, thresholds);
 
   if (shouldRejectScore(normalized, thresholds, viewType)) {
-    if (shouldSoftAcceptScore(normalized, thresholds, viewType)) {
-      return {
-        ...normalized,
-        accepted: true,
-        thresholds,
-        thresholdFailureReasons: getThresholdFailureReasons(normalized, thresholds),
-        reason: normalized.reason || "soft_accept_borderline_score",
-      };
-    }
-
     return {
       ...normalized,
       accepted: false,
@@ -2892,7 +2409,7 @@ async function runRepairPassForView({
   lockedTraitsBlock = "",
 }) {
   const size =
-    PACK_VIEWS.find((view) => view.key === failedView.type)?.size || "1024x1536";
+    failedView.type === IMAGE_TYPES.CLOSEUP ? "1024x1024" : "1024x1536";
 
 const referenceSelection = buildReferenceSet({
   viewType: failedView.type,
@@ -2909,7 +2426,7 @@ let lastError = null;
 let lastScore = null;
 const basePrompt = getViewPrompt(failedView.type);
 
-const maxAttempts = 2;
+const maxAttempts = 1;
 
 for (let attempt = 0; attempt < maxAttempts; attempt++) {
   try {
@@ -2940,35 +2457,14 @@ for (let attempt = 0; attempt < maxAttempts; attempt++) {
       throw new Error(`Validation failed: ${validation.reason}`);
     }
 
-    const shouldEvaluate = shouldEvaluateViewOnFirstPass(failedView.type);
-    const score = shouldEvaluate
-      ? await scoreGeneratedView({
-          imageUrl: generated.tempUrl || generated.imageUrl,
-          masterImage: normalizedMaster,
-          frontImageUrl,
-          viewType: failedView.type,
-          attempt: attempt + 3,
-          referenceFusion: generated.referenceFusion,
-        })
-      : {
-          accepted: true,
-          identityScore: 8,
-          shotScore: 8,
-          compositionScore: 8,
-          qualityScore: 8,
-          finalScore: 8,
-          multiplePeople: false,
-          wrongShot: false,
-          faceNotVisible: false,
-          identityDrift: false,
-          lowQuality: false,
-          hairMismatch: false,
-          facingDirection: "unknown",
-          failureType: "none",
-          reason: "repair_pass_fast_accept",
-          thresholds: null,
-          thresholdFailureReasons: [],
-        };
+    const score = await scoreGeneratedView({
+      imageUrl: generated.tempUrl || generated.imageUrl,
+      masterImage: normalizedMaster,
+      frontImageUrl,
+      viewType: failedView.type,
+      attempt: attempt + 3,
+      referenceFusion: generated.referenceFusion,
+    });
 
     lastScore = score;
 
@@ -2976,10 +2472,17 @@ for (let attempt = 0; attempt < maxAttempts; attempt++) {
   throw new Error(score.reason || `Repair scoring failed for ${failedView.type}`);
 }
 
+const permanentUrl = await savePermanentImage({
+  imageUrl: generated.tempUrl,
+  userId,
+  characterId,
+  viewType: failedView.type,
+});
+
 repairedResult = {
   type: failedView.type,
   label: failedView.label,
-  url: generated.tempUrl,      // temporary for now
+  url: permanentUrl,
   evalUrl: generated.tempUrl,
   sort_order: IMAGE_ORDER[failedView.type],
       accepted: true,
@@ -3109,337 +2612,33 @@ async function deleteExistingPackImages(characterId, userId) {
   }
 }
 
-async function createPendingGeneration({
-  userId,
-  characterId,
-  prompt,
-  negativePrompt = "",
-  metadata = {},
-}) {
-  const payload = {
-    user_id: userId || null,
-    character_id: characterId || null,
-    prompt: String(prompt || "").trim(),
-    negative_prompt: String(negativePrompt || "").trim(),
-    images: [],
-    mode: "character_pack",
-    ratio: "2:3",
-    style: "photorealistic",
-    metadata: {
-      state: "processing",
-      progressStage: "queued",
-      startedAt: new Date().toISOString(),
-      ...metadata,
-    },
-  };
-
-  const { data, error } = await supabase
-    .from("image_generations")
-    .insert(payload)
-    .select("*")
-    .single();
-
-  if (error) {
-    throw new Error(error.message || "Failed to create character pack job");
-  }
-
-  return data;
-}
-
-async function updateGenerationJob(generationId, patch) {
-  const { data: existing } = await supabase
-    .from("image_generations")
-    .select("metadata")
-    .eq("id", generationId)
-    .single();
-
-  const nextPatch =
-    patch?.metadata && typeof patch.metadata === "object"
-      ? {
-          ...patch,
-          metadata: {
-            ...(existing?.metadata || {}),
-            ...patch.metadata,
-          },
-        }
-      : patch;
-
-  const { error } = await supabase
-    .from("image_generations")
-    .update(nextPatch)
-    .eq("id", generationId);
-
-  if (error) {
-    throw new Error(error.message || "Failed to update character pack job");
-  }
-}
-
-function serializePackResults(results = []) {
-  return results.map((item) => ({
-    type: item.type,
-    label: item.label,
-    url: item.url || null,
-    sort_order: item.sort_order,
-    accepted: !!item.accepted,
-    finalScore: item.finalScore ?? null,
-    scoreReason: item.scoreReason || null,
-    failureType: item.failureType || null,
-  }));
-}
-
-async function generatePackView({
-  view,
-  routeStart,
-  normalizedMaster,
-  baseAnchorRefs,
-  acceptedViewMap,
-  negativePrompt,
-  userId,
-  characterId,
-  frontImageUrl,
-  dnaIdentityBlock,
-  lockedTraitsBlock,
-}) {
-  if (nowMs() - routeStart >= JOB_TIMEOUT_MS) {
-    return {
-      timedOut: true,
-      result: null,
-      maxReferenceCountUsed: 0,
-    };
-  }
-
-  const size = view.size || "1024x1536";
-  const viewStart = nowMs();
-  console.log("VIEW START", { view: view.key });
-
-  const referenceSelection = buildReferenceSet({
-    viewType: view.key,
-    masterImage: normalizedMaster,
-    acceptedViewMap,
-    anchorRefs: baseAnchorRefs,
-  });
-
-  const currentRefs = referenceSelection.refs;
-  const rankedCandidates = referenceSelection.rankedCandidates;
-  const basePrompt = getViewPrompt(view.key);
-  const maxAttempts = 2;
-  let acceptedResult = null;
-  let lastError = null;
-  let lastScore = null;
-
-  for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    try {
-      const generated = await runSingleGeneration({
-        prompt: basePrompt,
-        refs: currentRefs,
-        size,
-        negativePrompt,
-        strictIdentity: true,
-        userId,
-        characterId,
-        viewType: view.key,
-        attempt,
-        failureType: lastScore?.failureType || "none",
-        rankedCandidates,
-        selectedRefs: currentRefs,
-        acceptedViewMap,
-        dnaIdentityBlock,
-        lockedTraitsBlock,
-      });
-
-      console.log("VIEW GENERATED", {
-        view: view.key,
-        seconds: ((nowMs() - viewStart) / 1000).toFixed(2),
-      });
-
-      if (!generated?.imageUrl) {
-        throw new Error(`No image produced for ${view.key}`);
-      }
-
-      const validation = validateGeneratedView({
-        imageUrl: generated.imageUrl,
-        viewType: view.key,
-      });
-
-      if (!validation.ok) {
-        throw new Error(`Validation failed: ${validation.reason}`);
-      }
-
-      let score;
-
-      if (shouldEvaluateViewOnFirstPass(view.key)) {
-        score = await scoreGeneratedView({
-          imageUrl: generated.imageUrl,
-          masterImage: normalizedMaster,
-          frontImageUrl,
-          viewType: view.key,
-          attempt,
-          referenceFusion: generated.referenceFusion,
-        });
-
-        lastScore = score;
-
-        console.log("VIEW SCORED", {
-          view: view.key,
-          seconds: ((nowMs() - viewStart) / 1000).toFixed(2),
-          accepted: score.accepted,
-          finalScore: score.finalScore,
-        });
-
-        if (!score.accepted) {
-          throw new Error(score.reason || `Scoring failed for ${view.key}`);
-        }
-      } else {
-        score = {
-          accepted: true,
-          identityScore: 8,
-          shotScore: 8,
-          compositionScore: 8,
-          qualityScore: 8,
-          finalScore: 8,
-          multiplePeople: false,
-          wrongShot: false,
-          faceNotVisible: false,
-          identityDrift: false,
-          lowQuality: false,
-          failureType: "none",
-          reason: "first_pass_fast_accept",
-          thresholds: null,
-          thresholdFailureReasons: [],
-        };
-      }
-
-      acceptedResult = {
-        type: view.key,
-        label: view.label,
-        url: generated.tempUrl,
-        evalUrl: generated.tempUrl,
-        sort_order: IMAGE_ORDER[view.key],
-        accepted: true,
-        attemptsUsed: attempt + 1,
-        validationReason: validation.reason,
-        identityScore: score.identityScore,
-        shotScore: score.shotScore,
-        compositionScore: score.compositionScore,
-        qualityScore: score.qualityScore,
-        finalScore: score.finalScore,
-        multiplePeople: score.multiplePeople,
-        wrongShot: score.wrongShot,
-        faceNotVisible: score.faceNotVisible,
-        identityDrift: score.identityDrift,
-        lowQuality: score.lowQuality,
-        hairMismatch: score.hairMismatch,
-        facingDirection: score.facingDirection,
-        failureType: score.failureType,
-        scoreReason: score.reason,
-        generationAttempt: attempt,
-        referenceCount: generated.referenceCount,
-        referencesUsed: generated.referencesUsed,
-        referenceFusion: generated.referenceFusion,
-        thresholds: score.thresholds,
-        thresholdFailureReasons: score.thresholdFailureReasons,
-        selectedReferenceTypes: rankedCandidates
-          .filter((item) => currentRefs.includes(item.url))
-          .map((item) => item.type),
-        selectedReferenceScores: rankedCandidates
-          .filter((item) => currentRefs.includes(item.url))
-          .map((item) => ({
-            type: item.type,
-            finalScore: item.finalScore,
-            identityScore: item.identityScore,
-            qualityScore: item.qualityScore,
-          })),
-        repairedInPass2: false,
-        repairedFromCohesion: false,
-      };
-
-      break;
-    } catch (err) {
-      lastError = err;
-      console.error(`Attempt ${attempt + 1} failed for ${view.key}:`, err);
-
-      if (shouldStopPackEarly(err)) {
-        throw err;
-      }
-    }
-  }
-
-  if (!acceptedResult) {
-    return {
-      timedOut: false,
-      maxReferenceCountUsed: currentRefs.length,
-      result: {
-        type: view.key,
-        label: view.label,
-        url: null,
-        sort_order: IMAGE_ORDER[view.key],
-        accepted: false,
-        attemptsUsed: maxAttempts,
-        scoreReason: lastError?.message || `Failed to generate acceptable ${view.key}`,
-        failureType: lastScore?.failureType || "unknown",
-        thresholds: lastScore?.thresholds || null,
-        thresholdFailureReasons: lastScore?.thresholdFailureReasons || [],
-        referenceCount: currentRefs.length,
-        referencesUsed: currentRefs,
-        selectedReferenceTypes: rankedCandidates
-          .filter((item) => currentRefs.includes(item.url))
-          .map((item) => item.type),
-        selectedReferenceScores: rankedCandidates
-          .filter((item) => currentRefs.includes(item.url))
-          .map((item) => ({
-            type: item.type,
-            finalScore: item.finalScore,
-            identityScore: item.identityScore,
-            qualityScore: item.qualityScore,
-          })),
-        repairedInPass2: false,
-        repairedFromCohesion: false,
-      },
-    };
-  }
-
-  console.log("Success:", view.key, {
-    attemptsUsed: acceptedResult.attemptsUsed,
-    finalScore: acceptedResult.finalScore,
-    failureType: acceptedResult.failureType,
-    referenceCount: acceptedResult.referenceCount,
-    thresholds: acceptedResult.thresholds,
-  });
-
-  return {
-    timedOut: false,
-    maxReferenceCountUsed: currentRefs.length,
-    result: acceptedResult,
-  };
-}
-
-async function runGenerationJob(generationId, payload) {
+export async function POST(req) {
   try {
     const {
       characterId,
       masterImage,
       userId,
       negativePrompt = "",
-    } = payload;
+    } = await req.json();
+
+    if (!characterId || !String(characterId).trim()) {
+      return Response.json({ error: "characterId is required" }, { status: 400 });
+    }
+
+    if (!masterImage || !String(masterImage).trim()) {
+      return Response.json({ error: "masterImage is required" }, { status: 400 });
+    }
+
+    if (!userId || !String(userId).trim()) {
+      return Response.json({ error: "userId is required" }, { status: 400 });
+    }
 
     const normalizedMaster = normalizeReferenceImage(masterImage);
     if (!normalizedMaster) {
-      throw new Error("Invalid master image");
+      return Response.json({ error: "Invalid master image" }, { status: 400 });
     }
 
-const routeStart = nowMs();
-let timedOut = false;
-console.log("PACK START", { generationId, characterId, userId });
-
-await updateGenerationJob(generationId, {
-  metadata: {
-    state: "processing",
-    progressStage: "loading_character_memory",
-    startedAt: new Date(routeStart).toISOString(),
-  },
-});
-
-const characterMemory = await loadCharacterMemory(characterId, userId);
+    const characterMemory = await loadCharacterMemory(characterId, userId);
 const uploadedReferenceUrls = await loadUploadedReferenceUrls(characterId, userId);
 
 const dnaIdentityBlock = buildDnaIdentityBlock(characterMemory?.dna_profile || {});
@@ -3467,131 +2666,250 @@ console.log("🧠 Loaded character memory", {
     let frontImageUrl = null;
     let maxReferenceCountUsed = 0;
 
-    const generationViews = GENERATION_VIEW_ORDER
-      .map((key) => PACK_VIEWS.find((view) => view.key === key))
-      .filter(Boolean);
 
-    const frontView = generationViews.find((view) => view.key === IMAGE_TYPES.FRONT);
-    if (!frontView) {
-      throw new Error("Front view configuration is missing.");
-    }
+    for (const view of PACK_VIEWS) {
+      const size =
+        view.key === IMAGE_TYPES.CLOSEUP ? "1024x1024" : "1024x1536";
 
-    const frontRun = await generatePackView({
-      view: frontView,
-      routeStart,
-      normalizedMaster,
-      baseAnchorRefs,
-      acceptedViewMap,
-      negativePrompt,
-      userId,
-      characterId,
-      frontImageUrl: null,
-      dnaIdentityBlock,
-      lockedTraitsBlock,
-    });
+const referenceSelection = buildReferenceSet({
+  viewType: view.key,
+  masterImage: normalizedMaster,
+  acceptedViewMap,
+  anchorRefs: baseAnchorRefs,
+});
 
-    if (frontRun.timedOut) {
-      timedOut = true;
-    } else if (frontRun.result) {
-      results.push(frontRun.result);
-      maxReferenceCountUsed = Math.max(maxReferenceCountUsed, frontRun.maxReferenceCountUsed);
-      if (frontRun.result.accepted && frontRun.result.url) {
-        acceptedViewMap[IMAGE_TYPES.FRONT] = frontRun.result;
-        frontImageUrl = frontRun.result.evalUrl || frontRun.result.url;
-      }
-    }
+      const currentRefs = referenceSelection.refs;
+      const rankedCandidates = referenceSelection.rankedCandidates;
 
-    const remainingViews = generationViews.filter((view) => view.key !== IMAGE_TYPES.FRONT);
+      maxReferenceCountUsed = Math.max(maxReferenceCountUsed, currentRefs.length);
 
-    if (!timedOut && remainingViews.length > 0) {
-      for (let index = 0; index < remainingViews.length; index += 1) {
-        const view = remainingViews[index];
+      console.log("Generating view:", view.key, {
+  refCount: currentRefs.length,
+  refs: currentRefs,
+  uploadedReferenceCount: uploadedReferenceUrls.length,
+  baseAnchorRefCount: baseAnchorRefs.length,
+});
 
-        await updateGenerationJob(generationId, {
-          metadata: {
-            state: "processing",
-            progressStage: `generating_${view.key}`,
-            lastProgressAt: new Date().toISOString(),
-          },
-        });
+      let acceptedResult = null;
+      let lastError = null;
+      let lastScore = null;
+      const basePrompt = getViewPrompt(view.key);
 
-        const run = await generatePackView({
-          view,
-          routeStart,
-          normalizedMaster,
-          baseAnchorRefs,
-          acceptedViewMap,
-          negativePrompt,
-          userId,
-          characterId,
-          frontImageUrl,
-          dnaIdentityBlock,
-          lockedTraitsBlock,
-        });
+      const maxAttempts = 1;
 
-        if (run.timedOut) {
-          timedOut = true;
-          break;
-        }
+for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        try {
+const generated = await runSingleGeneration({
+  prompt: basePrompt,
+  refs: currentRefs,
+  size,
+  negativePrompt,
+  strictIdentity: true,
+  userId,
+  characterId,
+  viewType: view.key,
+  attempt,
+  failureType: lastScore?.failureType || "none",
+  rankedCandidates,
+  selectedRefs: currentRefs,
+  acceptedViewMap,
+  dnaIdentityBlock,
+  lockedTraitsBlock,
+});
 
-        if (run.result) {
-          results.push(run.result);
-          maxReferenceCountUsed = Math.max(maxReferenceCountUsed, run.maxReferenceCountUsed);
-          if (run.result.accepted && run.result.url) {
-            acceptedViewMap[run.result.type] = run.result;
+          if (!generated?.imageUrl) {
+            throw new Error(`No image produced for ${view.key}`);
           }
-        }
 
-        if (index < remainingViews.length - 1) {
-          await sleep(INTER_VIEW_COOLDOWN_MS);
+          const validation = validateGeneratedView({
+            imageUrl: generated.imageUrl,
+            viewType: view.key,
+          });
+
+          if (!validation.ok) {
+            throw new Error(`Validation failed: ${validation.reason}`);
+          }
+
+          let score;
+
+          if (shouldEvaluateViewOnFirstPass(view.key)) {
+            score = await scoreGeneratedView({
+              imageUrl: generated.imageUrl,
+              masterImage: normalizedMaster,
+              frontImageUrl,
+              viewType: view.key,
+              attempt,
+              referenceFusion: generated.referenceFusion,
+            });
+
+            lastScore = score;
+
+            if (!score.accepted) {
+              throw new Error(score.reason || `Scoring failed for ${view.key}`);
+            }
+          } else {
+            score = {
+              accepted: true,
+              identityScore: 8,
+              shotScore: 8,
+              compositionScore: 8,
+              qualityScore: 8,
+              finalScore: 8,
+              multiplePeople: false,
+              wrongShot: false,
+              faceNotVisible: false,
+              identityDrift: false,
+              lowQuality: false,
+              failureType: "none",
+              reason: "first_pass_fast_accept",
+              thresholds: null,
+              thresholdFailureReasons: [],
+            };
+          }
+
+const permanentUrl = await savePermanentImage({
+  imageUrl: generated.tempUrl,
+  userId,
+  characterId,
+  viewType: view.key,
+});
+
+acceptedResult = {
+  type: view.key,
+  label: view.label,
+  url: permanentUrl,
+  evalUrl: generated.tempUrl,
+  sort_order: IMAGE_ORDER[view.key],
+  accepted: true,
+  attemptsUsed: attempt + 1,
+  validationReason: validation.reason,
+  identityScore: score.identityScore,
+  shotScore: score.shotScore,
+  compositionScore: score.compositionScore,
+  qualityScore: score.qualityScore,
+  finalScore: score.finalScore,
+  multiplePeople: score.multiplePeople,
+  wrongShot: score.wrongShot,
+  faceNotVisible: score.faceNotVisible,
+  identityDrift: score.identityDrift,
+  lowQuality: score.lowQuality,
+  failureType: score.failureType,
+  scoreReason: score.reason,
+  generationAttempt: attempt,
+  referenceCount: generated.referenceCount,
+  referencesUsed: generated.referencesUsed,
+  referenceFusion: generated.referenceFusion,
+  thresholds: score.thresholds,
+  thresholdFailureReasons: score.thresholdFailureReasons,
+  selectedReferenceTypes: rankedCandidates
+    .filter((item) => currentRefs.includes(item.url))
+    .map((item) => item.type),
+  selectedReferenceScores: rankedCandidates
+    .filter((item) => currentRefs.includes(item.url))
+    .map((item) => ({
+      type: item.type,
+      finalScore: item.finalScore,
+      identityScore: item.identityScore,
+      qualityScore: item.qualityScore,
+    })),
+  repairedInPass2: false,
+  repairedFromCohesion: false,
+};
+
+          break;
+        } catch (err) {
+          lastError = err;
+          console.error(`Attempt ${attempt + 1} failed for ${view.key}:`, err);
+
+if (shouldStopPackEarly(err)) {
+  throw err;
+}
         }
       }
+
+      if (!acceptedResult) {
+        results.push({
+          type: view.key,
+          label: view.label,
+          url: null,
+          sort_order: IMAGE_ORDER[view.key],
+          accepted: false,
+          attemptsUsed: maxAttempts,
+          scoreReason: lastError?.message || `Failed to generate acceptable ${view.key}`,
+          failureType: lastScore?.failureType || "unknown",
+          thresholds: lastScore?.thresholds || null,
+          thresholdFailureReasons: lastScore?.thresholdFailureReasons || [],
+          referenceCount: currentRefs.length,
+          referencesUsed: currentRefs,
+          selectedReferenceTypes: rankedCandidates
+            .filter((item) => currentRefs.includes(item.url))
+            .map((item) => item.type),
+          selectedReferenceScores: rankedCandidates
+            .filter((item) => currentRefs.includes(item.url))
+            .map((item) => ({
+              type: item.type,
+              finalScore: item.finalScore,
+              identityScore: item.identityScore,
+              qualityScore: item.qualityScore,
+            })),
+          repairedInPass2: false,
+          repairedFromCohesion: false,
+        });
+        continue;
+      }
+
+      if (view.key === IMAGE_TYPES.FRONT) {
+        frontImageUrl = acceptedResult.evalUrl || acceptedResult.url;
+      }
+
+      acceptedViewMap[view.key] = acceptedResult;
+      results.push(acceptedResult);
+
+      console.log("Success:", view.key, {
+        attemptsUsed: acceptedResult.attemptsUsed,
+        finalScore: acceptedResult.finalScore,
+        failureType: acceptedResult.failureType,
+        referenceCount: acceptedResult.referenceCount,
+        thresholds: acceptedResult.thresholds,
+      });
     }
 
-let finalResults = results;
-let finalFrontImageUrl = frontImageUrl;
+    let finalResults = results;
+    let finalFrontImageUrl = frontImageUrl;
 
-const failedAfterFirstPass = collectFailedViews(finalResults);
-const repairableFailures = failedAfterFirstPass.filter(shouldRepairFailedView);
+    const failedAfterFirstPass = collectFailedViews(finalResults);
+    const criticalFailures = failedAfterFirstPass.filter(
+      (r) =>
+        r.type === IMAGE_TYPES.FRONT ||
+        r.type === IMAGE_TYPES.CLOSEUP
+    );
 
-if (!timedOut && repairableFailures.length > 0) {
-  const repaired = await repairFailedViews({
-    results: finalResults,
-    normalizedMaster,
-    acceptedViewMap,
-    negativePrompt,
-    userId,
-    characterId,
-    frontImageUrl: finalFrontImageUrl,
-    anchorRefs: baseAnchorRefs,
-    dnaIdentityBlock,
-    lockedTraitsBlock,
-  });
+    if (criticalFailures.length > 0) {
+      const repaired = await repairFailedViews({
+        results: finalResults,
+        normalizedMaster,
+        acceptedViewMap,
+        negativePrompt,
+        userId,
+        characterId,
+        frontImageUrl: finalFrontImageUrl,
+        anchorRefs: baseAnchorRefs,
+        dnaIdentityBlock,
+        lockedTraitsBlock,
+      });
 
-  finalResults = repaired.results;
-  finalFrontImageUrl = repaired.frontImageUrl;
-}
+      finalResults = repaired.results;
+      finalFrontImageUrl = repaired.frontImageUrl;
+    }
 
-const derivedAssets = await buildDerivedPackAssets(finalResults);
-if (derivedAssets.length > 0) {
-  finalResults = [...finalResults, ...derivedAssets].sort(
-    (a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)
-  );
-}
-
-const acceptedCount = finalResults.filter((r) => r.accepted).length;
+    const acceptedCount = finalResults.filter((r) => r.accepted).length;
 const totalViews = finalResults.length;
 
-const acceptedTypes = finalResults
-  .filter((r) => r.accepted)
-  .map((r) => r.type);
+const acceptedTypes = finalResults.filter((r) => r.accepted).map((r) => r.type);
+const hasFront = acceptedTypes.includes(IMAGE_TYPES.FRONT);
+const hasCloseup = acceptedTypes.includes(IMAGE_TYPES.CLOSEUP);
 
-const missingRequiredViews = REQUIRED_PACK_VIEWS.filter(
-  (viewType) => !acceptedTypes.includes(viewType)
-);
-const partialCompletion = timedOut && acceptedTypes.length > 0;
-
-if (!partialCompletion && missingRequiredViews.length > 0) {
+if (!hasFront || !hasCloseup || acceptedCount < 4) {
   const failedViews = finalResults
     .filter((r) => !r.accepted)
     .map((r) => r.type);
@@ -3602,13 +2920,6 @@ if (!partialCompletion && missingRequiredViews.length > 0) {
     .join(" | ");
 
   console.log("FINAL RESULTS DEBUG:", JSON.stringify(finalResults, null, 2));
-
-console.log("PACK FAILURE SUMMARY", {
-  acceptedCount,
-  totalViews,
-  missingRequiredViews,
-  failedViews,
-});
 
   const failedDebug = finalResults
     .filter((r) => !r.accepted)
@@ -3628,9 +2939,6 @@ console.log("PACK FAILURE SUMMARY", {
   console.log("FAILED VIEW DEBUG:", JSON.stringify(failedDebug, null, 2));
 
   if (
-    failedReasons.toLowerCase().includes("credit") ||
-    failedReasons.toLowerCase().includes("credits") ||
-    failedReasons.toLowerCase().includes("balance") ||
     failedReasons.includes("Insufficient credit") ||
     failedReasons.includes("Payment Required")
   ) {
@@ -3644,51 +2952,43 @@ console.log("PACK FAILURE SUMMARY", {
     failedReasons.includes("429")
   ) {
     throw new Error(
-      formatReplicateRateLimitMessage(failedReasons)
+      "Replicate rate limit hit. Wait about 10 seconds and try again."
     );
   }
 
-  const reasonSuffix = failedReasons ? ` Reasons: ${failedReasons}` : "";
   throw new Error(
-    `Pack incomplete after repair pass. Required views missing: ${missingRequiredViews.join(", ")}. Accepted: ${acceptedTypes.join(", ")}. Failed: ${failedViews.join(", ")}.${reasonSuffix}`
+    `Pack incomplete after repair pass: only ${acceptedCount} of ${totalViews} views were accepted. Failed: ${failedViews.join(", ")}`
   );
 }
 
-console.log("FINAL UPLOAD START", {
-  acceptedCount: finalResults.filter((r) => r.accepted).length,
-  elapsedSeconds: ((nowMs() - routeStart) / 1000).toFixed(2),
-});
-
-// Upload final accepted images to permanent storage only after full pack passes
-for (let i = 0; i < finalResults.length; i++) {
-  const item = finalResults[i];
-  if (!item.accepted || !item.url) continue;
-
-  const permanentUrl = item.derivedBuffer
-    ? await savePermanentBuffer({
-        buffer: item.derivedBuffer,
-        contentType: "image/jpeg",
-        userId,
-        characterId,
-        viewType: item.type,
-      })
-    : await savePermanentImage({
-        imageUrl: item.evalUrl || item.url,
-        userId,
-        characterId,
-        viewType: item.type,
-      });
-
-  finalResults[i] = {
-    ...item,
-    url: permanentUrl,
-    derivedBuffer: undefined,
-  };
-}
+await deleteExistingPackImages(characterId, userId);
 
 const acceptedItems = finalResults.filter((r) => r.accepted && r.url);
-if (!acceptedItems.length) {
-  throw new Error("Character pack job completed without any accepted images.");
+
+const insertRows = acceptedItems.map((item) => ({
+  character_id: characterId,
+  user_id: userId,
+  image_type: "pack",
+  image_url: item.url,
+  pack_view: item.type,
+  source_type: "generated",
+  is_canon: item.finalScore >= 8.5,
+  is_cover: item.type === IMAGE_TYPES.FRONT,
+  sort_order: item.sort_order,
+  metadata: {
+    finalScore: item.finalScore,
+    identityScore: item.identityScore,
+    qualityScore: item.qualityScore,
+    repairedInPass2: !!item.repairedInPass2,
+  },
+}));
+
+const { error: insertError } = await supabase
+  .from("character_images")
+  .insert(insertRows);
+
+if (insertError) {
+  throw new Error(insertError.message || "Failed to save pack images");
 }
 
 const averageFinalScore =
@@ -3713,71 +3013,32 @@ const repairedCount =
 
 const anchorViews = buildAnchorViewSummary(finalResults);
 
-if (!partialCompletion) {
-  await deleteExistingPackImages(characterId, userId);
+const { error: characterUpdateError } = await supabase
+  .from("characters")
+  .update({
+    anchor_views: anchorViews,
+    processing_error: null,
+  })
+  .eq("id", characterId)
+  .eq("user_id", userId);
 
-  const insertRows = acceptedItems.map((item) => ({
-    character_id: characterId,
-    user_id: userId,
-    image_type: "pack",
-    image_url: item.url,
-    pack_view: item.type,
-    source_type: "generated",
-    is_canon: item.finalScore >= 8.5,
-    is_cover: item.type === IMAGE_TYPES.FRONT,
-    sort_order: item.sort_order,
-    metadata: {
-      finalScore: item.finalScore,
-      identityScore: item.identityScore,
-      qualityScore: item.qualityScore,
-      repairedInPass2: !!item.repairedInPass2,
-    },
-  }));
-
-  const { error: insertError } = await supabase
-    .from("character_images")
-    .insert(insertRows);
-
-  if (insertError) {
-    throw new Error(insertError.message || "Failed to save pack images");
-  }
-
-  const { error: characterUpdateError } = await supabase
-    .from("characters")
-    .update({
-      anchor_views: anchorViews,
-      processing_error: null,
-    })
-    .eq("id", characterId)
-    .eq("user_id", userId);
-
-  if (characterUpdateError) {
-    console.error("Character update warning:", characterUpdateError);
-  }
+if (characterUpdateError) {
+  console.error("Character update warning:", characterUpdateError);
 }
 
-console.log("PACK COMPLETE", {
-  elapsedSeconds: ((nowMs() - routeStart) / 1000).toFixed(2),
-  acceptedCount: finalResults.filter((r) => r.accepted).length,
-});
-
-await updateGenerationJob(generationId, {
-  images: acceptedItems.map((item) => item.url),
-  metadata: {
-    state: "completed",
-    progressStage: partialCompletion ? "completed_partial_timeout" : "completed",
-    completedAt: new Date().toISOString(),
-    timedOut,
-    partialCompletion,
-    characterId,
-    pack: serializePackResults(finalResults),
-    model: {
-      front: getModelForView(IMAGE_TYPES.FRONT),
-      left: getModelForView(IMAGE_TYPES.LEFT),
-      right: getModelForView(IMAGE_TYPES.RIGHT),
-      back: getModelForView(IMAGE_TYPES.BACK),
-      closeup: getModelForView(IMAGE_TYPES.CLOSEUP),
-    },
+return Response.json({
+  success: true,
+  characterId,
+  pack: finalResults.map((item) => ({
+    type: item.type,
+    label: item.label,
+    url: item.url,
+    sort_order: item.sort_order,
+    accepted: item.accepted,
+    finalScore: item.finalScore,
+  })),
+  meta: {
+    model: MODEL,
     evaluatorModel: EVALUATOR_MODEL,
     referenceCount: maxReferenceCountUsed,
     returnedCount: finalResults.length,
@@ -3788,138 +3049,8 @@ await updateGenerationJob(generationId, {
     frontImageUrl:
       finalResults.find((r) => r.type === IMAGE_TYPES.FRONT)?.url || null,
     anchorViews,
-    error: null,
   },
 });
-  } catch (error) {
-    console.error("PACK ROUTE ERROR:", error);
-    await updateGenerationJob(generationId, {
-      metadata: {
-        state: "failed",
-        progressStage: "failed",
-        failedAt: new Date().toISOString(),
-        error: error?.message || "Failed to generate character pack",
-      },
-    });
-  }
-}
-
-export async function POST(req) {
-  try {
-    const {
-      characterId,
-      masterImage,
-      userId,
-      negativePrompt = "",
-    } = await req.json();
-
-    if (!characterId || !String(characterId).trim()) {
-      return Response.json({ error: "characterId is required" }, { status: 400 });
-    }
-
-    if (!masterImage || !String(masterImage).trim()) {
-      return Response.json({ error: "masterImage is required" }, { status: 400 });
-    }
-
-    if (!userId || !String(userId).trim()) {
-      return Response.json({ error: "userId is required" }, { status: 400 });
-    }
-
-    const normalizedMaster = normalizeReferenceImage(masterImage);
-    if (!normalizedMaster) {
-      return Response.json({ error: "Invalid master image" }, { status: 400 });
-    }
-
-    const { data: existingRows, error: existingError } = await supabase
-      .from("image_generations")
-      .select("id, metadata, created_at")
-      .eq("character_id", characterId)
-      .eq("user_id", userId)
-      .eq("mode", "character_pack")
-      .order("created_at", { ascending: false })
-      .limit(5);
-
-    if (existingError) {
-      console.warn("PACK ROUTE EXISTING JOB CHECK FAILED", existingError);
-    }
-
-    const activeJob = (existingRows || []).find((row) => {
-      const state = String(row?.metadata?.state || "").toLowerCase();
-      if (!(state === "processing" || state === "queued" || state === "")) {
-        return false;
-      }
-
-      const existingMasterImage = normalizeReferenceImage(row?.metadata?.masterImage);
-      if (
-        existingMasterImage &&
-        normalizedMaster &&
-        existingMasterImage !== normalizedMaster
-      ) {
-        return false;
-      }
-
-      if (String(row?.metadata?.error || "").trim()) {
-        return false;
-      }
-
-      const lastProgressAt =
-        getTimeMs(row?.metadata?.lastProgressAt) ||
-        getTimeMs(row?.metadata?.startedAt) ||
-        getTimeMs(row?.created_at);
-
-      if (!lastProgressAt) return true;
-
-      return nowMs() - lastProgressAt < STALE_PACK_JOB_MS;
-    });
-
-    if (activeJob?.id) {
-      return Response.json({
-        success: true,
-        predictionId: activeJob.id,
-        status: "processing",
-        reused: true,
-      });
-    }
-
-    const pending = await createPendingGeneration({
-      userId,
-      characterId,
-      prompt: `Generate character pack for ${characterId}`,
-      negativePrompt,
-      metadata: {
-        route: "generate-character-pack",
-        masterImage: normalizedMaster,
-      },
-    });
-
-    const dispatchMode = "route_direct";
-
-    await updateGenerationJob(pending.id, {
-      metadata: {
-        state: "processing",
-        progressStage: "queued_direct",
-        dispatchMode,
-        lastProgressAt: new Date().toISOString(),
-      },
-    });
-
-    after(() =>
-      runGenerationJob(pending.id, {
-        characterId,
-        masterImage: normalizedMaster,
-        userId,
-        negativePrompt,
-      }).catch((err) => {
-        console.error("PACK ROUTE DIRECT ERROR:", err);
-      })
-    );
-
-    return Response.json({
-      success: true,
-      predictionId: pending.id,
-      status: "processing",
-      dispatchMode,
-    });
   } catch (error) {
     console.error("PACK ROUTE ERROR:", error);
     return Response.json(
