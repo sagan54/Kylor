@@ -2084,7 +2084,7 @@ body: JSON.stringify({
   ]
     .filter(Boolean)
     .join(". "),
-  referenceImages: uploadedRefs,
+  referenceImages: uploadedRefs.slice(0, 1),
   negativePrompt:
     "different person, identity drift, generic face, altered hairstyle, altered skin tone, beauty filter, cgi, 3d render, text, watermark",
   strictIdentity: true,
@@ -2381,11 +2381,7 @@ try {
 
         const masterRef = masterIdentityImage || getMasterImageForCharacter(activeChar);
 
-    const sharedReferenceImages = [
-      ...uploadedRefs.filter(Boolean),
-      masterRef,
-      existingFront.url,
-    ].filter(Boolean);
+const sharedReferenceImages = masterRef ? [masterRef] : [];
 
     try {
       for (const view of views) {
@@ -2417,7 +2413,7 @@ try {
           body: JSON.stringify({
   prompt: finalPrompt,
   size: view.size,
-  referenceImages: sharedReferenceImages,
+  referenceImages: masterRef ? [masterRef] : [],
   negativePrompt:
     "different person, identity drift, altered face shape, altered hairline, altered hairstyle, altered skin tone, changed beard, generic face, beauty filter, CGI, 3D render, multiple people, collage, split screen, text, watermark",
   strictIdentity: true,
@@ -2510,7 +2506,7 @@ if (savedUrl) {
     try {
 const uploadedRefs = await entriesToReferenceImages(effectiveRefs);
 const masterRef = masterIdentityImage || getMasterImageForCharacter(activeChar);
-const finalRefs = [...uploadedRefs, masterRef].filter(Boolean);
+const finalRefs = masterRef ? [masterRef] : [];
 const hasRefs = finalRefs.length > 0;
       const finalPrompt = buildLockedCharacterPrompt({
         char: activeChar,
