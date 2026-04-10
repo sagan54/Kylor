@@ -2528,7 +2528,10 @@ const hasRefs = finalRefs.length > 0;
         body: JSON.stringify({
   prompt: finalPrompt,
   size: frontView.size,
-  referenceImages: finalRefs,
+  referenceImages: [
+  masterRef,   // 🔥 ALWAYS FIRST
+  ...finalRefs.filter(r => r !== masterRef)
+],
   negativePrompt:
     "different person, identity drift, generic face, altered hairstyle, altered skin tone, beauty filter, CGI, 3D render, duplicate person, collage, split screen, text, watermark",
   strictIdentity: true,

@@ -25,7 +25,7 @@ fal.config({
   credentials: process.env.FAL_KEY,
 });
 
-const MODEL = "black-forest-labs/flux-2-pro"
+const MODEL = "fal-ai/flux-pro/v1.1-ultra";
 const STORAGE_BUCKET = "character-refs";
 const JOB_TIMEOUT_MS = 90 * 1000;
 
@@ -201,7 +201,10 @@ function buildIdentityLockBlock(hasRefs, strictIdentity = true) {
 
   const strictLines = strictIdentity
     ? [
-        "This is the SAME EXACT person from the reference image(s), not a similar-looking person.",
+        "CRITICAL: Reconstruct the exact same face from the reference image. Identity must match at pixel-level similarity.",
+"Do not approximate. Do not reinterpret. Do not generate a similar face.",
+"The generated face must be indistinguishable from the reference identity.",
+"Use the FIRST reference image as the PRIMARY identity anchor. Other references are secondary.",
         "Preserve exact identity from the reference image(s).",
         "Preserve exact face shape, jawline, cheek structure, forehead, hairline, eyebrows, eyes, eyelids, nose shape, nostrils, lips, chin, ears, skin tone, hairstyle, hair texture, hair volume, neck, shoulders, and body proportions.",
         "If facial hair is present in the reference, preserve the same moustache, beard, stubble pattern, density, and placement.",
@@ -316,10 +319,19 @@ function buildFinalPrompt({
       ].join(" ")
     : "";
 
+const faceLockBlock = hasRefs
+  ? [
+      "Face identity priority: MAXIMUM.",
+      "Body, pose, clothing, and environment are secondary.",
+      "If conflict occurs, ALWAYS preserve face identity over everything else.",
+    ].join(" ")
+  : "";
+
   return [
     identityBlock,
     strictBlock,
     shotBlock,
+    faceLockBlock,
     lightingBlock,
     realismLightingBlock,
     sceneIntegrationBlock,
@@ -559,9 +571,15 @@ async function runGenerationJob(generationId, payload) {
   } = payload || {};
 
   try {
-const refs = Array.isArray(referenceImages)
-  ? referenceImages.map(normalizeReferenceImage).filter(Boolean).slice(0, 1)
+let refs = Array.isArray(referenceImages)
+  ? referenceImages.map(normalizeReferenceImage).filter(Boolean).slice(0, 8)
   : [];
+
+// 🔥 CRITICAL: Always force master identity as FIRST reference
+if (refs.length > 1) {
+  const master = refs[0]; // assuming first is master identity
+  refs = [master, ...refs.filter(r => r !== master)];
+}
 
     const safeAttempts = Math.min(Math.max(Number(attempts) || 1, 1), 4);
     const results = [];
