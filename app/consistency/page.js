@@ -48,13 +48,16 @@ const HAIR_STYLES = ["Short", "Medium", "Long", "Curly", "Wavy", "Braided", "Bal
 const HAIR_COLORS = ["Black", "Brown", "Blonde", "Red", "White", "Silver", "Blue", "Pink", "Green"];
 const EYE_COLORS  = ["Brown", "Blue", "Green", "Hazel", "Grey", "Amber"];
 const BUILD_TYPES = ["Slim", "Athletic", "Average", "Muscular", "Stocky", "Curvy"];
+
+// ✅ FIXED: 5 canonical pack views matching backend keys exactly
 const CHARACTER_PACK_VIEWS = [
-  { key: "front",   label: "Front Full-Body",         shot: "single person, front-facing, full-body, standing straight, arms relaxed, centered composition",                                                    size: "1024x1536" },
-  { key: "left",    label: "Left Profile Full-Body",  shot: "single person, strict left side profile, facing the left edge of the frame, full-body, standing straight, arms relaxed, centered composition",   size: "1024x1536" },
-  { key: "right",   label: "Right Profile Full-Body", shot: "single person, strict right side profile, facing the right edge of the frame, full-body, standing straight, arms relaxed, centered composition", size: "1024x1536" },
-  { key: "back",    label: "Back Full-Body",          shot: "single person, full-body back view, facing away from camera, standing straight, arms relaxed, centered composition",                             size: "1024x1536" },
-  { key: "closeup", label: "Upper-Body Close-Up",     shot: "single person, upper-body close-up portrait, facing camera, centered composition",                                                               size: "1024x1024" },
+  { key: "front",   label: "Front Full-Body" },
+  { key: "closeup", label: "Upper-Body Close-Up" },
+  { key: "left",    label: "Left Profile Full-Body" },
+  { key: "right",   label: "Right Profile Full-Body" },
+  { key: "back",    label: "Back Full-Body" },
 ];
+
 const CARD_GRADIENTS = [
   "linear-gradient(135deg, rgba(79,70,229,0.55), rgba(124,58,237,0.3))",
   "linear-gradient(135deg, rgba(124,58,237,0.5), rgba(17,17,34,0.85))",
@@ -74,20 +77,13 @@ function fileToBase64(file) {
 
 async function entriesToReferenceImages(entries) {
   if (!Array.isArray(entries) || entries.length === 0) return [];
-
   const refs = await Promise.all(
     entries.map(async (entry) => {
       if (entry?.file) return await fileToBase64(entry.file);
-
-      // only allow permanent urls here, never dead blob urls
-      if (entry?.previewUrl && !entry.previewUrl.startsWith("blob:")) {
-        return entry.previewUrl;
-      }
-
+      if (entry?.previewUrl && !entry.previewUrl.startsWith("blob:")) return entry.previewUrl;
       return null;
     })
   );
-
   return refs.filter(Boolean);
 }
 
@@ -99,58 +95,21 @@ function getIdNumber(id) {
 }
 
 function makeTriggerToken(name) {
-  const cleaned = (name || "character")
-    .toLowerCase()
-    .trim()
-    .replace(/\s+/g, "_")
-    .replace(/[^a-z0-9_]/g, "");
+  const cleaned = (name || "character").toLowerCase().trim().replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, "");
   const suffix = Math.random().toString(36).slice(2, 6);
   return `kylorchar_${cleaned || "character"}_${suffix}`;
 }
 
 function buildTraitsPayload({ charDesc, gender, ageRange, ethnicity, hairStyle, hairColor, eyeColor, build, charLocked, extraPrompt }) {
-  return JSON.stringify({
-    charDesc: charDesc || "",
-    gender: gender || "",
-    ageRange: ageRange || "",
-    ethnicity: ethnicity || "",
-    hairStyle: hairStyle || "",
-    hairColor: hairColor || "",
-    eyeColor: eyeColor || "",
-    build: build || "",
-    charLocked: !!charLocked,
-    extraPrompt: extraPrompt || "",
-  });
+  return JSON.stringify({ charDesc: charDesc || "", gender: gender || "", ageRange: ageRange || "", ethnicity: ethnicity || "", hairStyle: hairStyle || "", hairColor: hairColor || "", eyeColor: eyeColor || "", build: build || "", charLocked: !!charLocked, extraPrompt: extraPrompt || "" });
 }
 
 function parseTraitsPayload(value) {
   try {
     const p = JSON.parse(value || "{}");
-    return {
-      charDesc: p.charDesc || "",
-      gender: p.gender || "",
-      ageRange: p.ageRange || "",
-      ethnicity: p.ethnicity || "",
-      hairStyle: p.hairStyle || "",
-      hairColor: p.hairColor || "",
-      eyeColor: p.eyeColor || "",
-      build: p.build || "",
-      charLocked: !!p.charLocked,
-      extraPrompt: p.extraPrompt || "",
-    };
+    return { charDesc: p.charDesc || "", gender: p.gender || "", ageRange: p.ageRange || "", ethnicity: p.ethnicity || "", hairStyle: p.hairStyle || "", hairColor: p.hairColor || "", eyeColor: p.eyeColor || "", build: p.build || "", charLocked: !!p.charLocked, extraPrompt: p.extraPrompt || "" };
   } catch {
-    return {
-      charDesc: "",
-      gender: "",
-      ageRange: "",
-      ethnicity: "",
-      hairStyle: "",
-      hairColor: "",
-      eyeColor: "",
-      build: "",
-      charLocked: false,
-      extraPrompt: "",
-    };
+    return { charDesc: "", gender: "", ageRange: "", ethnicity: "", hairStyle: "", hairColor: "", eyeColor: "", build: "", charLocked: false, extraPrompt: "" };
   }
 }
 
@@ -172,49 +131,33 @@ function normalizeLockedTraits(row) {
 }
 
 function rowToCharacter(row, imageRows = []) {
-  
   const traits = normalizeLockedTraits(row);
 
   const uploadImages = imageRows
-  
     .filter(img => img.source_type === "upload" || img.source_type === "master_identity")
     .sort((a, b) => {
       const aCanon = a.is_canon ? 1 : 0;
       const bCanon = b.is_canon ? 1 : 0;
       if (aCanon !== bCanon) return bCanon - aCanon;
-
       const aSort = a.sort_order ?? 0;
       const bSort = b.sort_order ?? 0;
       if (aSort !== bSort) return aSort - bSort;
-      
-
       return new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime();
     });
 
   const generatedRows = imageRows
-  .filter(
-    (img) =>
-      img.source_type === "generated" ||
-      [
-        IMAGE_TYPES.FRONT,
-        IMAGE_TYPES.LEFT,
-        IMAGE_TYPES.RIGHT,
-        IMAGE_TYPES.BACK,
-        IMAGE_TYPES.CLOSEUP,
-      ].includes(img.image_type)
-  )
-  .sort((a, b) => {
-    const aSort = a.sort_order ?? 0;
-    const bSort = b.sort_order ?? 0;
-    if (aSort !== bSort) return aSort - bSort;
-    return new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime();
-  });
+    .filter(img => img.source_type === "generated" || CHARACTER_PACK_VIEWS.map(v => v.key).includes(img.pack_view))
+    .sort((a, b) => {
+      const aSort = a.sort_order ?? 0;
+      const bSort = b.sort_order ?? 0;
+      if (aSort !== bSort) return aSort - bSort;
+      return new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime();
+    });
 
   const fallbackGeneratedImages = Array.isArray(row.generated_images) ? row.generated_images : [];
-  const generatedImages =
-    generatedRows.length > 0
-      ? generatedRows.map(img => img.image_url).filter(Boolean)
-      : fallbackGeneratedImages;
+  const generatedImages = generatedRows.length > 0
+    ? generatedRows.map(img => img.image_url).filter(Boolean)
+    : fallbackGeneratedImages;
 
   const refEntries = uploadImages.length > 0
     ? uploadImages.map(img => ({
@@ -229,15 +172,8 @@ function rowToCharacter(row, imageRows = []) {
         metadata: img.metadata || {},
       }))
     : (row.reference_image ? [{
-        id: null,
-        file: null,
-        previewUrl: row.reference_image,
-        storagePath: null,
-        sourceType: "upload",
-        isCanon: false,
-        isCover: true,
-        packView: null,
-        metadata: {},
+        id: null, file: null, previewUrl: row.reference_image, storagePath: null,
+        sourceType: "upload", isCanon: false, isCover: true, packView: null, metadata: {},
       }] : []);
 
   const canonRef = refEntries.find(entry => entry.isCanon && entry.previewUrl);
@@ -262,161 +198,53 @@ function rowToCharacter(row, imageRows = []) {
     createdAt: row.created_at,
     refEntries,
     triggerToken: row.trigger_token || "",
-status: row.status || "draft",
-loraPath: row.lora_path || null,
-masterImage: canonRef?.previewUrl || row.master_image || coverRef?.previewUrl || refEntries[0]?.previewUrl || null,
-coverImage: canonRef?.previewUrl || row.cover_image || coverRef?.previewUrl || refEntries[0]?.previewUrl || null,
+    status: row.status || "draft",
+    loraPath: row.lora_path || null,
+    masterImage: canonRef?.previewUrl || row.master_image || coverRef?.previewUrl || refEntries[0]?.previewUrl || null,
+    coverImage: canonRef?.previewUrl || row.cover_image || coverRef?.previewUrl || refEntries[0]?.previewUrl || null,
   };
 }
 
+// ✅ FIXED: outputsFromCharacter now produces outputs keyed by CHARACTER_PACK_VIEWS
 function outputsFromCharacter(char) {
   if (!char) return [];
-
   return (char.generatedImages || []).map((url, i) => ({
-    id: `${char.id}-${PACK_VIEWS[i]?.key || i}`,
+    id: `${char.id}-${CHARACTER_PACK_VIEWS[i]?.key || i}`,
     charId: char.id,
     prompt: "",
-    scene: PACK_VIEWS[i]?.label || `View ${i + 1}`,
+    scene: CHARACTER_PACK_VIEWS[i]?.label || `View ${i + 1}`,
     url,
     createdAt: char.createdAt || new Date().toISOString(),
   }));
 }
 
-function extractGeneratedUrl(data) {
-  if (!data) return null;
-
-  if (typeof data.image === "string" && data.image) return data.image;
-
-  if (Array.isArray(data.images) && data.images.length > 0) {
-    const first = data.images[0];
-    if (typeof first === "string") return first;
-    if (first && typeof first.url === "string") return first.url;
-  }
-
-  return null;
-}
-
-function buildActiveCharacterTraitDesc(char) {
-  return [
-    char.gender,
-    char.ageRange,
-    char.ethnicity,
-    char.hairColor && char.hairStyle ? `${char.hairColor} ${char.hairStyle} hair` : null,
-    char.eyeColor ? `${char.eyeColor} eyes` : null,
-    char.build ? `${char.build} build` : null,
-  ]
-    .filter(Boolean)
-    .join(", ");
-}
-
-function buildLockedCharacterPrompt({
-  char,
-  shot,
-  extraPrompt = "",
-  hasRefs = false,
-  mode = "front",
-}) {
-  const traitDesc = buildActiveCharacterTraitDesc(char);
-
-  const identityBlock = hasRefs
-    ? [
-        `Generate the EXACT SAME real person as the provided reference image(s).`,
-        `This is a specific human identity, not a similar-looking character.`,
-        `Preserve exact face shape, cheek structure, jawline, chin, forehead, hairline, eyebrows, eyes, eyelids, nose, lips, ears, skin tone, hairstyle, hair texture, hair volume, neck, shoulders, body proportions, and overall build.`,
-        `If facial hair exists in the reference, preserve the exact moustache, beard, stubble pattern, density, and placement.`,
-        `Do not beautify, idealize, glamorize, age-shift, gender-shift, ethnicity-shift, or redesign the person.`,
-        `Do not generate a different person.`,
-      ].join(" ")
-    : [
-        `Generate one stable realistic human identity.`,
-        `Keep the exact same identity consistently across outputs.`,
-        `Do not redesign the face between generations.`,
-      ].join(" ");
-
-  const realismBlock = [
-    `Photorealistic human image.`,
-    `Natural skin texture, realistic pores, real facial detail, realistic hair strands.`,
-    `No waxy skin, no plastic skin, no CGI look, no 3D render look, no beauty-filtered face.`,
-  ].join(" ");
-
-  const sceneBlock =
-    mode === "front"
-      ? [
-          `Plain light studio background.`,
-          `Neutral reference-photo style.`,
-          `Same outfit unless explicitly changed.`,
-        ].join(" ")
-      : [
-          `Keep the same person identity while changing only the angle / framing requested.`,
-          `Keep the same outfit, same background family, same neutral lighting unless explicitly changed.`,
-        ].join(" ");
-
-  const avoidBlock = [
-    `Avoid: different person, generic face, identity drift, altered face shape, altered nose, altered eyes, altered lips, altered jawline, changed hairstyle, changed hairline, changed skin tone, duplicate person, multiple people, split screen, collage, character sheet, contact sheet, text, watermark.`,
-  ].join(" ");
-
-  return [
-    identityBlock,
-    char.triggerToken ? `Character token: ${char.triggerToken}.` : null,
-    traitDesc ? `Locked physical traits: ${traitDesc}.` : null,
-    char.desc ? `Locked character details: ${char.desc}.` : null,
-    extraPrompt?.trim() ? `Locked reference notes: ${extraPrompt.trim()}.` : null,
-    `Shot request: ${shot}.`,
-    sceneBlock,
-    realismBlock,
-    avoidBlock,
-  ]
-    .filter(Boolean)
-    .join(" ");
-}
-
-function extractGeneratedUrls(data) {
-  if (!data) return [];
-
-  if (Array.isArray(data.images)) {
-    return data.images
-      .map((item, i) => {
-        if (typeof item === "string") {
-          return {
-            id: `img-${i}`,
-            url: item,
-            attempt: i + 1,
-          };
-        }
-
-        if (item && typeof item.url === "string") {
-          return {
-            id: item.id || `img-${i}`,
-            url: item.url,
-            attempt: item.attempt || i + 1,
-          };
-        }
-
-        return null;
-      })
-      .filter(Boolean);
-  }
-
-  if (typeof data.image === "string" && data.image) {
-    return [{ id: "img-0", url: data.image, attempt: 1 }];
-  }
-
-  return [];
+// ✅ FIXED: parse pack object {front, closeup, left, right, back} → array of output items
+function packToOutputs(charId, pack) {
+  return CHARACTER_PACK_VIEWS
+    .map(view => ({
+      id: `${charId}-${view.key}`,
+      charId,
+      prompt: "",
+      scene: view.label,
+      url: pack[view.key] || null,
+      createdAt: new Date().toISOString(),
+    }))
+    .filter(item => item.url);
 }
 
 function getMasterImageForCharacter(char) {
   if (!char) return null;
-
   if (char.masterImage) return char.masterImage;
-
-  const canonRef = (char.refEntries || []).find((entry) => entry?.isCanon && entry?.previewUrl);
+  const canonRef = (char.refEntries || []).find(entry => entry?.isCanon && entry?.previewUrl);
   if (canonRef?.previewUrl) return canonRef.previewUrl;
-
-  const coverRef = (char.refEntries || []).find((entry) => entry?.isCover && entry?.previewUrl);
+  const coverRef = (char.refEntries || []).find(entry => entry?.isCover && entry?.previewUrl);
   if (coverRef?.previewUrl) return coverRef.previewUrl;
-
   return char.coverImage || null;
 }
+
+function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+
+// ─── UI COMPONENTS ───────────────────────────────────────────────────────────
 
 function SidebarItem({ item }) {
   const Icon = item.icon;
@@ -488,19 +316,12 @@ function RefUpload({ entries, onEntries, label, hint, max = 5 }) {
   function addFiles(fileList) {
     const valid = Array.from(fileList).filter(f => f.type.startsWith("image/"));
     if (!valid.length) return;
-
     onEntries(prev => {
       const slots = max - prev.length;
       if (slots <= 0) return prev;
       return [...prev, ...valid.slice(0, slots).map(file => ({
-        id: null,
-        file,
-        previewUrl: URL.createObjectURL(file),
-        storagePath: null,
-        sourceType: "upload",
-        isCanon: false,
-        isCover: false,
-        packView: null,
+        id: null, file, previewUrl: URL.createObjectURL(file), storagePath: null,
+        sourceType: "upload", isCanon: false, isCover: false, packView: null,
       }))];
     });
   }
@@ -513,17 +334,8 @@ function RefUpload({ entries, onEntries, label, hint, max = 5 }) {
     });
   }
 
-  const onDrop = useCallback(e => {
-    e.preventDefault();
-    setDrag(false);
-    addFiles(e.dataTransfer.files);
-  }, [onEntries, max]);
-
-  const onInputChange = useCallback(e => {
-    const c = Array.from(e.target.files || []);
-    e.target.value = "";
-    if (c.length) addFiles(c);
-  }, [onEntries, max]);
+  const onDrop = useCallback(e => { e.preventDefault(); setDrag(false); addFiles(e.dataTransfer.files); }, [onEntries, max]);
+  const onInputChange = useCallback(e => { const c = Array.from(e.target.files || []); e.target.value = ""; if (c.length) addFiles(c); }, [onEntries, max]);
 
   return (
     <div style={{ display: "grid", gap: 8 }}>
@@ -531,16 +343,7 @@ function RefUpload({ entries, onEntries, label, hint, max = 5 }) {
         onDrop={onDrop} onClick={() => inputRef.current?.click()}
         animate={{ borderColor: drag ? C.accent : "rgba(255,255,255,0.09)", background: drag ? C.accentSoft : C.surface }}
         style={{ borderRadius: radius.md, border: "1.5px dashed rgba(255,255,255,0.09)", padding: "14px", cursor: "pointer", display: "flex", alignItems: "center", gap: 12 }}>
-<input
-  id="character-ref-upload"
-  name="characterRefUpload"
-  ref={inputRef}
-  type="file"
-  accept="image/*"
-  multiple
-  style={{ display: "none" }}
-  onChange={onInputChange}
-/>
+        <input id="character-ref-upload" name="characterRefUpload" ref={inputRef} type="file" accept="image/*" multiple style={{ display: "none" }} onChange={onInputChange} />
         <div style={{ width: 36, height: 36, borderRadius: radius.sm, flexShrink: 0, background: C.accentSoft, border: `1px solid ${C.accentBorder}`, display: "grid", placeItems: "center" }}><Camera size={14} color="#a78bfa" /></div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 12.5, color: C.text, fontWeight: 600 }}>{label}</div>
@@ -605,17 +408,7 @@ function OutputCard({ item, onDelete, onOpen }) {
         overflow: "hidden", cursor: item.url && item.url !== "__FAILED__" ? "zoom-in" : "default", position: "relative",
         background: CARD_GRADIENTS[getIdNumber(item.id) % CARD_GRADIENTS.length], aspectRatio: "2/3", transition: "border-color 0.16s ease" }}>
       {item.url && item.url !== "__FAILED__" ? (
-        <img
-          src={item.url}
-          alt={item.scene}
-          style={{
-            width: "100%",
-            height: "100%",
-            objectFit: "cover",
-            position: "absolute",
-            inset: 0,
-          }}
-        />
+        <img src={item.url} alt={item.scene} style={{ width: "100%", height: "100%", objectFit: "cover", position: "absolute", inset: 0 }} />
       ) : item.url === "__FAILED__" ? (
         <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", padding: 16, textAlign: "center" }}>
           <div><div style={{ fontSize: 13, fontWeight: 700, color: "white", marginBottom: 6 }}>Failed</div><div style={{ fontSize: 11.5, color: C.textMuted }}>{item.scene}</div></div>
@@ -647,221 +440,45 @@ function OutputCard({ item, onDelete, onOpen }) {
   );
 }
 
-function OutputGeneratingState({
-  title = "Generating character pack",
-  subtitle = "Creating consistent views for your character...",
-}) {
+function OutputGeneratingState({ title = "Generating character pack", subtitle = "Creating consistent views for your character..." }) {
   return (
-    <div
-      style={{
-        width: "100%",
-        minHeight: "calc(100vh - 140px)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: 32,
-        boxSizing: "border-box",
-      }}
-    >
-      <motion.div
-        initial={{ opacity: 0, y: 14 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
-        style={{
-          width: "100%",
-          maxWidth: 460,
-          borderRadius: 30,
-          border: `1px solid ${C.border}`,
-          background: "rgba(255,255,255,0.02)",
-          boxShadow: "0 24px 80px rgba(0,0,0,0.32)",
-          padding: "32px 28px 24px",
-          backdropFilter: "blur(10px)",
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "center",
-            marginBottom: 20,
-          }}
-        >
-          <div
-            style={{
-              width: 52,
-              height: 52,
-              borderRadius: 999,
-              display: "grid",
-              placeItems: "center",
-              background: "rgba(124,58,237,0.08)",
-              border: `1px solid ${C.accentBorder}`,
-            }}
-          >
-            <motion.div
-              animate={{ rotate: 360 }}
-              transition={{ duration: 1.3, repeat: Infinity, ease: "linear" }}
-              style={{
-                width: 24,
-                height: 24,
-                borderRadius: "50%",
-                border: "2px solid rgba(255,255,255,0.14)",
-                borderTop: "2px solid #8b5cf6",
-              }}
-            />
+    <div style={{ width: "100%", minHeight: "calc(100vh - 140px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 32, boxSizing: "border-box" }}>
+      <motion.div initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
+        style={{ width: "100%", maxWidth: 460, borderRadius: 30, border: `1px solid ${C.border}`, background: "rgba(255,255,255,0.02)", boxShadow: "0 24px 80px rgba(0,0,0,0.32)", padding: "32px 28px 24px", backdropFilter: "blur(10px)" }}>
+        <div style={{ display: "flex", justifyContent: "center", marginBottom: 20 }}>
+          <div style={{ width: 52, height: 52, borderRadius: 999, display: "grid", placeItems: "center", background: "rgba(124,58,237,0.08)", border: `1px solid ${C.accentBorder}` }}>
+            <motion.div animate={{ rotate: 360 }} transition={{ duration: 1.3, repeat: Infinity, ease: "linear" }}
+              style={{ width: 24, height: 24, borderRadius: "50%", border: "2px solid rgba(255,255,255,0.14)", borderTop: "2px solid #8b5cf6" }} />
           </div>
         </div>
-
         <div style={{ textAlign: "center", marginBottom: 22 }}>
-          <div
-            style={{
-              fontSize: 24,
-              fontWeight: 800,
-              letterSpacing: "-0.03em",
-              color: C.text,
-              marginBottom: 8,
-            }}
-          >
-            {title}
-          </div>
-
-          <div
-            style={{
-              fontSize: 13.5,
-              lineHeight: 1.7,
-              color: C.textMuted,
-              maxWidth: 320,
-              margin: "0 auto",
-            }}
-          >
-            {subtitle}
-          </div>
+          <div style={{ fontSize: 24, fontWeight: 800, letterSpacing: "-0.03em", color: C.text, marginBottom: 8 }}>{title}</div>
+          <div style={{ fontSize: 13.5, lineHeight: 1.7, color: C.textMuted, maxWidth: 320, margin: "0 auto" }}>{subtitle}</div>
         </div>
-
-        <div
-          style={{
-            display: "grid",
-            gap: 10,
-            marginBottom: 18,
-          }}
-        >
-          {[
-            "Locking identity",
-            "Generating angles",
-            "Preparing previews",
-          ].map((step, i) => (
-            <motion.div
-              key={step}
-              initial={{ opacity: 0.7 }}
-              animate={{ opacity: [0.55, 1, 0.55] }}
-              transition={{
-                duration: 1.8,
-                repeat: Infinity,
-                delay: i * 0.22,
-                ease: "easeInOut",
-              }}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                gap: 12,
-                padding: "12px 14px",
-                borderRadius: 16,
-                border: `1px solid ${C.border}`,
-                background: "rgba(255,255,255,0.015)",
-              }}
-            >
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
-                  minWidth: 0,
-                }}
-              >
-                <motion.div
-                  animate={{
-                    scale: [1, 1.18, 1],
-                    opacity: [0.5, 1, 0.5],
-                  }}
-                  transition={{
-                    duration: 1.2,
-                    repeat: Infinity,
-                    delay: i * 0.18,
-                    ease: "easeInOut",
-                  }}
-                  style={{
-                    width: 8,
-                    height: 8,
-                    borderRadius: 999,
-                    background: "#8b5cf6",
-                    flexShrink: 0,
-                  }}
-                />
-                <span
-                  style={{
-                    fontSize: 13,
-                    fontWeight: 500,
-                    color: "rgba(255,255,255,0.88)",
-                    whiteSpace: "nowrap",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                  }}
-                >
-                  {step}
-                </span>
+        <div style={{ display: "grid", gap: 10, marginBottom: 18 }}>
+          {["Locking identity", "Generating 5 views", "Preparing previews"].map((step, i) => (
+            <motion.div key={step} initial={{ opacity: 0.7 }} animate={{ opacity: [0.55, 1, 0.55] }}
+              transition={{ duration: 1.8, repeat: Infinity, delay: i * 0.22, ease: "easeInOut" }}
+              style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "12px 14px", borderRadius: 16, border: `1px solid ${C.border}`, background: "rgba(255,255,255,0.015)" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+                <motion.div animate={{ scale: [1, 1.18, 1], opacity: [0.5, 1, 0.5] }} transition={{ duration: 1.2, repeat: Infinity, delay: i * 0.18, ease: "easeInOut" }}
+                  style={{ width: 8, height: 8, borderRadius: 999, background: "#8b5cf6", flexShrink: 0 }} />
+                <span style={{ fontSize: 13, fontWeight: 500, color: "rgba(255,255,255,0.88)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{step}</span>
               </div>
-
-              <span
-                style={{
-                  fontSize: 11.5,
-                  color: C.textDim,
-                  flexShrink: 0,
-                }}
-              >
-                In progress
-              </span>
+              <span style={{ fontSize: 11.5, color: C.textDim, flexShrink: 0 }}>In progress</span>
             </motion.div>
           ))}
         </div>
-
-        <div
-          style={{
-            height: 5,
-            borderRadius: 999,
-            overflow: "hidden",
-            background: "rgba(255,255,255,0.05)",
-          }}
-        >
-<motion.div
-  animate={{
-    backgroundPosition: ["200% 0%", "-200% 0%"],
-  }}
-  transition={{
-    duration: 2.5,
-    repeat: Infinity,
-    ease: "linear",
-  }}
-  style={{
-    width: "100%",
-    height: "100%",
-    borderRadius: 999,
-    background: `
-      linear-gradient(
-        90deg,
-        transparent,
-        rgba(139,92,246,0.7),
-        rgba(139,92,246,1),
-        rgba(139,92,246,0.7),
-        transparent
-      )
-    `,
-    backgroundSize: "200% 100%",
-  }}
-/>
+        <div style={{ height: 5, borderRadius: 999, overflow: "hidden", background: "rgba(255,255,255,0.05)" }}>
+          <motion.div animate={{ backgroundPosition: ["200% 0%", "-200% 0%"] }} transition={{ duration: 2.5, repeat: Infinity, ease: "linear" }}
+            style={{ width: "100%", height: "100%", borderRadius: 999, background: "linear-gradient(90deg, transparent, rgba(139,92,246,0.7), rgba(139,92,246,1), rgba(139,92,246,0.7), transparent)", backgroundSize: "200% 100%" }} />
         </div>
       </motion.div>
     </div>
   );
 }
+
+// ─── MAIN PAGE ────────────────────────────────────────────────────────────────
 
 export default function ConsistencyPage() {
   const router = useRouter();
@@ -885,631 +502,211 @@ export default function ConsistencyPage() {
   const [extraPrompt, setExtraPrompt] = useState("");
   const charLimit = 1000;
 
-  const [outputs,         setOutputs]         = useState([]);
-  const [generating,      setGenerating]      = useState(false);
-  const [formSection,     setFormSection]     = useState("traits");
-  const [lightboxItem, setLightboxItem] = useState(null);
-  const [lightboxIndex, setLightboxIndex] = useState(0);
-  const [userId,          setUserId]          = useState(null);
-  const [saving,          setSaving]          = useState(false);
-  const [characterImages, setCharacterImages] = useState([]);
-    const [masterCandidates, setMasterCandidates] = useState([]);
+  const [outputs,           setOutputs]           = useState([]);
+  const [generating,        setGenerating]        = useState(false);
+  const [formSection,       setFormSection]       = useState("traits");
+  const [lightboxItem,      setLightboxItem]      = useState(null);
+  const [lightboxIndex,     setLightboxIndex]     = useState(0);
+  const [userId,            setUserId]            = useState(null);
+  const [saving,            setSaving]            = useState(false);
+  const [characterImages,   setCharacterImages]   = useState([]);
+  const [masterCandidates,  setMasterCandidates]  = useState([]);
   const [masterIdentityImage, setMasterIdentityImage] = useState(null);
-  const [generatingMaster, setGeneratingMaster] = useState(false);
-  const [savingMaster, setSavingMaster] = useState(false);
-  const [savingRefs, setSavingRefs] = useState(false);
-  
+  const [generatingMaster,  setGeneratingMaster]  = useState(false);
+  const [savingMaster,      setSavingMaster]      = useState(false);
+  const [savingRefs,        setSavingRefs]        = useState(false);
 
-  const canvasRef = useRef(null);
+  const canvasRef    = useRef(null);
   const generatingRef = useRef(false);
 
   const activeChar = characters.find(c => c.id === activeCharId) || null;
+
+  // ✅ FIXED: charOutputs now reads directly from outputs state (filtered by charId)
   const charOutputs = outputs.filter(o => o.charId === activeCharId);
   const visibleCharOutputs = charOutputs.filter(o => o.url && o.url !== "__FAILED__");
   const orderedVisibleOutputs = CHARACTER_PACK_VIEWS
     .map(view => visibleCharOutputs.find(o => o.scene === view.label))
     .filter(Boolean);
 
-  const frontOutput = visibleCharOutputs.find(o => o.scene === "Front Full-Body");
-  const otherOutputs = visibleCharOutputs.filter(o => o.scene !== "Front Full-Body");
-  const shouldShowGenerateMorePanel = false;
+  // ✅ FIXED: canGenerate no longer blocks on 'generating' so the button stays responsive
+  const canGenerate = !!activeChar;
 
-const updateCharactersCache = useCallback((chars) => {
-  try {
-    const safeChars = (chars || []).map((char) => ({
-      ...char,
-      refEntries: (char.refEntries || []).map((entry) => ({
-        ...entry,
-        file: null,
-        previewUrl:
-          typeof entry?.previewUrl === "string" && entry.previewUrl.startsWith("blob:")
-            ? null
-            : entry?.previewUrl || null,
-      })),
-      generatedImages: (char.generatedImages || []).filter(
-        (url) => typeof url === "string" && !url.startsWith("blob:")
-      ),
-      coverImage:
-        typeof char?.coverImage === "string" && char.coverImage.startsWith("blob:")
-          ? null
-          : char?.coverImage || null,
-    }));
+  // ─── CACHE HELPERS ──────────────────────────────────────────────────────────
 
-    localStorage.setItem(SESSION_KEY, JSON.stringify(safeChars));
-  } catch {}
-}, []);
+  const updateCharactersCache = useCallback((chars) => {
+    try {
+      const safeChars = (chars || []).map(char => ({
+        ...char,
+        refEntries: (char.refEntries || []).map(entry => ({
+          ...entry,
+          file: null,
+          previewUrl: typeof entry?.previewUrl === "string" && entry.previewUrl.startsWith("blob:") ? null : entry?.previewUrl || null,
+        })),
+        generatedImages: (char.generatedImages || []).filter(url => typeof url === "string" && !url.startsWith("blob:")),
+        coverImage: typeof char?.coverImage === "string" && char.coverImage.startsWith("blob:") ? null : char?.coverImage || null,
+      }));
+      localStorage.setItem(SESSION_KEY, JSON.stringify(safeChars));
+    } catch {}
+  }, []);
 
-const hydrateCachedCharacters = useCallback((cached) => {
-  if (!Array.isArray(cached)) return [];
+  const hydrateCachedCharacters = useCallback((cached) => {
+    if (!Array.isArray(cached)) return [];
+    return cached.map(item => {
+      const normalized = item && Array.isArray(item.refEntries) ? item : rowToCharacter(item || {}, []);
+      return {
+        ...normalized,
+        refEntries: (normalized.refEntries || []).filter(entry => entry && typeof entry.previewUrl === "string" && !entry.previewUrl.startsWith("blob:")),
+        generatedImages: (normalized.generatedImages || []).filter(url => typeof url === "string" && !url.startsWith("blob:")),
+        coverImage: typeof normalized?.coverImage === "string" && !normalized.coverImage.startsWith("blob:") ? normalized.coverImage : null,
+      };
+    });
+  }, []);
 
-  return cached.map((item) => {
-    const normalized =
-      item && Array.isArray(item.refEntries) ? item : rowToCharacter(item || {}, []);
-
-    return {
-      ...normalized,
-      refEntries: (normalized.refEntries || []).filter(
-        (entry) =>
-          entry &&
-          typeof entry.previewUrl === "string" &&
-          !entry.previewUrl.startsWith("blob:")
-      ),
-      generatedImages: (normalized.generatedImages || []).filter(
-        (url) => typeof url === "string" && !url.startsWith("blob:")
-      ),
-      coverImage:
-        typeof normalized?.coverImage === "string" &&
-        !normalized.coverImage.startsWith("blob:")
-          ? normalized.coverImage
-          : null,
-    };
-  });
-}, []);
+  // ─── DB HELPERS ─────────────────────────────────────────────────────────────
 
   async function loadCharacterImages(characterId, allCharacters = null) {
-    if (!characterId && !allCharacters?.length) {
-      setCharacterImages([]);
-      return [];
-    }
-
+    if (!characterId && !allCharacters?.length) { setCharacterImages([]); return []; }
     const ids = allCharacters?.length ? allCharacters.map(c => c.id) : [characterId];
-
-    const { data, error } = await supabase
-      .from("character_images")
-      .select("*")
-      .in("character_id", ids)
-      .order("sort_order", { ascending: true })
-      .order("created_at", { ascending: true });
-
-    if (error) {
-      console.error("Failed to load character images:", error);
-      return [];
-    }
-
-    if (!allCharacters?.length && characterId) {
-      setCharacterImages((data || []).filter(img => img.character_id === characterId));
-    }
-
+    const { data, error } = await supabase.from("character_images").select("*").in("character_id", ids).order("sort_order", { ascending: true }).order("created_at", { ascending: true });
+    if (error) { console.error("Failed to load character images:", error); return []; }
+    if (!allCharacters?.length && characterId) setCharacterImages((data || []).filter(img => img.character_id === characterId));
     return data || [];
   }
 
-async function markCharacterDnaStale(characterId) {
-  if (!userId || !characterId) return;
-
-  const currentChar = characters.find((c) => c.id === characterId);
-
-  const nextMetadata = {
-    ...(currentChar?.metadata || {}),
-    dna_stale: true,
-    refs_updated_at: new Date().toISOString(),
-  };
-
-  const { error } = await supabase
-    .from("characters")
-    .update({ metadata: nextMetadata })
-    .eq("id", characterId)
-    .eq("user_id", userId);
-
-  if (error) {
-    console.error("Failed to mark DNA stale:", error);
+  async function markCharacterDnaStale(characterId) {
+    if (!userId || !characterId) return;
+    const currentChar = characters.find(c => c.id === characterId);
+    const nextMetadata = { ...(currentChar?.metadata || {}), dna_stale: true, refs_updated_at: new Date().toISOString() };
+    await supabase.from("characters").update({ metadata: nextMetadata }).eq("id", characterId).eq("user_id", userId);
   }
-}
-
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-async function refreshCharacterPackState(character, masterRefOverride = null) {
-  if (!character?.id) return null;
-
-  let rows = [];
-
-  for (let attempt = 0; attempt < 6; attempt++) {
-    rows = await loadCharacterImages(character.id);
-
-    const filteredRows = (rows || []).filter(
-      (r) => r.character_id === character.id
-    );
-
-    const hasGenerated = filteredRows.some(
-      (r) =>
-        r.source_type === "generated" &&
-        [
-          IMAGE_TYPES.FRONT,
-          IMAGE_TYPES.LEFT,
-          IMAGE_TYPES.RIGHT,
-          IMAGE_TYPES.BACK,
-          IMAGE_TYPES.CLOSEUP,
-        ].includes(r.pack_view)
-    );
-
-    if (hasGenerated) {
-      const mapped = rowToCharacter(
-        {
-          ...character,
-          master_image:
-            masterRefOverride ||
-            character.masterImage ||
-            character.coverImage ||
-            null,
-        },
-        filteredRows
-      );
-
-      setCharacters((prev) => {
-        const updated = prev.map((c) =>
-          c.id === character.id ? mapped : c
-        );
-        updateCharactersCache(updated);
-        return updated;
-      });
-
-      setCharacterImages(filteredRows);
-
-      setOutputs((prev) => [
-        ...prev.filter((o) => o.charId !== character.id),
-        ...outputsFromCharacter(mapped),
-      ]);
-
-      return mapped;
-    }
-
-    await sleep(1000);
-  }
-
-  const filteredRows = (rows || []).filter(
-    (r) => r.character_id === character.id
-  );
-
-  const mapped = rowToCharacter(
-    {
-      ...character,
-      master_image:
-        masterRefOverride ||
-        character.masterImage ||
-        character.coverImage ||
-        null,
-    },
-    filteredRows
-  );
-
-  setCharacters((prev) => {
-    const updated = prev.map((c) =>
-      c.id === character.id ? mapped : c
-    );
-    updateCharactersCache(updated);
-    return updated;
-  });
-
-  setCharacterImages(filteredRows);
-
-  setOutputs((prev) => [
-    ...prev.filter((o) => o.charId !== character.id),
-    ...outputsFromCharacter(mapped),
-  ]);
-
-  return mapped;
-}
 
   async function uploadCharacterRefs(characterId, entries) {
     if (!userId || !characterId || !entries?.length) return [];
-
     const rows = [];
-
     for (let i = 0; i < entries.length; i++) {
       const entry = entries[i];
       if (!entry?.file) continue;
-
       try {
         const rawExt = entry.file.name?.split(".")?.pop()?.toLowerCase();
         const ext = rawExt || (entry.file.type === "image/webp" ? "webp" : entry.file.type === "image/jpeg" ? "jpg" : "png");
         const fileName = `${Date.now()}_${i}.${ext}`;
         const storagePath = `${userId}/${characterId}/refs/${fileName}`;
-
-        const { error: uploadError } = await supabase.storage
-          .from(CHAR_BUCKET)
-          .upload(storagePath, entry.file, { contentType: entry.file.type, upsert: false });
-
-if (uploadError) {
-  console.error("Ref upload failed:", {
-    message: uploadError.message,
-    details: uploadError.details,
-    hint: uploadError.hint,
-    name: uploadError.name,
-    raw: uploadError,
-    bucket: CHAR_BUCKET,
-    storagePath,
-    userId,
-    characterId,
-  });
-  throw new Error(uploadError.message || "Reference upload failed");
-}
-
+        const { error: uploadError } = await supabase.storage.from(CHAR_BUCKET).upload(storagePath, entry.file, { contentType: entry.file.type, upsert: false });
+        if (uploadError) throw new Error(uploadError.message || "Reference upload failed");
         const { data: publicUrlData } = supabase.storage.from(CHAR_BUCKET).getPublicUrl(storagePath);
         const imageUrl = publicUrlData?.publicUrl || null;
         if (!imageUrl) continue;
-
-        const { data: row, error: rowError } = await supabase
-          .from("character_images")
-          .insert({
-            user_id: userId,
-            character_id: characterId,
-            image_url: imageUrl,
-            storage_path: storagePath,
-            source_type: "upload",
-            sort_order: i,
-          })
-          .select()
-          .single();
-
-if (rowError) {
-  console.error("character_images insert error:", {
-    message: rowError.message,
-    details: rowError.details,
-    hint: rowError.hint,
-    code: rowError.code,
-    raw: rowError,
-  });
-  throw new Error(rowError.message || "character_images insert failed");
-}
-
+        const { data: row, error: rowError } = await supabase.from("character_images").insert({ user_id: userId, character_id: characterId, image_url: imageUrl, storage_path: storagePath, source_type: "upload", sort_order: i }).select().single();
+        if (rowError) throw new Error(rowError.message || "character_images insert failed");
         rows.push(row);
-      } catch (err) {
-        console.error("Ref upload exception:", err);
-      }
+      } catch (err) { console.error("Ref upload exception:", err); }
     }
-
     return rows;
   }
 
-async function autoSaveReferencesForCharacter(characterId, currentEntries) {
-  if (!userId || !characterId) return null;
-
-  const unsavedEntries = (currentEntries || []).filter((entry) => entry?.file);
-  if (!unsavedEntries.length) return null;
-
-  setSavingRefs(true);
-
-  try {
-    const uploadedRows = await uploadCharacterRefs(characterId, unsavedEntries);
-    if (!uploadedRows.length) return null;
-
-    const rows = await loadCharacterImages(characterId);
-    const filteredRows = (rows || []).filter((r) => r.character_id === characterId);
-
-    const currentChar =
-      characters.find((c) => c.id === characterId) ||
-      activeChar ||
-      null;
-
-    if (!currentChar) {
-      setCharacterImages(filteredRows);
+  async function autoSaveReferencesForCharacter(characterId, currentEntries) {
+    if (!userId || !characterId) return null;
+    const unsavedEntries = (currentEntries || []).filter(entry => entry?.file);
+    if (!unsavedEntries.length) return null;
+    setSavingRefs(true);
+    try {
+      const uploadedRows = await uploadCharacterRefs(characterId, unsavedEntries);
+      if (!uploadedRows.length) return null;
+      const rows = await loadCharacterImages(characterId);
+      const filteredRows = (rows || []).filter(r => r.character_id === characterId);
+      const currentChar = characters.find(c => c.id === characterId) || activeChar || null;
+      if (!currentChar) { setCharacterImages(filteredRows); await markCharacterDnaStale(characterId); return null; }
+      const mapped = rowToCharacter({ ...currentChar, master_image: currentChar.masterImage || currentChar.coverImage || currentChar.refEntries?.[0]?.previewUrl || null }, filteredRows);
+      setCharacters(prev => { const updated = prev.map(c => c.id === characterId ? mapped : c); updateCharactersCache(updated); return updated; });
+      if (activeCharId === characterId) { setCharacterImages(filteredRows); setRefEntries(mapped.refEntries || []); }
       await markCharacterDnaStale(characterId);
-      return null;
-    }
-
-    const mapped = rowToCharacter(
-      {
-        ...currentChar,
-        master_image:
-          currentChar.masterImage ||
-          currentChar.coverImage ||
-          currentChar.refEntries?.[0]?.previewUrl ||
-          null,
-      },
-      filteredRows
-    );
-
-    setCharacters((prev) => {
-      const updated = prev.map((c) =>
-        c.id === characterId ? mapped : c
-      );
-      updateCharactersCache(updated);
-      return updated;
-    });
-
-    if (activeCharId === characterId) {
-      setCharacterImages(filteredRows);
-      setRefEntries(mapped.refEntries || []);
-    }
-
-    await markCharacterDnaStale(characterId);
-
-    return mapped;
-  } catch (err) {
-    console.error("Auto-save references failed:", err);
-    return null;
-  } finally {
-    setSavingRefs(false);
+      return mapped;
+    } catch (err) { console.error("Auto-save references failed:", err); return null; }
+    finally { setSavingRefs(false); }
   }
-}
-
-  async function persistGeneratedImage(imageUrl, characterId, folder = "generated") {
-  if (!imageUrl || !userId || !characterId) return null;
-
-  try {
-    const res = await fetch("/api/persist-character-image", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        imageUrl,
-        userId,
-        characterId,
-        folder,
-      }),
-    });
-
-    const data = await res.json();
-
-    if (!res.ok) {
-      console.error("Persist image failed:", data);
-      return null;
-    }
-
-    return data.url || null;
-  } catch (err) {
-    console.error("Persist image request failed:", err);
-    return null;
-  }
-}
 
   async function insertGeneratedCharacterImage(characterId, imageUrl, scene, sortOrder = 0, isCover = false) {
     if (!userId || !characterId || !imageUrl) return null;
-
     const packViewKey = CHARACTER_PACK_VIEWS.find(v => v.label === scene)?.key || null;
-
-    const { data, error } = await supabase
-      .from("character_images")
-      .insert({
-        user_id: userId,
-        character_id: characterId,
-        image_url: imageUrl,
-        source_type: "generated",
-        is_cover: !!isCover,
-        pack_view: packViewKey,
-        sort_order: sortOrder,
-        metadata: { scene },
-      })
-      .select()
-      .single();
-
-    if (error) {
-      console.error("Failed to insert generated character image:", error);
-      return null;
-    }
-
+    const { data, error } = await supabase.from("character_images").insert({ user_id: userId, character_id: characterId, image_url: imageUrl, source_type: "generated", is_cover: !!isCover, pack_view: packViewKey, sort_order: sortOrder, metadata: { scene } }).select().single();
+    if (error) { console.error("Failed to insert generated character image:", error); return null; }
     return data;
   }
 
-    async function insertMasterIdentityImage(characterId, imageUrl, sortOrder = 0) {
+  async function insertMasterIdentityImage(characterId, imageUrl, sortOrder = 0) {
     if (!userId || !characterId || !imageUrl) return null;
-
-    await supabase
-      .from("character_images")
-      .update({ is_canon: false })
-      .eq("character_id", characterId)
-      .eq("source_type", "master_identity");
-
-    const { data, error } = await supabase
-      .from("character_images")
-      .insert({
-        user_id: userId,
-        character_id: characterId,
-        image_url: imageUrl,
-        source_type: "master_identity",
-        is_canon: true,
-        is_cover: true,
-        sort_order: sortOrder,
-        metadata: { role: "master_identity" },
-      })
-      .select()
-      .single();
-
-    if (error) {
-      console.error("Failed to insert master identity image:", error);
-      return null;
-    }
-
+    await supabase.from("character_images").update({ is_canon: false }).eq("character_id", characterId).eq("source_type", "master_identity");
+    const { data, error } = await supabase.from("character_images").insert({ user_id: userId, character_id: characterId, image_url: imageUrl, source_type: "master_identity", is_canon: true, is_cover: true, sort_order: sortOrder, metadata: { role: "master_identity" } }).select().single();
+    if (error) { console.error("Failed to insert master identity image:", error); return null; }
     return data;
   }
 
-  async function markAsCanon(imageId) {
-    const { error } = await supabase
-      .from("character_images")
-      .update({ is_canon: true })
-      .eq("id", imageId);
-
-    if (error) {
-      console.error(error);
-      alert("Failed to mark image as canon.");
-      return;
-    }
-
-    if (activeChar?.id) {
-      const rows = await loadCharacterImages(activeChar.id);
-      const refRows = rows.filter(r => r.character_id === activeChar.id);
-      setCharacterImages(refRows);
-    }
-  }
-
-  async function markAsCover(image) {
-    if (!activeChar?.id || !image?.id) return;
-
-    await supabase
-      .from("character_images")
-      .update({ is_cover: false })
-      .eq("character_id", activeChar.id);
-
-    const { error: imageError } = await supabase
-      .from("character_images")
-      .update({ is_cover: true })
-      .eq("id", image.id);
-
-    if (imageError) {
-      console.error(imageError);
-      return;
-    }
-
-    const { error: charError } = await supabase
-      .from("characters")
-      .update({ cover_image: image.image_url })
-      .eq("id", activeChar.id)
-      .eq("user_id", userId);
-
-    if (charError) {
-      console.error(charError);
-      return;
-    }
-
-    const rows = await loadCharacterImages(activeChar.id);
-    const refRows = rows.filter(r => r.character_id === activeChar.id);
-    setCharacterImages(refRows);
-  }
-
-useEffect(() => {
-  if (!activeCharId) return;
-
-  setCharacters((prev) => {
-    const updated = prev.map((c) =>
-      c.id === activeCharId
-        ? {
-            ...c,
-            refEntries: refEntries || [],
-          }
-        : c
-    );
-
-    updateCharactersCache(updated);
-    return updated;
-  });
-
-  const hasUnsavedFiles = (refEntries || []).some((entry) => entry?.file);
-
-  if (!hasUnsavedFiles) return;
-  if (savingRefs) return;
-
-  autoSaveReferencesForCharacter(activeCharId, refEntries);
-}, [refEntries, activeCharId, savingRefs, updateCharactersCache]);
+  // ─── EFFECTS ────────────────────────────────────────────────────────────────
 
   useEffect(() => {
-    if (!activeCharId) {
-      setOutputs([]);
-      setCharacterImages([]);
-      return;
-    }
+    if (!activeCharId) return;
+    setCharacters(prev => {
+      const updated = prev.map(c => c.id === activeCharId ? { ...c, refEntries: refEntries || [] } : c);
+      updateCharactersCache(updated);
+      return updated;
+    });
+    const hasUnsavedFiles = (refEntries || []).some(entry => entry?.file);
+    if (!hasUnsavedFiles || savingRefs) return;
+    autoSaveReferencesForCharacter(activeCharId, refEntries);
+  }, [refEntries, activeCharId, savingRefs, updateCharactersCache]);
 
+  // ✅ FIXED: sync outputs from characters state when switching active char
+  useEffect(() => {
+    if (!activeCharId) { setOutputs([]); setCharacterImages([]); return; }
     if (generatingRef.current || generatingMore) return;
-
     const current = characters.find(c => c.id === activeCharId);
-    if (!current) {
-      setOutputs([]);
-      setCharacterImages([]);
-      return;
-    }
-
-    setCharacterImages(
-      (current.refEntries || []).map((entry, i) => ({
-        id: entry.id || `local-${i}`,
-        character_id: current.id,
-        image_url: entry.previewUrl,
-        storage_path: entry.storagePath || null,
-        source_type: entry.sourceType || "upload",
-        is_canon: !!entry.isCanon,
-        is_cover: !!entry.isCover,
-        pack_view: entry.packView || null,
-      }))
-    );
+    if (!current) { setOutputs([]); setCharacterImages([]); return; }
+    setCharacterImages((current.refEntries || []).map((entry, i) => ({
+      id: entry.id || `local-${i}`, character_id: current.id, image_url: entry.previewUrl,
+      storage_path: entry.storagePath || null, source_type: entry.sourceType || "upload",
+      is_canon: !!entry.isCanon, is_cover: !!entry.isCover, pack_view: entry.packView || null,
+    })));
+    // ✅ Rebuild outputs from generatedImages stored on the character
     setOutputs(outputsFromCharacter(current));
   }, [activeCharId, characters, generatingMore]);
 
-    useEffect(() => {
-    if (!activeChar) {
-      setMasterIdentityImage(null);
-      return;
-    }
-
+  useEffect(() => {
+    if (!activeChar) { setMasterIdentityImage(null); return; }
     setMasterIdentityImage(getMasterImageForCharacter(activeChar));
   }, [activeChar]);
 
   useEffect(() => {
     let mounted = true;
-
     try {
       const raw = localStorage.getItem(SESSION_KEY);
       if (raw) {
         const cached = JSON.parse(raw);
-        if (Array.isArray(cached) && cached.length > 0) {
-          setCharacters(hydrateCachedCharacters(cached));
-        }
+        if (Array.isArray(cached) && cached.length > 0) setCharacters(hydrateCachedCharacters(cached));
       }
     } catch {}
 
     async function bootstrapCharacters() {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-
+      const { data: { session } } = await supabase.auth.getSession();
       const uid = session?.user?.id ?? null;
-
       if (!mounted) return;
-
       setUserId(uid);
-
       if (!uid) return;
 
-const { data, error } = await supabase
-    .from("characters")
-    .select("id, name, description, prompt, reference_image, generated_images, cover_image, master_image, style, seed, created_at, trigger_token, status, lora_path, base_model, locked_traits, metadata")
-    .eq("user_id", uid)
-    .order("created_at", { ascending: false });
+      const { data, error } = await supabase.from("characters")
+        .select("id, name, description, prompt, reference_image, generated_images, cover_image, master_image, style, seed, created_at, trigger_token, status, lora_path, base_model, locked_traits, metadata")
+        .eq("user_id", uid).order("created_at", { ascending: false });
 
-  console.log("Characters query result:", { data, error });
-
-  if (!mounted) return;
-
-  if (error) {
-    console.error("Failed to load saved characters:", {
-      message: error?.message,
-      details: error?.details,
-      hint: error?.hint,
-      code: error?.code,
-      raw: error,
-    });
-    return;
-  }
+      if (!mounted) return;
+      if (error) { console.error("Failed to load saved characters:", error); return; }
 
       if (data && !generatingRef.current) {
         const allImageRows = await loadCharacterImages(null, data);
         if (!mounted) return;
-
         const grouped = new Map();
         for (const img of allImageRows) {
           if (!grouped.has(img.character_id)) grouped.set(img.character_id, []);
           grouped.get(img.character_id).push(img);
         }
-
         const mapped = data.map(row => rowToCharacter(row, grouped.get(row.id) || []));
         setCharacters(mapped);
         updateCharactersCache(mapped);
@@ -1517,158 +714,253 @@ const { data, error } = await supabase
     }
 
     bootstrapCharacters();
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (!mounted) return;
-
-      const uid = session?.user?.id ?? null;
-      setUserId(uid);
+      setUserId(session?.user?.id ?? null);
     });
-
-    return () => {
-      mounted = false;
-      subscription.unsubscribe();
-    };
+    return () => { mounted = false; subscription.unsubscribe(); };
   }, [hydrateCachedCharacters, updateCharactersCache]);
 
-  async function saveCharacter() {
-    if (!charName.trim()) return;
-    if (!userId) {
-      alert("Please log in first to save characters.");
+  // ─── GENERATE CHARACTER PACK ─────────────────────────────────────────────────
+
+  // ✅ COMPLETELY REWRITTEN — correct API, correct response parsing, correct state update
+  async function handleGenerateCharacterPack() {
+    if (!activeChar) {
+      console.warn("No activeChar — cannot generate.");
       return;
     }
 
-    setSaving(true);
+    // Resolve master reference image (must be a permanent URL, not blob)
+    const masterRef =
+      (typeof masterIdentityImage === "string" && !masterIdentityImage.startsWith("blob:") ? masterIdentityImage : null) ||
+      (typeof activeChar.masterImage === "string" && !activeChar.masterImage.startsWith("blob:") ? activeChar.masterImage : null) ||
+      (typeof activeChar.coverImage === "string" && !activeChar.coverImage.startsWith("blob:") ? activeChar.coverImage : null) ||
+      (activeChar.refEntries || []).find(e => typeof e?.previewUrl === "string" && !e.previewUrl.startsWith("blob:"))?.previewUrl ||
+      null;
+
+    if (!masterRef) {
+      alert("Please save the character first so the reference image gets uploaded.");
+      return;
+    }
+
+    console.log("▶ handleGenerateCharacterPack — masterRef:", masterRef, "charId:", activeChar.id);
+
+    generatingRef.current = true;
+    setGenerating(true);
+    // Clear existing outputs for this character so the loading state shows
+    setOutputs(prev => prev.filter(o => o.charId !== activeCharId));
 
     try {
-      const lockedTraits = {
-        gender: gender || "",
-        age: ageRange || "",
-        ethnicity: ethnicity || "",
-        hair_style: hairStyle || "",
-        hair_color: hairColor || "",
-        eye_color: eyeColor || "",
-        build: build || "",
-        charLocked: !!charLocked,
-      };
-
-      const promptPayload = buildTraitsPayload({
-        charDesc,
-        gender,
-        ageRange,
-        ethnicity,
-        hairStyle,
-        hairColor,
-        eyeColor,
-        build,
-        charLocked,
-        extraPrompt,
+      const res = await fetch("/api/generate-character-pack", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          characterId: activeChar.id,
+          masterImage: masterRef,
+          userId,
+        }),
       });
 
-      const existingChar = activeCharId ? characters.find(c => c.id === activeCharId) : null;
-      const triggerToken = existingChar?.triggerToken || makeTriggerToken(charName);
-
-      const payload = {
-        user_id: userId,
-        name: charName.trim(),
-        description: charDesc.trim(),
-        prompt: promptPayload,
-        style: existingChar?.style || null,
-        seed: null,
-        status: "ready",
-        trigger_token: triggerToken,
-        locked_traits: lockedTraits,
-      };
-
-      let result;
-
-      if (existingChar?.id) {
-        result = await supabase
-          .from("characters")
-          .update(payload)
-          .eq("id", existingChar.id)
-          .eq("user_id", userId)
-          .select()
-          .single();
-      } else {
-        result = await supabase
-          .from("characters")
-          .insert([payload])
-          .select()
-          .single();
-      }
-
-      const { data, error } = result;
-      if (error || !data) {
-        console.error("Character save failed:", error);
-        alert(`Failed to save: ${error?.message}`);
-        setSaving(false);
+      const raw = await res.text();
+      let data;
+      try {
+        data = JSON.parse(raw);
+      } catch {
+        console.error("Non-JSON response from /api/generate-character-pack:", raw);
+        alert("Unexpected response from server. Check logs.");
         return;
       }
 
+      console.log("PACK RESPONSE:", data);
+
+      if (!res.ok) {
+        throw new Error(data?.error || data?.message || `HTTP ${res.status}`);
+      }
+
+      // ✅ FIXED: backend returns { success, pack: { front, closeup, left, right, back } }
+      const pack = data.pack || {};
+
+      const images = CHARACTER_PACK_VIEWS
+        .map(view => ({
+          id: `${activeChar.id}-${view.key}`,
+          charId: activeChar.id,
+          prompt: "",
+          scene: view.label,
+          url: pack[view.key] || null,
+          createdAt: new Date().toISOString(),
+        }))
+        .filter(item => item.url);
+
+      console.log("FINAL IMAGES:", images);
+
+      if (images.length === 0) {
+        console.warn("Pack returned but no images found. Raw pack:", pack);
+        alert("Generation completed but no images were returned. Check backend logs.");
+        return;
+      }
+
+      // ✅ FIXED: update outputs state — UI renders from this
+      setOutputs(prev => [
+        ...prev.filter(o => o.charId !== activeChar.id),
+        ...images,
+      ]);
+
+      // ✅ Update characters state so the card shows correct generation count
+      const generatedUrls = images.map(i => i.url);
+      setCharacters(prev => {
+        const updated = prev.map(c =>
+          c.id === activeChar.id
+            ? { ...c, masterImage: masterRef, generatedImages: generatedUrls, generations: generatedUrls.length }
+            : c
+        );
+        updateCharactersCache(updated);
+        return updated;
+      });
+
+      // Persist to DB (non-blocking)
+      if (userId && activeChar.id) {
+        (async () => {
+          for (let i = 0; i < images.length; i++) {
+            await insertGeneratedCharacterImage(activeChar.id, images[i].url, images[i].scene, i, i === 0);
+          }
+          await supabase.from("characters")
+            .update({ generated_images: generatedUrls, cover_image: generatedUrls[0] || null })
+            .eq("id", activeChar.id).eq("user_id", userId);
+        })().catch(err => console.error("DB persist failed (non-fatal):", err));
+      }
+
+      // Trigger DNA processing (fire-and-forget)
+      fetch("/api/process-character-dna", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ characterId: activeChar.id, userId }),
+      }).catch(err => console.error("DNA trigger failed (non-fatal):", err));
+
+    } catch (err) {
+      console.error("handleGenerateCharacterPack error:", err);
+      alert(err?.message || "Failed to generate character pack.");
+    } finally {
+      generatingRef.current = false;
+      setGenerating(false);
+    }
+  }
+
+  // ✅ FIXED: generateOtherProfiles simply delegates to handleGenerateCharacterPack
+  async function generateOtherProfiles() {
+    await handleGenerateCharacterPack();
+  }
+
+  // ─── MASTER IDENTITY ─────────────────────────────────────────────────────────
+
+  async function handleGenerateMasterIdentity() {
+    if (!activeChar || generatingMaster) return;
+    const effectiveRefs = activeChar.refEntries.length > 0 ? activeChar.refEntries : refEntries;
+    const uploadedRefs = await entriesToReferenceImages(effectiveRefs);
+    if (!uploadedRefs.length) { alert("Please upload at least one reference image first."); return; }
+
+    setGeneratingMaster(true);
+    setMasterCandidates([]);
+
+    try {
+      const masterRef =
+        getMasterImageForCharacter(activeChar) ||
+        uploadedRefs[0];
+
+      const res = await fetch("/api/generate-master-identity", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ characterId: activeChar.id, masterImage: masterRef, userId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "Failed to generate master identity");
+
+      // Handle both array and object responses
+      const urls = Array.isArray(data.images)
+        ? data.images.map((item, i) => typeof item === "string" ? { id: `img-${i}`, url: item } : item).filter(Boolean)
+        : data.image ? [{ id: "img-0", url: data.image }]
+        : [];
+
+      setMasterCandidates(urls);
+    } catch (err) {
+      console.error("Master identity generation failed:", err);
+      alert(err?.message || "Failed to generate master identity.");
+    } finally {
+      setGeneratingMaster(false);
+    }
+  }
+
+  async function useMasterIdentity(candidate) {
+    if (!activeChar || !candidate?.url || savingMaster) return;
+    setSavingMaster(true);
+    try {
+      const savedMasterUrl = candidate.url;
+      await insertMasterIdentityImage(activeChar.id, savedMasterUrl, 0);
+      await supabase.from("characters").update({ reference_image: savedMasterUrl, cover_image: savedMasterUrl, master_image: savedMasterUrl }).eq("id", activeChar.id).eq("user_id", userId);
+
+      const rows = await loadCharacterImages(activeChar.id);
+      const mapped = rowToCharacter({
+        ...activeChar,
+        cover_image: savedMasterUrl, reference_image: savedMasterUrl, master_image: savedMasterUrl,
+        prompt: buildTraitsPayload({ charDesc: activeChar.desc, gender: activeChar.gender, ageRange: activeChar.ageRange, ethnicity: activeChar.ethnicity, hairStyle: activeChar.hairStyle, hairColor: activeChar.hairColor, eyeColor: activeChar.eyeColor, build: activeChar.build, charLocked: activeChar.locked, extraPrompt }),
+        locked_traits: { gender: activeChar.gender || "", age: activeChar.ageRange || "", ethnicity: activeChar.ethnicity || "", hair_style: activeChar.hairStyle || "", hair_color: activeChar.hairColor || "", eye_color: activeChar.eyeColor || "", build: activeChar.build || "", charLocked: !!activeChar.locked },
+      }, rows);
+
+      setCharacters(prev => { const updated = prev.map(c => c.id === activeChar.id ? mapped : c); updateCharactersCache(updated); return updated; });
+      setCharacterImages(rows.filter(r => r.character_id === activeChar.id));
+      setRefEntries(mapped.refEntries);
+      setMasterIdentityImage(savedMasterUrl);
+      setMasterCandidates([]);
+      alert("Master identity selected.");
+    } catch (err) {
+      console.error("Use master identity failed:", err);
+      alert("Failed to save master identity.");
+    } finally {
+      setSavingMaster(false);
+    }
+  }
+
+  // ─── CHARACTER CRUD ──────────────────────────────────────────────────────────
+
+  async function saveCharacter() {
+    if (!charName.trim()) return;
+    if (!userId) { alert("Please log in first to save characters."); return; }
+    setSaving(true);
+    try {
+      const lockedTraits = { gender: gender || "", age: ageRange || "", ethnicity: ethnicity || "", hair_style: hairStyle || "", hair_color: hairColor || "", eye_color: eyeColor || "", build: build || "", charLocked: !!charLocked };
+      const promptPayload = buildTraitsPayload({ charDesc, gender, ageRange, ethnicity, hairStyle, hairColor, eyeColor, build, charLocked, extraPrompt });
+      const existingChar = activeCharId ? characters.find(c => c.id === activeCharId) : null;
+      const triggerToken = existingChar?.triggerToken || makeTriggerToken(charName);
+      const payload = { user_id: userId, name: charName.trim(), description: charDesc.trim(), prompt: promptPayload, style: existingChar?.style || null, seed: null, status: "ready", trigger_token: triggerToken, locked_traits: lockedTraits };
+
+      let result;
+      if (existingChar?.id) {
+        result = await supabase.from("characters").update(payload).eq("id", existingChar.id).eq("user_id", userId).select().single();
+      } else {
+        result = await supabase.from("characters").insert([payload]).select().single();
+      }
+
+      const { data, error } = result;
+      if (error || !data) { console.error("Character save failed:", error); alert(`Failed to save: ${error?.message}`); setSaving(false); return; }
+
       let uploadedRows = [];
-const isNewCharacter = !existingChar?.id;
+      const isNewCharacter = !existingChar?.id;
+      if (isNewCharacter) {
+        uploadedRows = await uploadCharacterRefs(data.id, refEntries);
+        if (refEntries.length > 0 && uploadedRows.length === 0) { alert("Reference image upload failed. Check the storage bucket name and policies."); setSaving(false); return; }
+        if (uploadedRows.length > 0) await markCharacterDnaStale(data.id);
+      }
 
-if (isNewCharacter) {
-  uploadedRows = await uploadCharacterRefs(data.id, refEntries);
-
-  if (refEntries.length > 0 && uploadedRows.length === 0) {
-    alert("Reference image upload failed. Check the storage bucket name and policies.");
-    setSaving(false);
-    return;
-  }
-
-  if (uploadedRows.length > 0) {
-    await markCharacterDnaStale(data.id);
-  }
-}
-
-console.log("SAVE CHARACTER DEBUG", {
-  refEntries,
-  uploadedRows,
-  uploadedCount: uploadedRows.length,
-});
-
-      const existingRemoteRefs = refEntries
-        .filter(entry => !entry.file && entry.previewUrl)
-        .map((entry, i) => ({
-          id: entry.id || null,
-          character_id: data.id,
-          image_url: entry.previewUrl,
-          storage_path: entry.storagePath || null,
-          source_type: entry.sourceType || "upload",
-          is_canon: !!entry.isCanon,
-          is_cover: !!entry.isCover,
-          pack_view: entry.packView || null,
-          sort_order: i,
-          created_at: new Date().toISOString(),
-        }));
+      const existingRemoteRefs = refEntries.filter(entry => !entry.file && entry.previewUrl).map((entry, i) => ({
+        id: entry.id || null, character_id: data.id, image_url: entry.previewUrl, storage_path: entry.storagePath || null,
+        source_type: entry.sourceType || "upload", is_canon: !!entry.isCanon, is_cover: !!entry.isCover, pack_view: entry.packView || null, sort_order: i, created_at: new Date().toISOString(),
+      }));
 
       const combinedRefRows = [...existingRemoteRefs, ...uploadedRows];
       const firstRefUrl = combinedRefRows[0]?.image_url || existingChar?.coverImage || null;
 
-      await supabase
-        .from("characters")
-        .update({
-          reference_image: firstRefUrl,
-          cover_image: data.cover_image || firstRefUrl,
-        })
-        .eq("id", data.id)
-        .eq("user_id", userId);
+      await supabase.from("characters").update({ reference_image: firstRefUrl, cover_image: data.cover_image || firstRefUrl }).eq("id", data.id).eq("user_id", userId);
 
-const savedChar = rowToCharacter(
-  {
-    ...data,
-    reference_image: firstRefUrl,
-    cover_image: data.cover_image || firstRefUrl,
-    master_image: firstRefUrl,
-    prompt: promptPayload,
-    locked_traits: lockedTraits,
-  },
-  combinedRefRows
-);
+      const savedChar = rowToCharacter({ ...data, reference_image: firstRefUrl, cover_image: data.cover_image || firstRefUrl, master_image: firstRefUrl, prompt: promptPayload, locked_traits: lockedTraits }, combinedRefRows);
 
       setCharacters(prev => {
         const exists = prev.some(c => c.id === savedChar.id);
@@ -1682,18 +974,8 @@ const savedChar = rowToCharacter(
       setRefEntries(savedChar.refEntries);
 
       if (!existingChar?.id) {
-        setCharName("");
-        setCharDesc("");
-        setGender("");
-        setAgeRange("");
-        setEthnicity("");
-        setHairStyle("");
-        setHairColor("");
-        setEyeColor("");
-        setBuild("");
-        setRefEntries([]);
-        setCharLocked(false);
-        setExtraPrompt("");
+        setCharName(""); setCharDesc(""); setGender(""); setAgeRange(""); setEthnicity("");
+        setHairStyle(""); setHairColor(""); setEyeColor(""); setBuild(""); setRefEntries([]); setCharLocked(false); setExtraPrompt("");
       }
 
       setFormSection("generate");
@@ -1709,754 +991,68 @@ const savedChar = rowToCharacter(
   async function deleteOutput(outputId) {
     const output = outputs.find(o => o.id === outputId);
     setOutputs(prev => prev.filter(o => o.id !== outputId));
-
     if (!output?.url || output.url === "__FAILED__" || !userId) return;
-
     const char = characters.find(c => c.id === output.charId);
     if (!char) return;
-
     const updatedImages = (char.generatedImages || []).filter(url => url !== output.url);
-
-    await supabase
-      .from("characters")
-      .update({ generated_images: updatedImages })
-      .eq("id", char.id)
-      .eq("user_id", userId);
-
-    await supabase
-      .from("character_images")
-      .delete()
-      .eq("character_id", char.id)
-      .eq("image_url", output.url)
-      .eq("source_type", "generated");
-
-    setCharacters(prev => {
-      const updated = prev.map(c => c.id === char.id ? { ...c, generatedImages: updatedImages, generations: updatedImages.length } : c);
-      updateCharactersCache(updated);
-      return updated;
-    });
-
-    if (activeCharId === char.id) {
-      const rows = await loadCharacterImages(char.id);
-      setCharacterImages(rows.filter(r => r.character_id === char.id));
-    }
-  }
-
-  function openLightboxForItem(item) {
-    const index = orderedVisibleOutputs.findIndex(o => o.id === item.id);
-    setLightboxIndex(index >= 0 ? index : 0);
-    setLightboxItem(item);
-  }
-
-  function goPrevLightbox() {
-    if (!orderedVisibleOutputs.length) return;
-    const nextIndex =
-      lightboxIndex <= 0 ? orderedVisibleOutputs.length - 1 : lightboxIndex - 1;
-    setLightboxIndex(nextIndex);
-    setLightboxItem(orderedVisibleOutputs[nextIndex]);
-  }
-
-  function goNextLightbox() {
-    if (!orderedVisibleOutputs.length) return;
-    const nextIndex =
-      lightboxIndex >= orderedVisibleOutputs.length - 1 ? 0 : lightboxIndex + 1;
-    setLightboxIndex(nextIndex);
-    setLightboxItem(orderedVisibleOutputs[nextIndex]);
+    await supabase.from("characters").update({ generated_images: updatedImages }).eq("id", char.id).eq("user_id", userId);
+    await supabase.from("character_images").delete().eq("character_id", char.id).eq("image_url", output.url).eq("source_type", "generated");
+    setCharacters(prev => { const updated = prev.map(c => c.id === char.id ? { ...c, generatedImages: updatedImages, generations: updatedImages.length } : c); updateCharactersCache(updated); return updated; });
+    if (activeCharId === char.id) { const rows = await loadCharacterImages(char.id); setCharacterImages(rows.filter(r => r.character_id === char.id)); }
   }
 
   async function deleteAllOutputs() {
     setOutputs(prev => prev.filter(o => o.charId !== activeCharId));
     if (!activeCharId || !userId) return;
-
-    await supabase
-      .from("characters")
-      .update({ generated_images: [], cover_image: null })
-      .eq("id", activeCharId)
-      .eq("user_id", userId);
-
-    await supabase
-      .from("character_images")
-      .delete()
-      .eq("character_id", activeCharId)
-      .eq("source_type", "generated");
-
-    setCharacters(prev => {
-      const updated = prev.map(c => c.id === activeCharId ? { ...c, generatedImages: [], generations: 0, coverImage: c.refEntries[0]?.previewUrl || null } : c);
-      updateCharactersCache(updated);
-      return updated;
-    });
-
+    await supabase.from("characters").update({ generated_images: [], cover_image: null }).eq("id", activeCharId).eq("user_id", userId);
+    await supabase.from("character_images").delete().eq("character_id", activeCharId).eq("source_type", "generated");
+    setCharacters(prev => { const updated = prev.map(c => c.id === activeCharId ? { ...c, generatedImages: [], generations: 0, coverImage: c.refEntries[0]?.previewUrl || null } : c); updateCharactersCache(updated); return updated; });
     const rows = await loadCharacterImages(activeCharId);
     setCharacterImages(rows.filter(r => r.character_id === activeCharId));
   }
 
   async function deleteCharacter(id) {
-    setCharacters(prev => {
-      const updated = prev.filter(c => c.id !== id);
-      updateCharactersCache(updated);
-      return updated;
-    });
-
+    setCharacters(prev => { const updated = prev.filter(c => c.id !== id); updateCharactersCache(updated); return updated; });
     setOutputs(prev => prev.filter(o => o.charId !== id));
-
-    if (activeCharId === id) {
-      const next = characters.find(c => c.id !== id);
-      setActiveCharId(next?.id ?? null);
-    }
-
-    if (userId && !String(id).startsWith("local-")) {
-      await supabase.from("characters").delete().eq("id", id).eq("user_id", userId);
-    }
+    if (activeCharId === id) { const next = characters.find(c => c.id !== id); setActiveCharId(next?.id ?? null); }
+    if (userId && !String(id).startsWith("local-")) await supabase.from("characters").delete().eq("id", id).eq("user_id", userId);
   }
 
   function loadCharacterIntoForm(char) {
-    setCharName(char.name);
-    setCharDesc(char.desc);
-    setGender(char.gender);
-    setAgeRange(char.ageRange);
-    setEthnicity(char.ethnicity);
-    setHairStyle(char.hairStyle);
-    setHairColor(char.hairColor);
-    setEyeColor(char.eyeColor);
-    setBuild(char.build);
-    setRefEntries([...(char.refEntries || [])]);
-    setCharLocked(char.locked);
-    setExtraPrompt(char.extraPrompt || "");
-    setActiveCharId(char.id);
-    setFormSection("generate");
+    setCharName(char.name); setCharDesc(char.desc); setGender(char.gender); setAgeRange(char.ageRange);
+    setEthnicity(char.ethnicity); setHairStyle(char.hairStyle); setHairColor(char.hairColor);
+    setEyeColor(char.eyeColor); setBuild(char.build); setRefEntries([...(char.refEntries || [])]);
+    setCharLocked(char.locked); setExtraPrompt(char.extraPrompt || ""); setActiveCharId(char.id); setFormSection("generate");
   }
 
   function sendToImageGen() {
     if (!activeChar || charOutputs.length === 0) return;
-
-    const traitDesc = [
-      activeChar.gender,
-      activeChar.ageRange,
-      activeChar.ethnicity,
-      activeChar.hairColor && activeChar.hairStyle ? `${activeChar.hairColor} ${activeChar.hairStyle} hair` : null,
-      activeChar.eyeColor ? `${activeChar.eyeColor} eyes` : null,
-      activeChar.build ? `${activeChar.build} build` : null,
-    ].filter(Boolean).join(", ");
-
-    const charPrompt = [
-      `Use the saved character ${activeChar.name}`,
-      activeChar.triggerToken ? `Trigger token: ${activeChar.triggerToken}` : null,
-      traitDesc ? `same identity and physical traits: ${traitDesc}` : null,
-      activeChar.desc || null,
-      activeChar.refEntries.length > 0 ? `Maintain exact facial features, skin tone, and distinguishing characteristics of this specific person.` : null,
-    ].filter(Boolean).join(". ");
-
-    try {
-      sessionStorage.setItem("kylor_prefill_prompt", charPrompt);
-      sessionStorage.setItem("kylor_selected_character_id", String(activeChar.id));
-      sessionStorage.setItem("kylor_selected_character_payload", JSON.stringify(activeChar));
-    } catch {}
-
+    const traitDesc = [activeChar.gender, activeChar.ageRange, activeChar.ethnicity, activeChar.hairColor && activeChar.hairStyle ? `${activeChar.hairColor} ${activeChar.hairStyle} hair` : null, activeChar.eyeColor ? `${activeChar.eyeColor} eyes` : null, activeChar.build ? `${activeChar.build} build` : null].filter(Boolean).join(", ");
+    const charPrompt = [`Use the saved character ${activeChar.name}`, activeChar.triggerToken ? `Trigger token: ${activeChar.triggerToken}` : null, traitDesc ? `same identity and physical traits: ${traitDesc}` : null, activeChar.desc || null, activeChar.refEntries.length > 0 ? `Maintain exact facial features, skin tone, and distinguishing characteristics.` : null].filter(Boolean).join(". ");
+    try { sessionStorage.setItem("kylor_prefill_prompt", charPrompt); sessionStorage.setItem("kylor_selected_character_id", String(activeChar.id)); sessionStorage.setItem("kylor_selected_character_payload", JSON.stringify(activeChar)); } catch {}
     router.push("/image");
-  }
-  
-  async function handleGenerateMasterIdentity() {
-    if (!activeChar || generatingMaster) return;
-
-    const effectiveRefs = activeChar.refEntries.length > 0 ? activeChar.refEntries : refEntries;
-    const uploadedRefs = await entriesToReferenceImages(effectiveRefs);
-
-    if (!uploadedRefs.length) {
-      alert("Please upload at least one reference image first.");
-      return;
-    }
-
-    setGeneratingMaster(true);
-    setMasterCandidates([]);
-
-    try {
-      const res = await fetch("/api/generate-master-identity", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-body: JSON.stringify({
-  prompt: [
-    activeChar.desc || "",
-    extraPrompt || "",
-    "close-up master identity portrait, neutral expression, plain light studio background, same exact person",
-  ]
-    .filter(Boolean)
-    .join(". "),
-  referenceImages: uploadedRefs,
-  negativePrompt:
-    "different person, identity drift, generic face, altered hairstyle, altered skin tone, beauty filter, cgi, 3d render, text, watermark",
-  strictIdentity: true,
-  candidates: 4,
-  userId,
-}),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data?.error || "Failed to generate master identity");
-      }
-
-      const urls = extractGeneratedUrls(data);
-      setMasterCandidates(urls);
-    } catch (err) {
-      console.error("Master identity generation failed:", err);
-      alert(err?.message || "Failed to generate master identity.");
-    } finally {
-      setGeneratingMaster(false);
-    }
-  }
-
-  async function useMasterIdentity(candidate) {
-    if (!activeChar || !candidate?.url || savingMaster) return;
-
-    setSavingMaster(true);
-
-    try {
-      const savedMasterUrl = candidate.url;
-
-if (!savedMasterUrl) {
-  throw new Error("Failed to persist master identity image.");
-}
-
-await insertMasterIdentityImage(activeChar.id, savedMasterUrl, 0);
-
-await supabase
-  .from("characters")
-  .update({
-    reference_image: savedMasterUrl,
-    cover_image: savedMasterUrl,
-    master_image: savedMasterUrl,
-  })
-  .eq("id", activeChar.id)
-  .eq("user_id", userId);
-
-      const rows = await loadCharacterImages(activeChar.id);
-      const mapped = rowToCharacter(
- {
-  ...activeChar,
-  cover_image: savedMasterUrl,
-    reference_image: savedMasterUrl,
-    master_image: savedMasterUrl,
-          prompt: buildTraitsPayload({
-            charDesc: activeChar.desc,
-            gender: activeChar.gender,
-            ageRange: activeChar.ageRange,
-            ethnicity: activeChar.ethnicity,
-            hairStyle: activeChar.hairStyle,
-            hairColor: activeChar.hairColor,
-            eyeColor: activeChar.eyeColor,
-            build: activeChar.build,
-            charLocked: activeChar.locked,
-            extraPrompt,
-          }),
-          locked_traits: {
-            gender: activeChar.gender || "",
-            age: activeChar.ageRange || "",
-            ethnicity: activeChar.ethnicity || "",
-            hair_style: activeChar.hairStyle || "",
-            hair_color: activeChar.hairColor || "",
-            eye_color: activeChar.eyeColor || "",
-            build: activeChar.build || "",
-            charLocked: !!activeChar.locked,
-          },
-        },
-        rows
-      );
-
-      setCharacters(prev => {
-        const updated = prev.map(c => (c.id === activeChar.id ? mapped : c));
-        updateCharactersCache(updated);
-        return updated;
-      });
-
-      setCharacterImages(rows.filter(r => r.character_id === activeChar.id));
-      setRefEntries(mapped.refEntries);
-      setMasterIdentityImage(savedMasterUrl);
-      setMasterCandidates([]);
-      alert("Master identity selected.");
-    } catch (err) {
-      console.error("Use master identity failed:", err);
-      alert("Failed to save master identity.");
-    } finally {
-      setSavingMaster(false);
-    }
-  }
-async function handleGenerateCharacterPack() {
-  if (!activeChar || generating) return;
-
-const firstPermanentRef =
-  (activeChar?.refEntries || []).find(
-    (entry) =>
-      typeof entry?.previewUrl === "string" &&
-      entry.previewUrl &&
-      !entry.previewUrl.startsWith("blob:")
-  )?.previewUrl || null;
-
-let masterRef =
-  activeChar?.masterImage ||
-  activeChar?.coverImage ||
-  firstPermanentRef ||
-  masterIdentityImage ||
-  getMasterImageForCharacter(activeChar);
-
-if (typeof masterRef === "string" && masterRef.startsWith("blob:")) {
-  masterRef = null;
-}
-
-if (!masterRef) {
-  alert("Please save the character first so the reference image gets uploaded.");
-  return;
-}
-
-console.log("PACK MASTER DEBUG", {
-  masterRef,
-  masterImage: activeChar?.masterImage,
-  coverImage: activeChar?.coverImage,
-  firstPermanentRef,
-  refEntries: activeChar?.refEntries,
-  masterIdentityImage,
-});
-
-  generatingRef.current = true;
-  setGenerating(true);
-
-  try {
-    const res = await fetch("/api/generate-consistency", {
-  method: "POST",
-  headers: {
-    "Content-Type": "application/json",
-  },
-  body: JSON.stringify({
-    characterId: activeChar.id,
-    masterImage: masterRef,
-    userId,
-    negativePrompt:
-      "different person, identity drift, altered face shape, altered hairstyle, altered skin tone, generic face, beauty filter, CGI, 3D render, multiple people, collage, split screen, text, watermark",
-  }),
-});
-
-const raw = await res.text();
-
-let data;
-try {
-  data = JSON.parse(raw);
-} catch {
-  console.error("PACK API NON-JSON RESPONSE:", raw);
-
-  try {
-  const mapped = await refreshCharacterPackState(activeChar, masterRef);
-  if ((mapped?.generatedImages || []).length > 0) {
-    return;
-  }
-} catch (refreshErr) {
-    console.error("Post-failure refresh also failed:", refreshErr);
-  }
-
-  return;
-}
-
-if (!res.ok) {
-  console.error("❌ FULL PACK ERROR RESPONSE:", data);
-  console.error("❌ STATUS:", res.status);
-
-  const errorMessage =
-    data?.error ||
-    data?.message ||
-    JSON.stringify(data, null, 2);
-
-  throw new Error(errorMessage);
-}
-
-fetch("/api/process-character-dna", {
-  method: "POST",
-  headers: {
-    "Content-Type": "application/json",
-  },
-  body: JSON.stringify({
-    characterId: activeChar.id,
-    userId,
-  }),
-})
-  .then(async (dnaRes) => {
-    const dnaRaw = await dnaRes.text();
-
-    let dnaData = null;
-    try {
-      dnaData = JSON.parse(dnaRaw);
-    } catch {
-      console.error("DNA API NON-JSON RESPONSE:", dnaRaw);
-      return;
-    }
-
-    if (!dnaRes.ok) {
-      console.error("DNA processing failed:", dnaData);
-      return;
-    }
-
-    console.log("DNA processing complete:", dnaData);
-  })
-  .catch((err) => {
-    console.error("Failed to trigger DNA processing:", err);
-  });
-
-const pack = Array.isArray(data?.pack) ? data.pack : [];
-
-const nextOutputs = pack
-  .filter((item) => item?.url)
-  .map((item) => ({
-    id: `${activeChar.id}-${item.type}`,
-    charId: activeChar.id,
-    prompt: "",
-    scene: PACK_VIEWS.find((v) => v.key === item.type)?.label || item.type,
-    url: item.url,
-    createdAt: new Date().toISOString(),
-  }));
-
-setOutputs((prev) => [
-  ...prev.filter((o) => o.charId !== activeChar.id),
-  ...nextOutputs,
-]);
-
-setCharacters((prev) => {
-  const updated = prev.map((c) =>
-    c.id === activeChar.id
-      ? {
-          ...c,
-          masterImage: masterRef,
-          generatedImages: pack.map((item) => item.url).filter(Boolean),
-          generations: pack.filter((item) => item.url).length,
-        }
-      : c
-  );
-  updateCharactersCache(updated);
-  return updated;
-});
-
-await refreshCharacterPackState(activeChar, masterRef);
-  } catch (err) {
-console.error("🔥 FINAL ERROR:", err);
-
-alert(
-  typeof err?.message === "string"// const mapped = await refreshCharacterPackState(activeChar, masterRef);
-// if ((mapped?.generatedImages || []).length > 0) {
-//   return;
-// }
-    ? err.message
-    : JSON.stringify(err, null, 2)
-);
-  } finally {
-    generatingRef.current = false;
-    setGenerating(false);
-  }
-}
-  async function generateOtherProfiles() {
-    if (!activeChar || generatingMore) return;
-
-    const existingFront = charOutputs.find(
-      o => o.scene === "Front Full-Body" && o.url && o.url !== "__FAILED__"
-    );
-
-    if (!existingFront) {
-      alert("Generate the first image first.");
-      return;
-    }
-
-    setGeneratingMore(true);
-
-    const views = [
-      {
-        key: "left",
-        label: "Left Profile Full-Body",
-        shot: "strict left side profile, full-body, facing left, standing straight, arms relaxed, centered composition",
-        size: "1024x1536",
-      },
-      {
-        key: "right",
-        label: "Right Profile Full-Body",
-        shot: "strict right side profile, full-body, facing right, standing straight, arms relaxed, centered composition",
-        size: "1024x1536",
-      },
-      {
-        key: "back",
-        label: "Back Full-Body",
-        shot: "back view, full-body, standing straight, arms relaxed, centered composition",
-        size: "1024x1536",
-      },
-      {
-        key: "closeup",
-        label: "Upper-Body Close-Up",
-        shot: "upper-body close-up portrait, facing camera, neutral expression, centered composition",
-        size: "1024x1024",
-      },
-    ];
-
-    let accumulatedImages = [...(activeChar.generatedImages || []).filter(Boolean)];
-
-    const effectiveRefs = activeChar.refEntries.length > 0 ? activeChar.refEntries : refEntries;
-    const uploadedRefs = await entriesToReferenceImages(effectiveRefs);
-
-        const masterRef = masterIdentityImage || getMasterImageForCharacter(activeChar);
-
-    const sharedReferenceImages = [
-      ...uploadedRefs.filter(Boolean),
-      masterRef,
-      existingFront.url,
-    ].filter(Boolean);
-
-    try {
-      for (const view of views) {
-        const placeholder = {
-          id: `${activeCharId}-${view.key}-${Date.now()}`,
-          charId: activeCharId,
-          prompt: view.shot,
-          scene: view.label,
-          url: null,
-          createdAt: new Date().toISOString(),
-        };
-
-        setOutputs(prev => [
-          ...prev.filter(o => !(o.charId === activeCharId && o.scene === view.label)),
-          placeholder,
-        ]);
-
-        const finalPrompt = buildLockedCharacterPrompt({
-          char: activeChar,
-          shot: view.shot,
-          extraPrompt,
-          hasRefs: sharedReferenceImages.length > 0,
-          mode: "profile",
-        });
-
-        const res = await fetch("/api/generate-consistency", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-  prompt: finalPrompt,
-  size: view.size,
-  referenceImages: sharedReferenceImages,
-  negativePrompt:
-    "different person, identity drift, altered face shape, altered hairline, altered hairstyle, altered skin tone, changed beard, generic face, beauty filter, CGI, 3D render, multiple people, collage, split screen, text, watermark",
-  strictIdentity: true,
-  attempts: 3,
-  userId,
-}),
-        });
-
-        const data = await res.json();
-        console.log("PROFILE RESPONSE:", data);
-
-const savedUrl = extractGeneratedUrl(data);
-setOutputs(prev =>
-  prev.map(o =>
-    o.id === placeholder.id ? { ...o, url: savedUrl || "__FAILED__" } : o
-  )
-);
-
-if (savedUrl) {
-  accumulatedImages = [...accumulatedImages, savedUrl];
-
-  await insertGeneratedCharacterImage(
-    activeCharId,
-    savedUrl,
-    view.label,
-    accumulatedImages.length - 1,
-    false
-  );
-
-          await supabase
-            .from("characters")
-            .update({ generated_images: accumulatedImages })
-            .eq("id", activeCharId)
-            .eq("user_id", userId);
-
-          setCharacters(prev => {
-            const updated = prev.map(c =>
-              c.id === activeCharId
-                ? {
-                    ...c,
-                    generatedImages: accumulatedImages,
-                    generations: accumulatedImages.length,
-                  }
-                : c
-            );
-            updateCharactersCache(updated);
-            return updated;
-          });
-
-          const rows = await loadCharacterImages(activeCharId);
-          setCharacterImages(rows.filter(r => r.character_id === activeCharId));
-        }
-      }
-    } catch (err) {
-      console.error("Generate other profiles failed:", err);
-    } finally {
-      setGeneratingMore(false);
-    }
-  }
-
-  async function handleGenerate() {
-    if (!activeChar || generating) return;
-
-    generatingRef.current = true;
-    setGenerating(true);
-
-    const frontView = CHARACTER_PACK_VIEWS[0];
-    const effectiveRefs = activeChar.refEntries.length > 0 ? activeChar.refEntries : refEntries;
-    const frontOutputItem = {
-      id: `${activeCharId}-${frontView.key}-${Date.now()}`,
-      charId: activeCharId,
-      prompt: frontView.shot,
-      scene: frontView.label,
-      url: null,
-      createdAt: new Date().toISOString(),
-    };
-
-    setOutputs(prev => [frontOutputItem, ...prev.filter(o => o.charId !== activeCharId)]);
-    canvasRef.current?.scrollTo({ top: 0, behavior: "smooth" });
-
-    try {
-const uploadedRefs = await entriesToReferenceImages(effectiveRefs);
-const masterRef = masterIdentityImage || getMasterImageForCharacter(activeChar);
-const finalRefs = [...uploadedRefs, masterRef].filter(Boolean);
-const hasRefs = finalRefs.length > 0;
-      const finalPrompt = buildLockedCharacterPrompt({
-        char: activeChar,
-        shot: "front-facing, full-body, standing straight, arms relaxed, centered composition",
-        extraPrompt,
-        hasRefs,
-        mode: "front",
-      });
-
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 180000);
-
-      let data = null;
-      try {
-        const res = await fetch("/api/generate-consistency", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          signal: controller.signal,
-        body: JSON.stringify({
-  prompt: finalPrompt,
-  size: frontView.size,
-  referenceImages: finalRefs,
-  negativePrompt:
-    "different person, identity drift, generic face, altered hairstyle, altered skin tone, beauty filter, CGI, 3D render, duplicate person, collage, split screen, text, watermark",
-  strictIdentity: true,
-  attempts: 3,
-  userId,
-}),
-        });
-
-        data = await res.json();
-      } finally {
-        clearTimeout(timeout);
-      }
-
-      console.log("GEN RESPONSE:", data);
-
-const savedUrl = extractGeneratedUrl(data);
-
-setOutputs(prev =>
-  prev.map(o =>
-    o.id === frontOutputItem.id ? { ...o, url: savedUrl || "__FAILED__" } : o
-  )
-);
-
-if (savedUrl) {
-  await insertGeneratedCharacterImage(activeCharId, savedUrl, frontView.label, 0, true);
-
-  const updatedChar = {
-    ...activeChar,
-    generations: 1,
-    generatedImages: [savedUrl],
-    extraPrompt: extraPrompt || activeChar.extraPrompt || "",
-    coverImage: savedUrl,
-  };
-
-        setCharacters(prev => {
-          const updated = prev.map(c => (c.id === activeCharId ? updatedChar : c));
-          updateCharactersCache(updated);
-          return updated;
-        });
-
-        if (userId && !String(activeCharId).startsWith("local-")) {
-          await supabase
-            .from("characters")
-            .update({
-              generated_images: [savedUrl],
-cover_image: savedUrl,
-              prompt: buildTraitsPayload({
-                charDesc: activeChar.desc,
-                gender: activeChar.gender,
-                ageRange: activeChar.ageRange,
-                ethnicity: activeChar.ethnicity,
-                hairStyle: activeChar.hairStyle,
-                hairColor: activeChar.hairColor,
-                eyeColor: activeChar.eyeColor,
-                build: activeChar.build,
-                charLocked: activeChar.locked,
-                extraPrompt,
-              }),
-              locked_traits: {
-                gender: activeChar.gender || "",
-                age: activeChar.ageRange || "",
-                ethnicity: activeChar.ethnicity || "",
-                hair_style: activeChar.hairStyle || "",
-                hair_color: activeChar.hairColor || "",
-                eye_color: activeChar.eyeColor || "",
-                build: activeChar.build || "",
-                charLocked: !!activeChar.locked,
-              },
-            })
-            .eq("id", activeCharId)
-            .eq("user_id", userId);
-        }
-
-        const rows = await loadCharacterImages(activeCharId);
-        setCharacterImages(rows.filter(r => r.character_id === activeCharId));
-      }
-    } catch (err) {
-      console.error("Generate failed:", err);
-      setOutputs(prev =>
-        prev.map(o =>
-          o.id === frontOutputItem.id ? { ...o, url: "__FAILED__" } : o
-        )
-      );
-    } finally {
-      generatingRef.current = false;
-      setGenerating(false);
-    }
   }
 
   function resetToLanding() {
-    setActiveCharId(null);
-    setCharName("");
-    setCharDesc("");
-    setGender("");
-    setAgeRange("");
-    setEthnicity("");
-    setHairStyle("");
-    setHairColor("");
-    setEyeColor("");
-    setBuild("");
-    setRefEntries([]);
-    setCharLocked(false);
-    setExtraPrompt("");
-    setFormSection("traits");
-    setActiveView("generate");
+    setActiveCharId(null); setCharName(""); setCharDesc(""); setGender(""); setAgeRange(""); setEthnicity("");
+    setHairStyle(""); setHairColor(""); setEyeColor(""); setBuild(""); setRefEntries([]); setCharLocked(false); setExtraPrompt(""); setFormSection("traits"); setActiveView("generate");
   }
 
-  const canGenerate = !!activeChar && !generating;
+  // Lightbox helpers
+  function openLightboxForItem(item) { const index = orderedVisibleOutputs.findIndex(o => o.id === item.id); setLightboxIndex(index >= 0 ? index : 0); setLightboxItem(item); }
+  function goPrevLightbox() { if (!orderedVisibleOutputs.length) return; const next = lightboxIndex <= 0 ? orderedVisibleOutputs.length - 1 : lightboxIndex - 1; setLightboxIndex(next); setLightboxItem(orderedVisibleOutputs[next]); }
+  function goNextLightbox() { if (!orderedVisibleOutputs.length) return; const next = lightboxIndex >= orderedVisibleOutputs.length - 1 ? 0 : lightboxIndex + 1; setLightboxIndex(next); setLightboxItem(orderedVisibleOutputs[next]); }
+
+  // ─── RENDER ──────────────────────────────────────────────────────────────────
 
   return (
     <main style={{ height: "100vh", overflow: "hidden",
       background: `radial-gradient(ellipse at 8% 12%,rgba(79,70,229,0.13),transparent 28%),radial-gradient(ellipse at 92% 8%,rgba(124,58,237,0.11),transparent 30%),${C.bg}`,
       color: C.text, fontFamily: "'Inter','SF Pro Display',sans-serif", display: "grid", gridTemplateColumns: "88px 1fr" }}>
 
+      {/* Sidebar */}
       <aside style={{ borderRight: `1px solid ${C.border}`, background: C.sidebar, padding: "18px 10px", height: "100vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
-        <div style={{ width: 46, height: 46, borderRadius: 16, margin: "0 auto 22px", display: "grid", placeItems: "center",
-          background: "linear-gradient(135deg,rgba(79,70,229,0.28),rgba(124,58,237,0.18))", border: `1px solid ${C.border}`, boxShadow: `0 0 20px ${C.accentGlow}` }}>
+        <div style={{ width: 46, height: 46, borderRadius: 16, margin: "0 auto 22px", display: "grid", placeItems: "center", background: "linear-gradient(135deg,rgba(79,70,229,0.28),rgba(124,58,237,0.18))", border: `1px solid ${C.border}`, boxShadow: `0 0 20px ${C.accentGlow}` }}>
           <Sparkles size={20} color="#a78bfa" />
         </div>
         <div style={{ display: "grid", gap: 8 }}>{SIDEBAR_ITEMS.map(item => <SidebarItem key={item.label} item={item} />)}</div>
@@ -2464,6 +1060,7 @@ cover_image: savedUrl,
 
       <div style={{ display: "grid", gridTemplateRows: "48px 1fr", height: "100vh", overflow: "hidden" }}>
 
+        {/* Top bar */}
         <div style={{ borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 18px", background: "rgba(255,255,255,0.01)" }}>
           <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
             <div style={{ height: 30, padding: "0 12px", borderRadius: radius.full, border: `1px solid ${C.accentBorder}`, background: C.accentSoft, color: "#c4b5fd", fontSize: 13, display: "inline-flex", alignItems: "center", gap: 7, fontWeight: 600 }}>
@@ -2473,11 +1070,7 @@ cover_image: savedUrl,
             <div style={{ width: 1, height: 20, background: C.border, margin: "0 2px" }} />
             {[{ label: "Generate", id: "generate", icon: Wand2 }, { label: "Characters", id: "characters", icon: Users }].map(({ label, id, icon: Icon }) => (
               <motion.button key={id} whileTap={{ scale: 0.95 }} onClick={() => setActiveView(id)}
-                style={{ height: 30, padding: "0 12px", borderRadius: 9, display: "inline-flex", alignItems: "center", gap: 6,
-                  border: `1px solid ${activeView === id ? C.accentBorder : "transparent"}`,
-                  background: activeView === id ? C.accentSoft : "transparent",
-                  color: activeView === id ? "#c4b5fd" : C.textMuted, cursor: "pointer", fontSize: 12.5,
-                  fontFamily: "inherit", fontWeight: activeView === id ? 600 : 400, transition: "all 0.15s ease" }}>
+                style={{ height: 30, padding: "0 12px", borderRadius: 9, display: "inline-flex", alignItems: "center", gap: 6, border: `1px solid ${activeView === id ? C.accentBorder : "transparent"}`, background: activeView === id ? C.accentSoft : "transparent", color: activeView === id ? "#c4b5fd" : C.textMuted, cursor: "pointer", fontSize: 12.5, fontFamily: "inherit", fontWeight: activeView === id ? 600 : 400, transition: "all 0.15s ease" }}>
                 <Icon size={12} /> {label}
               </motion.button>
             ))}
@@ -2485,15 +1078,12 @@ cover_image: savedUrl,
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             {[{ icon: Grid3X3, val: "grid" }, { icon: List, val: "list" }].map(({ icon: Icon, val }) => (
               <motion.button key={val} whileTap={{ scale: 0.94 }} onClick={() => setOutputView(val)}
-                style={{ width: 34, height: 34, borderRadius: radius.sm, border: `1px solid ${C.border}`,
-                  background: outputView === val ? "rgba(255,255,255,0.08)" : "transparent",
-                  color: outputView === val ? C.text : C.textMuted, display: "grid", placeItems: "center", cursor: "pointer", transition: "all 0.15s ease" }}>
+                style={{ width: 34, height: 34, borderRadius: radius.sm, border: `1px solid ${C.border}`, background: outputView === val ? "rgba(255,255,255,0.08)" : "transparent", color: outputView === val ? C.text : C.textMuted, display: "grid", placeItems: "center", cursor: "pointer", transition: "all 0.15s ease" }}>
                 <Icon size={15} />
               </motion.button>
             ))}
             <motion.button whileHover={{ borderColor: C.borderHover }}
-              style={{ height: 34, padding: "0 14px", borderRadius: radius.sm, border: `1px solid ${C.border}`,
-                background: C.surface, color: "rgba(255,255,255,0.8)", display: "inline-flex", alignItems: "center", gap: 7, cursor: "pointer", fontSize: 13, fontFamily: "inherit" }}>
+              style={{ height: 34, padding: "0 14px", borderRadius: radius.sm, border: `1px solid ${C.border}`, background: C.surface, color: "rgba(255,255,255,0.8)", display: "inline-flex", alignItems: "center", gap: 7, cursor: "pointer", fontSize: 13, fontFamily: "inherit" }}>
               <Folder size={13} /> Assets
             </motion.button>
           </div>
@@ -2501,18 +1091,17 @@ cover_image: savedUrl,
 
         <div style={{ display: "grid", gridTemplateColumns: "380px 1fr", height: "100%", overflow: "hidden" }}>
 
+          {/* Left panel */}
           <div style={{ borderRight: `1px solid ${C.border}`, background: "linear-gradient(180deg,rgba(7,9,15,0.98),rgba(9,11,17,0.98))", height: "100%", overflow: "hidden", display: "flex", flexDirection: "column", boxSizing: "border-box" }}>
 
+            {/* Section tabs */}
             <div style={{ padding: "12px 16px 0", flexShrink: 0 }}>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 4, padding: 4, borderRadius: radius.md, background: "rgba(255,255,255,0.03)", border: `1px solid ${C.border}` }}>
                 {[{ id: "traits", label: "Traits", icon: Sliders }, { id: "refs", label: "Refs", icon: Camera }, { id: "generate", label: "Generate", icon: Sparkles }].map(({ id, label, icon: Icon }) => {
                   const active = formSection === id;
                   return (
                     <motion.button key={id} whileTap={{ scale: 0.96 }} onClick={() => setFormSection(id)}
-                      style={{ height: 34, borderRadius: radius.sm, border: active ? `1px solid ${C.accentBorder}` : "1px solid transparent",
-                        background: active ? "linear-gradient(160deg,rgba(79,70,229,0.18),rgba(124,58,237,0.13))" : "transparent",
-                        color: active ? "white" : C.textMuted, fontSize: 12, cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s ease",
-                        display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5 }}>
+                      style={{ height: 34, borderRadius: radius.sm, border: active ? `1px solid ${C.accentBorder}` : "1px solid transparent", background: active ? "linear-gradient(160deg,rgba(79,70,229,0.18),rgba(124,58,237,0.13))" : "transparent", color: active ? "white" : C.textMuted, fontSize: 12, cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s ease", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5 }}>
                       <Icon size={11} /> {label}
                     </motion.button>
                   );
@@ -2520,11 +1109,12 @@ cover_image: savedUrl,
               </div>
             </div>
 
+            {/* Section header */}
             <div style={{ padding: "14px 16px 0", flexShrink: 0 }}>
               <div style={{ borderBottom: `1px solid ${C.border}`, paddingBottom: 12 }}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <motion.button whileTap={{ scale: 0.94 }} onClick={resetToLanding} title="Back to home"
+                    <motion.button whileTap={{ scale: 0.94 }} onClick={resetToLanding} title="Back"
                       style={{ width: 28, height: 28, borderRadius: 8, border: `1px solid ${C.border}`, background: C.surface, color: C.textMuted, display: "grid", placeItems: "center", cursor: "pointer", flexShrink: 0, transition: "all 0.15s ease" }}
                       onMouseEnter={e => { e.currentTarget.style.borderColor = C.accentBorder; e.currentTarget.style.color = "#c4b5fd"; }}
                       onMouseLeave={e => { e.currentTarget.style.borderColor = C.border; e.currentTarget.style.color = C.textMuted; }}>
@@ -2544,26 +1134,20 @@ cover_image: savedUrl,
               </div>
             </div>
 
+            {/* Section body */}
             <div style={{ flex: 1, overflowY: "auto", padding: "14px 16px", minHeight: 0, display: "flex", flexDirection: "column", gap: 12 }}>
 
               {formSection === "traits" && (<>
                 <div>
                   <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: C.textMuted, marginBottom: 6 }}>Character Name *</div>
- <input
-  id="character-name"
-  name="characterName"
-  value={charName}
-  onChange={e => setCharName(e.target.value)}
-  placeholder="e.g. Aria Voss, Marcus Kane…"
+                  <input id="character-name" name="characterName" value={charName} onChange={e => setCharName(e.target.value)} placeholder="e.g. Aria Voss, Marcus Kane…"
                     style={{ width: "100%", height: 38, padding: "0 12px", borderRadius: radius.sm, border: `1px solid ${charName ? C.accentBorder : C.border}`, background: charName ? C.accentSoft : C.surface, color: C.text, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box", transition: "all 0.16s ease" }} />
                 </div>
                 <div>
                   <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: C.textMuted, marginBottom: 6 }}>Description</div>
-                  <textarea
-  id="character-description"
-  name="characterDescription"
-  ref={el => { if (el) { el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; } }}
-  value={charDesc} onChange={e => { setCharDesc(e.target.value.slice(0, 1000)); e.target.style.height = "auto"; e.target.style.height = e.target.scrollHeight + "px"; }}
+                  <textarea id="character-description" name="characterDescription"
+                    ref={el => { if (el) { el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; } }}
+                    value={charDesc} onChange={e => { setCharDesc(e.target.value.slice(0, 1000)); e.target.style.height = "auto"; e.target.style.height = e.target.scrollHeight + "px"; }}
                     placeholder="Scar above left eyebrow, always wears a silver necklace…" rows={3}
                     style={{ width: "100%", padding: "8px 12px", borderRadius: radius.sm, border: `1px solid ${C.border}`, background: C.surface, color: C.text, resize: "none", overflow: "hidden", fontSize: 12.5, fontFamily: "inherit", lineHeight: 1.6, outline: "none", boxSizing: "border-box", minHeight: 80 }} />
                 </div>
@@ -2589,56 +1173,25 @@ cover_image: savedUrl,
                   {charLocked ? <Lock size={13} /> : <Unlock size={13} />}
                   {charLocked ? "Character locked (consistent)" : "Lock character traits"}
                 </motion.button>
-                <motion.button whileHover={charName.trim() && !saving ? { boxShadow: "0 12px 32px rgba(124,58,237,0.35)" } : {}} whileTap={charName.trim() && !saving ? { scale: 0.98 } : {}} onClick={saveCharacter} disabled={saving || !charName.trim()}
-                  style={{ height: 44, borderRadius: radius.md, border: "none", cursor: charName.trim() && !saving ? "pointer" : "default",
-                    background: charName.trim() && !saving ? "linear-gradient(135deg,#4f46e5,#7c3aed)" : "rgba(255,255,255,0.06)",
-                    color: charName.trim() && !saving ? "white" : C.textMuted, fontSize: 13.5, fontWeight: 700,
-                    display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8, fontFamily: "inherit", transition: "all 0.2s ease",
-                    boxShadow: charName.trim() && !saving ? "0 8px 24px rgba(124,58,237,0.25)" : "none" }}>
+                <motion.button whileHover={charName.trim() && !saving ? { boxShadow: "0 12px 32px rgba(124,58,237,0.35)" } : {}} whileTap={charName.trim() && !saving ? { scale: 0.98 } : {}}
+                  onClick={saveCharacter} disabled={saving || !charName.trim()}
+                  style={{ height: 44, borderRadius: radius.md, border: "none", cursor: charName.trim() && !saving ? "pointer" : "default", background: charName.trim() && !saving ? "linear-gradient(135deg,#4f46e5,#7c3aed)" : "rgba(255,255,255,0.06)", color: charName.trim() && !saving ? "white" : C.textMuted, fontSize: 13.5, fontWeight: 700, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8, fontFamily: "inherit", transition: "all 0.2s ease", boxShadow: charName.trim() && !saving ? "0 8px 24px rgba(124,58,237,0.25)" : "none" }}>
                   {saving ? (<><motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: "linear" }}><Zap size={15} /></motion.div>Saving…</>) : (<><User size={15} /> Save Character</>)}
                 </motion.button>
               </>)}
 
               {formSection === "refs" && (<>
                 <p style={{ margin: 0, fontSize: 12.5, color: C.textMuted, lineHeight: 1.65 }}>Upload reference photos of the character. More consistent references = more accurate generations.</p>
-                <div
-  style={{
-    fontSize: 11.5,
-    color: savingRefs ? "#c4b5fd" : C.textMuted,
-    lineHeight: 1.6,
-    padding: "8px 10px",
-    borderRadius: radius.sm,
-    border: `1px solid ${savingRefs ? C.accentBorder : C.border}`,
-    background: savingRefs ? C.accentSoft : "rgba(255,255,255,0.02)",
-  }}
->
-  {activeChar
-    ? savingRefs
-      ? "Saving references… They will be used instantly in generation."
-      : "References auto-save and are used instantly in generation."
-    : "Save character first to permanently attach references."}
-</div>
+                <div style={{ fontSize: 11.5, color: savingRefs ? "#c4b5fd" : C.textMuted, lineHeight: 1.6, padding: "8px 10px", borderRadius: radius.sm, border: `1px solid ${savingRefs ? C.accentBorder : C.border}`, background: savingRefs ? C.accentSoft : "rgba(255,255,255,0.02)" }}>
+                  {activeChar ? savingRefs ? "Saving references…" : "References auto-save and are used instantly in generation." : "Save character first to permanently attach references."}
+                </div>
                 <RefUpload entries={refEntries} onEntries={setRefEntries} label="Face references" hint="Clear, front-facing photos · best results" max={5} />
-{refEntries.length > 0 && (
-  <div
-    style={{
-      padding: "10px 12px",
-      borderRadius: radius.sm,
-      border: `1px solid rgba(34,197,94,0.25)`,
-      background: "rgba(34,197,94,0.06)",
-      display: "flex",
-      alignItems: "center",
-      gap: 8,
-      fontSize: 12,
-      color: "#86efac",
-    }}
-  >
-    <Check size={13} />
-    {activeChar
-      ? `${refEntries.length} reference image${refEntries.length > 1 ? "s" : ""} attached and ready.`
-      : `${refEntries.length} reference image${refEntries.length > 1 ? "s" : ""} ready — save character first.`}
-  </div>
-)}
+                {refEntries.length > 0 && (
+                  <div style={{ padding: "10px 12px", borderRadius: radius.sm, border: `1px solid rgba(34,197,94,0.25)`, background: "rgba(34,197,94,0.06)", display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "#86efac" }}>
+                    <Check size={13} />
+                    {activeChar ? `${refEntries.length} reference image${refEntries.length > 1 ? "s" : ""} attached and ready.` : `${refEntries.length} reference image${refEntries.length > 1 ? "s" : ""} ready — save character first.`}
+                  </div>
+                )}
                 <div style={{ padding: 14, borderRadius: radius.md, border: `1px solid ${C.border}`, background: C.surface }}>
                   <div style={{ fontSize: 12, fontWeight: 600, color: C.text, marginBottom: 8 }}>Tips for better consistency</div>
                   {["Use clear, well-lit photos", "Include front and 3/4 angles", "Avoid obscured faces or masks", "2–5 references works best"].map((tip, i, arr) => (
@@ -2673,16 +1226,16 @@ cover_image: savedUrl,
                   <div>
                     <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: C.textMuted, marginBottom: 6 }}>Reference Notes</div>
                     <div style={{ position: "relative" }}>
-                      <textarea
-  id="reference-notes"
-  name="referenceNotes"
-  ref={el => { if (el) { el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; } }}
-  value={extraPrompt} onChange={e => { setExtraPrompt(e.target.value.slice(0, charLimit)); e.target.style.height = "auto"; e.target.style.height = e.target.scrollHeight + "px"; }}
-                        placeholder="outfit details, facial details, accessories, exact look notes…" rows={1}
+                      <textarea id="reference-notes" name="referenceNotes"
+                        ref={el => { if (el) { el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; } }}
+                        value={extraPrompt} onChange={e => { setExtraPrompt(e.target.value.slice(0, charLimit)); e.target.style.height = "auto"; e.target.style.height = e.target.scrollHeight + "px"; }}
+                        placeholder="outfit details, facial details, accessories…" rows={1}
                         style={{ width: "100%", minHeight: 110, padding: "10px 12px", borderRadius: radius.md, border: `1px solid ${C.border}`, background: C.surface, color: C.text, resize: "none", overflow: "hidden", fontSize: 12.5, fontFamily: "inherit", lineHeight: 1.6, outline: "none", boxSizing: "border-box" }} />
                       <div style={{ position: "absolute", bottom: 8, right: 10, fontSize: 10.5, color: extraPrompt.length > charLimit * 0.9 ? "#f87171" : C.textDim }}>{extraPrompt.length}/{charLimit}</div>
                     </div>
                   </div>
+
+                  {/* Active char mini card */}
                   <div style={{ padding: "10px 12px", borderRadius: radius.sm, border: `1px solid ${C.border}`, background: "rgba(255,255,255,0.02)", display: "flex", alignItems: "center", gap: 10 }}>
                     <div style={{ width: 32, height: 32, borderRadius: 9, overflow: "hidden", flexShrink: 0, background: CARD_GRADIENTS[getIdNumber(activeChar.id) % CARD_GRADIENTS.length], display: "grid", placeItems: "center" }}>
                       {activeChar.refEntries.length > 0 ? <img src={activeChar.refEntries[0].previewUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <User size={14} color="rgba(255,255,255,0.4)" />}
@@ -2695,111 +1248,44 @@ cover_image: savedUrl,
                     </div>
                     <button onClick={() => setFormSection("refs")} style={{ border: "none", background: "transparent", color: C.textMuted, cursor: "pointer", display: "grid", placeItems: "center" }}><Camera size={13} /></button>
                   </div>
+
+                  {/* Master Identity panel */}
                   <div style={{ padding: 12, borderRadius: radius.md, border: `1px solid ${C.border}`, background: C.surface }}>
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
                       <div style={{ fontSize: 12.5, fontWeight: 700, color: C.text }}>Master Identity</div>
                       {masterIdentityImage && (
-                        <div style={{ fontSize: 10.5, padding: "2px 8px", borderRadius: radius.full, border: `1px solid rgba(34,197,94,0.25)`, background: "rgba(34,197,94,0.08)", color: "#86efac" }}>
-                          Selected
-                        </div>
+                        <div style={{ fontSize: 10.5, padding: "2px 8px", borderRadius: radius.full, border: `1px solid rgba(34,197,94,0.25)`, background: "rgba(34,197,94,0.08)", color: "#86efac" }}>Selected</div>
                       )}
                     </div>
-
                     {masterIdentityImage ? (
                       <div style={{ display: "grid", gap: 10 }}>
                         <div style={{ width: "100%", aspectRatio: "1/1", borderRadius: radius.md, overflow: "hidden", border: `1px solid ${C.accentBorder}`, background: "rgba(255,255,255,0.03)" }}>
-                          <img
-                            src={masterIdentityImage}
-                            alt="Master identity"
-                            style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
-                          />
+                          <img src={masterIdentityImage} alt="Master identity" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
                         </div>
-                        <div style={{ fontSize: 11.5, color: C.textMuted, lineHeight: 1.6 }}>
-                          This approved master portrait will be used as the strongest identity reference for pack generation.
-                        </div>
+                        <div style={{ fontSize: 11.5, color: C.textMuted, lineHeight: 1.6 }}>This approved master portrait will be used as the strongest identity reference for pack generation.</div>
                       </div>
                     ) : (
-                      <div style={{ fontSize: 11.5, color: C.textMuted, lineHeight: 1.6, marginBottom: 10 }}>
-                        Generate 4 close-up identity candidates first, then choose the best one as the master identity.
-                      </div>
+                      <div style={{ fontSize: 11.5, color: C.textMuted, lineHeight: 1.6, marginBottom: 10 }}>Generate identity candidates first, then choose the best one as the master identity.</div>
                     )}
-
                     <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-                      <motion.button
-                        whileTap={{ scale: 0.97 }}
-                        onClick={handleGenerateMasterIdentity}
+                      <motion.button whileTap={{ scale: 0.97 }} onClick={handleGenerateMasterIdentity}
                         disabled={generatingMaster || !(activeChar?.refEntries?.length || refEntries.length)}
-                        style={{
-                          height: 38,
-                          padding: "0 14px",
-                          borderRadius: radius.sm,
-                          border: `1px solid ${C.accentBorder}`,
-                          background: C.accentSoft,
-                          color: "#c4b5fd",
-                          fontSize: 12.5,
-                          fontWeight: 700,
-                          cursor: generatingMaster ? "default" : "pointer",
-                          fontFamily: "inherit",
-                          display: "inline-flex",
-                          alignItems: "center",
-                          gap: 7,
-                        }}
-                      >
-                        {generatingMaster ? (
-                          <>
-                            <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: "linear" }}>
-                              <Zap size={13} />
-                            </motion.div>
-                            Generating…
-                          </>
-                        ) : (
-                          <>
-                            <Camera size={13} />
-                            Generate Master Identity
-                          </>
-                        )}
+                        style={{ height: 38, padding: "0 14px", borderRadius: radius.sm, border: `1px solid ${C.accentBorder}`, background: C.accentSoft, color: "#c4b5fd", fontSize: 12.5, fontWeight: 700, cursor: generatingMaster ? "default" : "pointer", fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: 7 }}>
+                        {generatingMaster ? (<><motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: "linear" }}><Zap size={13} /></motion.div>Generating…</>) : (<><Camera size={13} />Generate Master Identity</>)}
                       </motion.button>
                     </div>
-
                     {masterCandidates.length > 0 && (
                       <div style={{ marginTop: 14, display: "grid", gap: 10 }}>
                         <div style={{ fontSize: 11.5, color: C.textMuted }}>Choose the closest identity:</div>
                         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                           {masterCandidates.map((candidate, i) => (
-                            <div
-                              key={candidate.id || i}
-                              style={{
-                                borderRadius: radius.md,
-                                overflow: "hidden",
-                                border: `1px solid ${C.border}`,
-                                background: "rgba(255,255,255,0.02)",
-                              }}
-                            >
+                            <div key={candidate.id || i} style={{ borderRadius: radius.md, overflow: "hidden", border: `1px solid ${C.border}`, background: "rgba(255,255,255,0.02)" }}>
                               <div style={{ width: "100%", aspectRatio: "1/1", overflow: "hidden" }}>
-                                <img
-                                  src={candidate.url}
-                                  alt={`Master candidate ${i + 1}`}
-                                  style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
-                                />
+                                <img src={candidate.url} alt={`Master candidate ${i + 1}`} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
                               </div>
                               <div style={{ padding: 8 }}>
-                                <motion.button
-                                  whileTap={{ scale: 0.97 }}
-                                  onClick={() => useMasterIdentity(candidate)}
-                                  disabled={savingMaster}
-                                  style={{
-                                    width: "100%",
-                                    height: 32,
-                                    borderRadius: 8,
-                                    border: `1px solid ${C.accentBorder}`,
-                                    background: C.accentSoft,
-                                    color: "#c4b5fd",
-                                    fontSize: 11.5,
-                                    fontWeight: 700,
-                                    cursor: savingMaster ? "default" : "pointer",
-                                    fontFamily: "inherit",
-                                  }}
-                                >
+                                <motion.button whileTap={{ scale: 0.97 }} onClick={() => useMasterIdentity(candidate)} disabled={savingMaster}
+                                  style={{ width: "100%", height: 32, borderRadius: 8, border: `1px solid ${C.accentBorder}`, background: C.accentSoft, color: "#c4b5fd", fontSize: 11.5, fontWeight: 700, cursor: savingMaster ? "default" : "pointer", fontFamily: "inherit" }}>
                                   Use as Master
                                 </motion.button>
                               </div>
@@ -2813,15 +1299,20 @@ cover_image: savedUrl,
               </>)}
             </div>
 
+            {/* ✅ FIXED: Generate button — disabled={false}, always clickable when activeChar exists */}
             {formSection === "generate" && activeChar && (
               <div style={{ padding: "12px 16px", borderTop: `1px solid ${C.border}`, flexShrink: 0 }}>
-                <motion.button whileHover={canGenerate ? { boxShadow: "0 18px 40px rgba(124,58,237,0.42)" } : {}} whileTap={canGenerate ? { scale: 0.98 } : {}}
-  onClick={handleGenerateCharacterPack} disabled={!canGenerate}
+                <motion.button
+                  whileHover={{ boxShadow: "0 18px 40px rgba(124,58,237,0.42)" }}
+                  whileTap={{ scale: 0.98 }}
+                  onClick={handleGenerateCharacterPack}
+                  disabled={false}
                   style={{ height: 48, width: "100%", borderRadius: radius.md, border: "none",
-                    background: canGenerate ? "linear-gradient(135deg,#4f46e5,#7c3aed)" : "rgba(255,255,255,0.06)",
-                    color: canGenerate ? "white" : C.textMuted, cursor: canGenerate ? "pointer" : "default",
-                    fontSize: 14.5, fontWeight: 700, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 9, fontFamily: "inherit", transition: "all 0.2s ease",
-                    boxShadow: canGenerate ? "0 10px 28px rgba(124,58,237,0.28)" : "none" }}>
+                    background: "linear-gradient(135deg,#4f46e5,#7c3aed)",
+                    color: "white", cursor: "pointer",
+                    fontSize: 14.5, fontWeight: 700, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 9,
+                    fontFamily: "inherit", transition: "all 0.2s ease", boxShadow: "0 10px 28px rgba(124,58,237,0.28)",
+                    opacity: generating ? 0.75 : 1 }}>
                   <AnimatePresence mode="wait">
                     {generating
                       ? <motion.span key="gen" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} style={{ display: "flex", alignItems: "center", gap: 8 }}><motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: "linear" }}><Zap size={16} /></motion.div>Generating…</motion.span>
@@ -2832,6 +1323,7 @@ cover_image: savedUrl,
             )}
           </div>
 
+          {/* Right canvas */}
           <div style={{ background: "rgba(4,5,12,0.95)", display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
 
             {activeView === "generate" && (<>
@@ -2843,7 +1335,7 @@ cover_image: savedUrl,
                   {generating && (
                     <div style={{ display: "flex", alignItems: "center", gap: 5, padding: "2px 9px", borderRadius: radius.full, border: `1px solid ${C.accentBorder}`, background: C.accentSoft, fontSize: 11, color: "#c4b5fd" }}>
                       <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: "linear" }}><Zap size={10} /></motion.div>
-                      Generating profiles…
+                      Generating 5 views…
                     </div>
                   )}
                 </div>
@@ -2856,21 +1348,18 @@ cover_image: savedUrl,
               </div>
 
               <div ref={canvasRef} style={{ flex: 1, overflowY: "auto", padding: "16px" }}>
-            
-                {activeChar && generating && (
-                  <OutputGeneratingState
-  title="Generating character pack"
-  subtitle="Creating clean, consistent views for your character..."
-/>
-                )}           
 
-                {!activeChar && (
+                {/* Loading state */}
+                {activeChar && generating && (
+                  <OutputGeneratingState title="Generating character pack" subtitle="Creating 5 consistent views for your character…" />
+                )}
+
+                {/* Empty — no character */}
+                {!activeChar && !generating && (
                   <div style={{ height: "80%", display: "grid", placeItems: "center" }}>
                     <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, ease: [0.22,1,0.36,1] }}
                       style={{ textAlign: "center", maxWidth: 380 }}>
-                      <div style={{ width: 88, height: 88, borderRadius: 999, margin: "0 auto 22px", display: "grid", placeItems: "center",
-                        background: "linear-gradient(135deg,rgba(79,70,229,0.18),rgba(124,58,237,0.12))",
-                        border: `1px solid ${C.accentBorder}`, boxShadow: "0 0 40px rgba(124,58,237,0.15)" }}>
+                      <div style={{ width: 88, height: 88, borderRadius: 999, margin: "0 auto 22px", display: "grid", placeItems: "center", background: "linear-gradient(135deg,rgba(79,70,229,0.18),rgba(124,58,237,0.12))", border: `1px solid ${C.accentBorder}`, boxShadow: "0 0 40px rgba(124,58,237,0.15)" }}>
                         <UserCircle2 size={38} color="#a78bfa" />
                       </div>
                       <p style={{ margin: "0 0 8px", color: C.text, fontSize: 20, fontWeight: 800, letterSpacing: "-0.025em" }}>Character Consistency</p>
@@ -2882,40 +1371,32 @@ cover_image: savedUrl,
                           onClick={() => setActiveView("characters")}
                           style={{ height: 46, padding: "0 22px", borderRadius: radius.md, border: `1px solid ${C.accentBorder}`, background: C.accentSoft, color: "#c4b5fd", fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: 8, transition: "all 0.18s ease" }}>
                           <Users size={15} /> Open Saved Characters
-                          {characters.length > 0 && (
-                            <span style={{ padding: "1px 7px", borderRadius: radius.full, background: C.accent, color: "white", fontSize: 11, fontWeight: 700 }}>{characters.length}</span>
-                          )}
+                          {characters.length > 0 && <span style={{ padding: "1px 7px", borderRadius: radius.full, background: C.accent, color: "white", fontSize: 11, fontWeight: 700 }}>{characters.length}</span>}
                         </motion.button>
                       </div>
                     </motion.div>
                   </div>
                 )}
 
+                {/* Empty — character selected but no outputs yet */}
                 {activeChar && charOutputs.length === 0 && !generating && (
                   <div style={{ height: "80%", display: "grid", placeItems: "center" }}>
                     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} style={{ textAlign: "center", maxWidth: 300 }}>
                       <div style={{ width: 72, height: 72, borderRadius: 999, margin: "0 auto 16px", display: "grid", placeItems: "center", border: `1px solid ${C.border}`, background: C.surface }}><ImageIcon size={28} color={C.textDim} /></div>
                       <p style={{ margin: "0 0 6px", color: C.text, fontSize: 15, fontWeight: 700 }}>Ready to generate</p>
-                      <p style={{ margin: "0 0 18px", color: C.textMuted, fontSize: 12.5, lineHeight: 1.7 }}>Generate the fixed 5-view character pack, then use it in the Image section.</p>
-                      <motion.button whileTap={{ scale: 0.96 }} onClick={() => setFormSection("generate")}
-                        style={{ height: 36, padding: "0 16px", borderRadius: radius.md, border: `1px solid ${C.accentBorder}`, background: C.accentSoft, color: "#c4b5fd", fontSize: 13, cursor: "pointer", fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: 6 }}>
-                        <Wand2 size={13} /> Set up generation
-                      </motion.button>
+                      <p style={{ margin: "0 0 18px", color: C.textMuted, fontSize: 12.5, lineHeight: 1.7 }}>Click "Generate Character Pack" to create 5 consistent views of {activeChar.name}.</p>
                     </motion.div>
                   </div>
                 )}
 
-                {activeChar && charOutputs.length > 0 && !shouldShowGenerateMorePanel && !generating && (
+                {/* ✅ FIXED: Output grid — renders directly from charOutputs */}
+                {activeChar && charOutputs.length > 0 && !generating && (
                   <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
                     <div style={{ display: "grid", gridTemplateColumns: outputView === "grid" ? "repeat(auto-fill,minmax(200px,1fr))" : "1fr", gap: 12 }}>
                       {charOutputs.map((item, i) => (
                         outputView === "grid" ? (
                           <motion.div key={item.id} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}>
-                            <OutputCard
-                              item={item}
-                              onDelete={() => deleteOutput(item.id)}
-                              onOpen={openLightboxForItem}
-                            />
+                            <OutputCard item={item} onDelete={() => deleteOutput(item.id)} onOpen={openLightboxForItem} />
                           </motion.div>
                         ) : (
                           <motion.div key={item.id} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.04 }}
@@ -2950,38 +1431,6 @@ cover_image: savedUrl,
                     </motion.div>
                   </div>
                 )}
-
-                {activeChar && shouldShowGenerateMorePanel && !generating && (
-                  <div style={{ display: "grid", gridTemplateColumns: "210px 1fr", gap: 16, alignItems: "stretch" }}>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                      <OutputCard
-                        item={frontOutput}
-                        onDelete={() => deleteOutput(frontOutput.id)}
-                        onOpen={openLightboxForItem}
-                      />
-                      <motion.button whileHover={!generating ? { borderColor: C.accentBorder, color: "#c4b5fd" } : {}} whileTap={!generating ? { scale: 0.97 } : {}}
-                        onClick={handleGenerateCharacterPack} disabled={generating}
-                        style={{ height: 36, borderRadius: radius.sm, border: `1px solid ${C.border}`, background: C.surface, color: C.textMuted, cursor: generating ? "default" : "pointer", fontSize: 12, fontWeight: 600, fontFamily: "inherit", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, transition: "all 0.15s ease" }}>
-                        {generating
-                          ? <><motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: "linear" }}><Zap size={13} /></motion.div>Regenerating…</>
-                          : <><RefreshCw size={13} /> Regenerate</>}
-                      </motion.button>
-                    </div>
-                    <div style={{ borderRadius: radius.lg, border: `1px solid ${C.border}`, background: C.surface, padding: 20, display: "flex", flexDirection: "column", justifyContent: "center", minHeight: 280 }}>
-                      <div style={{ fontSize: 18, fontWeight: 700, color: C.text, marginBottom: 10 }}>First profile ready</div>
-                      <div style={{ fontSize: 13, color: C.textMuted, lineHeight: 1.7, maxWidth: 500, marginBottom: 18 }}>
-                        Happy with it? Generate the remaining 4 profiles: left profile, right profile, back view, and upper-body close-up.
-                      </div>
-                      <motion.button whileHover={!generatingMore ? { boxShadow: "0 18px 40px rgba(124,58,237,0.32)" } : {}} whileTap={!generatingMore ? { scale: 0.98 } : {}}
-                        onClick={handleGenerateCharacterPack} disabled={generatingMore}
-                        style={{ height: 46, padding: "0 18px", borderRadius: radius.md, border: "none", background: !generatingMore ? "linear-gradient(135deg,#4f46e5,#7c3aed)" : "rgba(255,255,255,0.06)", color: !generatingMore ? "white" : C.textMuted, cursor: !generatingMore ? "pointer" : "default", fontSize: 14, fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 8, width: "fit-content", fontFamily: "inherit" }}>
-                        {generatingMore
-                          ? <><motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: "linear" }}><Zap size={15} /></motion.div>Generating Other 4 Profiles...</>
-                          : <><Plus size={15} /> Generate Other 4 Profiles</>}
-                      </motion.button>
-                    </div>
-                  </div>
-                )}
               </div>
             </>)}
 
@@ -3011,12 +1460,7 @@ cover_image: savedUrl,
                     {characters.map((char, i) => (
                       <motion.div key={char.id} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}>
                         <div style={{ position: "relative" }}>
-                          <CharacterCard
-                            char={char}
-                            isActive={char.id === activeCharId}
-                            onClick={() => { loadCharacterIntoForm(char); setActiveView("generate"); }}
-                            onDelete={() => deleteCharacter(char.id)}
-                          />
+                          <CharacterCard char={char} isActive={char.id === activeCharId} onClick={() => { loadCharacterIntoForm(char); setActiveView("generate"); }} onDelete={() => deleteCharacter(char.id)} />
                           <button onClick={e => { e.stopPropagation(); deleteCharacter(char.id); }}
                             style={{ position: "absolute", top: 8, right: 8, width: 26, height: 26, borderRadius: 8, border: `1px solid rgba(248,113,113,0.25)`, background: "rgba(248,113,113,0.1)", color: "#f87171", display: "grid", placeItems: "center", cursor: "pointer" }}>
                             <Trash2 size={11} />
@@ -3032,160 +1476,30 @@ cover_image: savedUrl,
         </div>
       </div>
 
+      {/* Lightbox */}
       <AnimatePresence>
         {lightboxItem && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={() => setLightboxItem(null)}
-            style={{
-              position: "fixed",
-              inset: 0,
-              zIndex: 9999,
-              background: "rgba(0,0,0,0.92)",
-              backdropFilter: "blur(14px)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              padding: 24,
-            }}
-          >
-<motion.div
-  initial={{ scale: 0.9, opacity: 0 }}
-  animate={{ scale: 1, opacity: 1 }}
-  exit={{ scale: 0.9, opacity: 0 }}
-  transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
-  onClick={(e) => e.stopPropagation()}
-  style={{
-    position: "relative",
-    width: "90vw",
-    height: "88vh",
-    maxWidth: "90vw",
-    maxHeight: "88vh",
-    borderRadius: radius.xl,
-    overflow: "hidden",
-    boxShadow: "0 40px 100px rgba(0,0,0,0.7)",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    background: "rgba(255,255,255,0.02)",
-  }}
->
-  <img
-    src={lightboxItem.url}
-    alt={lightboxItem.scene}
-    style={{
-      width: "100%",
-      height: "100%",
-      objectFit: "contain",
-      display: "block",
-    }}
-  />
-
-              {orderedVisibleOutputs.length > 1 && (
-                <>
-                  <motion.button
-                    whileTap={{ scale: 0.92 }}
-                    onClick={goPrevLightbox}
-style={{
-  position: "absolute",
-  left: 20,
-  top: "50%",
-  transform: "translateY(-50%)",
-  zIndex: 5,
-                      width: 44,
-                      height: 44,
-                      borderRadius: 14,
-                      border: "1px solid rgba(255,255,255,0.12)",
-                      background: "rgba(0,0,0,0.6)",
-                      backdropFilter: "blur(8px)",
-                      color: "white",
-                      display: "grid",
-                      placeItems: "center",
-                      cursor: "pointer",
-                    }}
-                  >
-                    <ChevronLeft size={18} />
-                  </motion.button>
-
-                  <motion.button
-                    whileTap={{ scale: 0.92 }}
-                    onClick={goNextLightbox}
-style={{
-  position: "absolute",
-  right: 20,
-  top: "50%",
-  transform: "translateY(-50%)",
-  zIndex: 5,
-                      width: 44,
-                      height: 44,
-                      borderRadius: 14,
-                      border: "1px solid rgba(255,255,255,0.12)",
-                      background: "rgba(0,0,0,0.6)",
-                      backdropFilter: "blur(8px)",
-                      color: "white",
-                      display: "grid",
-                      placeItems: "center",
-                      cursor: "pointer",
-                    }}
-                  >
-                    <ChevronRight size={18} />
-                  </motion.button>
-                </>
-              )}
-
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setLightboxItem(null)}
+            style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,0.92)", backdropFilter: "blur(14px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
+              onClick={e => e.stopPropagation()}
+              style={{ position: "relative", width: "90vw", height: "88vh", maxWidth: "90vw", maxHeight: "88vh", borderRadius: radius.xl, overflow: "hidden", boxShadow: "0 40px 100px rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(255,255,255,0.02)" }}>
+              <img src={lightboxItem.url} alt={lightboxItem.scene} style={{ width: "100%", height: "100%", objectFit: "contain", display: "block" }} />
+              {orderedVisibleOutputs.length > 1 && (<>
+                <motion.button whileTap={{ scale: 0.92 }} onClick={goPrevLightbox} style={{ position: "absolute", left: 20, top: "50%", transform: "translateY(-50%)", zIndex: 5, width: 44, height: 44, borderRadius: 14, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(0,0,0,0.6)", backdropFilter: "blur(8px)", color: "white", display: "grid", placeItems: "center", cursor: "pointer" }}><ChevronLeft size={18} /></motion.button>
+                <motion.button whileTap={{ scale: 0.92 }} onClick={goNextLightbox} style={{ position: "absolute", right: 20, top: "50%", transform: "translateY(-50%)", zIndex: 5, width: 44, height: 44, borderRadius: 14, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(0,0,0,0.6)", backdropFilter: "blur(8px)", color: "white", display: "grid", placeItems: "center", cursor: "pointer" }}><ChevronRight size={18} /></motion.button>
+              </>)}
               <div style={{ position: "absolute", top: 14, right: 14, display: "flex", gap: 8 }}>
                 {[Download, X].map((Icon, i) => (
-                  <motion.button
-                    key={i}
-                    whileTap={{ scale: 0.9 }}
-                    onClick={() => {
-                      if (i === 0 && lightboxItem?.url) {
-                        const a = document.createElement("a");
-                        a.href = lightboxItem.url;
-                        a.download = `${lightboxItem.scene || "character"}.png`;
-                        document.body.appendChild(a);
-                        a.click();
-                        a.remove();
-                      }
-                      if (i === 1) setLightboxItem(null);
-                    }}
-style={{
-  width: 40,
-  height: 40,
-  zIndex: 5,
-                      borderRadius: 12,
-                      border: "1px solid rgba(255,255,255,0.12)",
-                      background: "rgba(0,0,0,0.6)",
-                      backdropFilter: "blur(8px)",
-                      color: "white",
-                      display: "grid",
-                      placeItems: "center",
-                      cursor: "pointer",
-                    }}
-                  >
+                  <motion.button key={i} whileTap={{ scale: 0.9 }} onClick={() => { if (i === 0 && lightboxItem?.url) { const a = document.createElement("a"); a.href = lightboxItem.url; a.download = `${lightboxItem.scene || "character"}.png`; document.body.appendChild(a); a.click(); a.remove(); } if (i === 1) setLightboxItem(null); }}
+                    style={{ width: 40, height: 40, zIndex: 5, borderRadius: 12, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(0,0,0,0.6)", backdropFilter: "blur(8px)", color: "white", display: "grid", placeItems: "center", cursor: "pointer" }}>
                     <Icon size={15} />
                   </motion.button>
                 ))}
               </div>
-
-              <div
-                style={{
-                  position: "absolute",
-                  bottom: 0,
-                  left: 0,
-                  right: 0,
-                  background: "linear-gradient(to top,rgba(0,0,0,0.8),transparent)",
-                  padding: "40px 20px 18px",
-                }}
-              >
-                <p style={{ margin: "0 0 4px", fontSize: 14, fontWeight: 600, color: "white" }}>
-                  {lightboxItem.scene || "Portrait"}
-                </p>
-                <p style={{ margin: 0, fontSize: 12, color: C.textMuted }}>
-                  {new Date(lightboxItem.createdAt).toLocaleString()}
-                </p>
+              <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, background: "linear-gradient(to top,rgba(0,0,0,0.8),transparent)", padding: "40px 20px 18px" }}>
+                <p style={{ margin: "0 0 4px", fontSize: 14, fontWeight: 600, color: "white" }}>{lightboxItem.scene || "Portrait"}</p>
+                <p style={{ margin: 0, fontSize: 12, color: C.textMuted }}>{new Date(lightboxItem.createdAt).toLocaleString()}</p>
               </div>
             </motion.div>
           </motion.div>
