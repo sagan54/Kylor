@@ -448,7 +448,7 @@ const {
   referenceImages = [],
   negativePrompt = "",
   strictIdentity = true,
-  attempts = 2,
+  attempts = 1,
   userId = "anonymous",
 } = await req.json();
 
@@ -509,20 +509,27 @@ const safePrompt =
       );
     }
 
-    return Response.json({
-      image: results[0].url,
-      images: results,
-      meta: {
-        model: MODEL,
-        referenceCount: refs.length,
-        usedReferences: refs.length > 0,
-        strictIdentity: Boolean(strictIdentity),
-        attempts: safeAttempts,
-        returnedCount: results.length,
-        viewType: debug?.viewType || detectViewType(prompt),
-        aspectRatio: debug?.aspect_ratio || mapSizeToAspectRatio(size),
-      },
-    });
+return Response.json({
+  success: true, // ✅ ADD THIS
+
+  // ✅ THIS IS WHAT FRONTEND NEEDS
+  generatedImages: results.map((r) => r.url),
+
+  // keep existing (optional but useful)
+  image: results[0].url,
+  images: results,
+
+  meta: {
+    model: MODEL,
+    referenceCount: refs.length,
+    usedReferences: refs.length > 0,
+    strictIdentity: Boolean(strictIdentity),
+    attempts: safeAttempts,
+    returnedCount: results.length,
+    viewType: debug?.viewType || detectViewType(prompt),
+    aspectRatio: debug?.aspect_ratio || mapSizeToAspectRatio(size),
+  },
+});
   } catch (error) {
     console.error("Consistency generation error:", error);
     return Response.json(
