@@ -2055,11 +2055,10 @@ try {
   return;
 }
 
-if (!res.ok || !data?.success) {
+if (!res.ok) {
   console.error("❌ FULL PACK ERROR RESPONSE:", data);
   console.error("❌ STATUS:", res.status);
 
-  // 🔥 show detailed error in UI + console
   const errorMessage =
     data?.error ||
     data?.message ||
