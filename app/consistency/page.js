@@ -2056,18 +2056,16 @@ try {
 }
 
 if (!res.ok || !data?.success) {
-  console.error("PACK GENERATION ERROR RESPONSE:", data);
+  console.error("❌ FULL PACK ERROR RESPONSE:", data);
+  console.error("❌ STATUS:", res.status);
 
- try {
-  const mapped = await refreshCharacterPackState(activeChar, masterRef);
-  if ((mapped?.generatedImages || []).length > 0) {
-    return;
-  }
-} catch (refreshErr) {
-    console.error("Refresh after failed pack response also failed:", refreshErr);
-  }
+  // 🔥 show detailed error in UI + console
+  const errorMessage =
+    data?.error ||
+    data?.message ||
+    JSON.stringify(data, null, 2);
 
-  throw new Error(data?.error || "Character pack generation failed");
+  throw new Error(errorMessage);
 }
 
 fetch("/api/process-character-dna", {
@@ -2137,8 +2135,16 @@ setCharacters((prev) => {
 
 await refreshCharacterPackState(activeChar, masterRef);
   } catch (err) {
-    console.error("Character pack generation failed:", err);
-    alert(err?.message || "Failed to generate character pack.");
+console.error("🔥 FINAL ERROR:", err);
+
+alert(
+  typeof err?.message === "string"// const mapped = await refreshCharacterPackState(activeChar, masterRef);
+// if ((mapped?.generatedImages || []).length > 0) {
+//   return;
+// }
+    ? err.message
+    : JSON.stringify(err, null, 2)
+);
   } finally {
     generatingRef.current = false;
     setGenerating(false);
