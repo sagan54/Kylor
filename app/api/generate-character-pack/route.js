@@ -2,6 +2,14 @@ import Replicate from "replicate";
 import { createClient } from "@supabase/supabase-js";
 import { IMAGE_TYPES,} from "../../../lib/character-constants";
 
+const SORT_ORDER = {
+  [IMAGE_TYPES.FRONT]: 0,
+  [IMAGE_TYPES.CLOSEUP]: 1,
+  [IMAGE_TYPES.LEFT]: 2,
+  [IMAGE_TYPES.RIGHT]: 3,
+  [IMAGE_TYPES.BACK]: 4,
+};
+
 const CLEAN_VIEWS = [
   { key: IMAGE_TYPES.FRONT },
   { key: IMAGE_TYPES.CLOSEUP },
@@ -2626,7 +2634,7 @@ repairedResult = {
   label: failedView.label,
   url: generated.tempUrl,      // temporary for now
   evalUrl: generated.tempUrl,
-  sort_order: IMAGE_ORDER[failedView.type],
+  sort_order: SORT_ORDER[failedView.type],
       accepted: true,
       attemptsUsed: (failedView.attemptsUsed || 0) + attempt + 1,
       validationReason: validation.reason,
@@ -2934,7 +2942,7 @@ acceptedResult = {
   label: view.label,
   url: generated.tempUrl,      // temporary for now
   evalUrl: generated.tempUrl,  // evaluator/source URL
-  sort_order: IMAGE_ORDER[view.key],
+  sort_order: SORT_ORDER[view.key],
   accepted: true,
   attemptsUsed: attempt + 1,
   validationReason: validation.reason,
@@ -2989,7 +2997,7 @@ if (shouldStopPackEarly(err)) {
           type: view.key,
           label: view.label,
           url: null,
-          sort_order: IMAGE_ORDER[view.key],
+          sort_order: SORT_ORDER[view.key],
           accepted: false,
           attemptsUsed: maxAttempts,
           scoreReason: lastError?.message || `Failed to generate acceptable ${view.key}`,
