@@ -367,17 +367,25 @@ async function runSingleGeneration({
   strictIdentity,
   userId,
 }) {
- const hasRefs = refs.length > 0;
-const aspect_ratio = mapSizeToAspectRatio(size);
-const viewType = detectViewType(prompt);
+  // ✅ SAFE PROMPT HANDLING (critical fix)
+  const safePrompt =
+    prompt && String(prompt).trim()
+      ? prompt
+      : "Same exact person, preserve identity";
 
-const finalPrompt = buildFinalPrompt({
-  prompt,
-  hasRefs,
-  viewType,
-  negativePrompt,
-  strictIdentity,
-});
+  const hasRefs = refs.length > 0;
+  const aspect_ratio = mapSizeToAspectRatio(size);
+
+  // ✅ uses safePrompt now
+  const viewType = detectViewType(safePrompt);
+
+  const finalPrompt = buildFinalPrompt({
+    prompt: safePrompt,
+    hasRefs,
+    viewType,
+    negativePrompt,
+    strictIdentity,
+  });
 
   const input = hasRefs
     ? {
@@ -434,19 +442,20 @@ function dedupeResults(results) {
 
 export async function POST(req) {
   try {
-    const {
-      prompt,
-      size = "1024x1024",
-      referenceImages = [],
-      negativePrompt = "",
-      strictIdentity = true,
-      attempts = 2,
-      userId = "anonymous",
-    } = await req.json();
+const {
+  prompt,
+  size = "1024x1024",
+  referenceImages = [],
+  negativePrompt = "",
+  strictIdentity = true,
+  attempts = 2,
+  userId = "anonymous",
+} = await req.json();
 
-    if (!prompt || !String(prompt).trim()) {
-      return Response.json({ error: "Prompt is required" }, { status: 400 });
-    }
+const safePrompt =
+  prompt && String(prompt).trim()
+    ? prompt
+    : "Same exact person, preserve identity";
 
     const refs = Array.isArray(referenceImages)
       ? referenceImages.map(normalizeReferenceImage).filter(Boolean).slice(0, 8)
