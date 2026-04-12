@@ -367,25 +367,17 @@ async function runSingleGeneration({
   strictIdentity,
   userId,
 }) {
-  // ✅ SAFE PROMPT HANDLING (critical fix)
-  const safePrompt =
-    prompt && String(prompt).trim()
-      ? prompt
-      : "Same exact person, preserve identity";
+ const hasRefs = refs.length > 0;
+const aspect_ratio = mapSizeToAspectRatio(size);
+const viewType = detectViewType(prompt);
 
-  const hasRefs = refs.length > 0;
-  const aspect_ratio = mapSizeToAspectRatio(size);
-
-  // ✅ uses safePrompt now
-  const viewType = detectViewType(safePrompt);
-
-  const finalPrompt = buildFinalPrompt({
-    prompt: safePrompt,
-    hasRefs,
-    viewType,
-    negativePrompt,
-    strictIdentity,
-  });
+const finalPrompt = buildFinalPrompt({
+  prompt,
+  hasRefs,
+  viewType,
+  negativePrompt,
+  strictIdentity,
+});
 
   const input = hasRefs
     ? {
@@ -442,20 +434,19 @@ function dedupeResults(results) {
 
 export async function POST(req) {
   try {
-const {
-  prompt,
-  size = "1024x1024",
-  referenceImages = [],
-  negativePrompt = "",
-  strictIdentity = true,
-  attempts = 1,
-  userId = "anonymous",
-} = await req.json();
+    const {
+      prompt,
+      size = "1024x1024",
+      referenceImages = [],
+      negativePrompt = "",
+      strictIdentity = true,
+      attempts = 2,
+      userId = "anonymous",
+    } = await req.json();
 
-const safePrompt =
-  prompt && String(prompt).trim()
-    ? prompt
-    : "Same exact person, preserve identity";
+    if (!prompt || !String(prompt).trim()) {
+      return Response.json({ error: "Prompt is required" }, { status: 400 });
+    }
 
     const refs = Array.isArray(referenceImages)
       ? referenceImages.map(normalizeReferenceImage).filter(Boolean).slice(0, 8)
@@ -509,27 +500,20 @@ const safePrompt =
       );
     }
 
-return Response.json({
-  success: true, // ✅ ADD THIS
-
-  // ✅ THIS IS WHAT FRONTEND NEEDS
-  generatedImages: results.map((r) => r.url),
-
-  // keep existing (optional but useful)
-  image: results[0].url,
-  images: results,
-
-  meta: {
-    model: MODEL,
-    referenceCount: refs.length,
-    usedReferences: refs.length > 0,
-    strictIdentity: Boolean(strictIdentity),
-    attempts: safeAttempts,
-    returnedCount: results.length,
-    viewType: debug?.viewType || detectViewType(prompt),
-    aspectRatio: debug?.aspect_ratio || mapSizeToAspectRatio(size),
-  },
-});
+    return Response.json({
+      image: results[0].url,
+      images: results,
+      meta: {
+        model: MODEL,
+        referenceCount: refs.length,
+        usedReferences: refs.length > 0,
+        strictIdentity: Boolean(strictIdentity),
+        attempts: safeAttempts,
+        returnedCount: results.length,
+        viewType: debug?.viewType || detectViewType(prompt),
+        aspectRatio: debug?.aspect_ratio || mapSizeToAspectRatio(size),
+      },
+    });
   } catch (error) {
     console.error("Consistency generation error:", error);
     return Response.json(

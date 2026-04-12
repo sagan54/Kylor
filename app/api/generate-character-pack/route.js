@@ -1,22 +1,6 @@
 import Replicate from "replicate";
 import { createClient } from "@supabase/supabase-js";
-import { IMAGE_TYPES } from "../../../lib/character-constants";
-
-const SORT_ORDER = {
-  [IMAGE_TYPES.FRONT]: 0,
-  [IMAGE_TYPES.CLOSEUP]: 1,
-  [IMAGE_TYPES.LEFT]: 2,
-  [IMAGE_TYPES.RIGHT]: 3,
-  [IMAGE_TYPES.BACK]: 4,
-};
-
-const CLEAN_VIEWS = [
-  { key: IMAGE_TYPES.FRONT },
-  { key: IMAGE_TYPES.CLOSEUP },
-  { key: IMAGE_TYPES.LEFT },
-  { key: IMAGE_TYPES.RIGHT },
-  { key: IMAGE_TYPES.BACK },
-];
+import { IMAGE_TYPES, IMAGE_ORDER, PACK_VIEWS } from "../../../lib/character-constants";
 
 const replicate = new Replicate({
   auth: process.env.REPLICATE_API_TOKEN,
@@ -27,11 +11,24 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-// ✅ ONLY MODEL (Flux locked)
 const MODEL = "black-forest-labs/flux-2-pro";
 
 function getModelForView(viewType) {
-  return MODEL;
+  switch (viewType) {
+    case IMAGE_TYPES.FRONT:
+    case IMAGE_TYPES.CLOSEUP:
+      return "black-forest-labs/flux-2-pro";
+
+    case IMAGE_TYPES.LEFT:
+    case IMAGE_TYPES.RIGHT:
+      return "black-forest-labs/flux-2-pro";
+
+    case IMAGE_TYPES.BACK:
+      return "black-forest-labs/flux-2-dev";
+
+    default:
+      return "black-forest-labs/flux-2-pro";
+  }
 }
 
 function shouldEvaluateViewOnFirstPass(viewType) {
@@ -65,9 +62,9 @@ function shouldRepairFailedView(failedView) {
     );
   }
 
-  if (failedView.type === IMAGE_TYPES.BACK) {
-    return true;
-  }
+if (failedView.type === IMAGE_TYPES.BACK) {
+  return true;
+}
 
   return false;
 }
@@ -81,8 +78,7 @@ function normalizeReferenceImage(image) {
   if (!image || typeof image !== "string") return null;
 
   if (image.startsWith("data:image/")) return image;
-  if (image.startsWith("http://") || image.startsWith("https://"))
-    return image;
+  if (image.startsWith("http://") || image.startsWith("https://")) return image;
 
   return null;
 }
@@ -136,7 +132,7 @@ async function runReplicateWithBackoff(fn, maxRetries = 2) {
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       if (attempt > 0) {
-        await sleep(10000);
+        await sleep(10000); // 10 sec cooldown before retry
       }
       return await fn();
     } catch (err) {
@@ -281,19 +277,16 @@ case IMAGE_TYPES.RIGHT:
     "Centered composition.",
   ].join(" ");
 
-case IMAGE_TYPES.BACK:
-  return [
-    "Single person only.",
-    "Full body BACK view of the same person.",
-    "Character must face completely away from the camera.",
-    "Back of head visible.",
-    "NO face visible.",
-    "NO side angle.",
-    "NO reflection.",
-    "Camera directly behind subject.",
-    "Standing straight, neutral pose.",
-    "Preserve same identity, body, hairstyle, and proportions.",
-  ].join(" ");
+    case IMAGE_TYPES.BACK:
+      return [
+        "Single person only.",
+        "Back view.",
+        "Facing away from camera.",
+        "Full body visible from head to toe.",
+        "Standing straight, neutral pose, relaxed arms.",
+        "Only the viewing angle changes.",
+        "Identity, body type, hairstyle, hair length, neck, shoulders, silhouette, and outfit remain the same person.",
+      ].join(" ");
 
 case IMAGE_TYPES.CLOSEUP:
   return [
@@ -2054,59 +2047,24 @@ const finalNegativePrompt = [
 const cleanedRefs = refs
   .map((r) => normalizeReferenceImage(r))
   .filter(Boolean)
-  .slice(0, 3);
+  .slice(0, 8);
 
-// FIX 1+2: Use DreamO when refs are present (identity locking), Flux when no refs
-const hasFaceRefs = cleanedRefs.length > 0;
-const modelToUse = hasFaceRefs ? DREAMO_MODEL : MODEL;
+const input = cleanedRefs.length > 0
+  ? {
+      prompt: finalPrompt,
+      negative_prompt: finalNegativePrompt,
+      aspect_ratio,
+      output_format: "png",
+      input_images: cleanedRefs,
+    }
+  : {
+      prompt: finalPrompt,
+      negative_prompt: finalNegativePrompt,
+      aspect_ratio,
+      output_format: "png",
+    };
 
-// DreamO size map — width/height instead of aspect_ratio string
-const dreamOSizeMap = {
-  "2:3":  { width: 768,  height: 1152 },
-  "3:2":  { width: 1152, height: 768  },
-  "1:1":  { width: 1024, height: 1024 },
-  "4:5":  { width: 819,  height: 1024 },
-  "5:4":  { width: 1024, height: 819  },
-};
-const dims = dreamOSizeMap[aspect_ratio] || { width: 1024, height: 1024 };
-
-// Determine if third ref is a body view (back/front) — less face-reliable as identity anchor
-const thirdIsBodyView =
-  viewType === IMAGE_TYPES.BACK || viewType === IMAGE_TYPES.FRONT;
-
-let input;
-if (hasFaceRefs) {
-  // DreamO format — ref_task "id" locks the identity from the reference image
-  input = {
-    prompt:         finalPrompt,
-    neg_prompt:     finalNegativePrompt,
-    ref_image1:     cleanedRefs[0],
-    ref_task1:      "id",
-    width:          dims.width,
-    height:         dims.height,
-    guidance:       5.5,
-    num_steps:      25,
-    output_format:  "webp",
-    output_quality: 90,
-  };
-  if (cleanedRefs[1]) {
-    input.ref_image2 = cleanedRefs[1];
-    input.ref_task2  = "id";
-  }
-  if (cleanedRefs[2]) {
-    input.ref_image3 = cleanedRefs[2];
-    // body views carry silhouette info, not face — use "style" not "id"
-    input.ref_task3  = thirdIsBodyView ? "style" : "id";
-  }
-} else {
-  // Flux fallback — no reference images available
-  input = {
-    prompt:          finalPrompt,
-    negative_prompt: finalNegativePrompt,
-    aspect_ratio,
-    output_format:   "png",
-  };
-}
+const modelToUse = getModelForView(viewType);
 
 const output = await runReplicateWithBackoff(async () => {
   console.log("REPLICATE DEBUG", {
@@ -2118,13 +2076,13 @@ const output = await runReplicateWithBackoff(async () => {
   });
 
   console.log("REPLICATE INPUT SUMMARY", {
-    viewType,
-    model: modelToUse,
-    refCount: cleanedRefs.length,
-    aspect_ratio,
-    hasNegativePrompt: !!finalNegativePrompt,
-    promptLength: finalPrompt.length,
-  });
+  viewType,
+  model: modelToUse,
+  refCount: cleanedRefs.length,
+  aspect_ratio,
+  hasNegativePrompt: !!finalNegativePrompt,
+  promptLength: finalPrompt.length,
+});
 
   return await replicate.run(modelToUse, { input });
 }, 1);
@@ -2517,15 +2475,12 @@ async function scoreGeneratedView({
     };
   }
 
-const evaluation = {
-  accepted: true,
-  identityScore: 10,
-  shotScore: 10,
-  compositionScore: 10,
-  qualityScore: 10,
-  finalScore: 10,
-  failureType: "none",
-};
+  const evaluation = await callVisionEvaluator({
+    imageUrl,
+    masterImage,
+    frontImageUrl,
+    viewType,
+  });
 
   const normalized = {
     accepted: !!evaluation?.accepted,
@@ -2555,15 +2510,18 @@ const evaluation = {
 
   const thresholdFailureReasons = getThresholdFailureReasons(normalized, thresholds);
 
-// 🔥 DISABLE REJECTION COMPLETELY
-const shouldReject = false;
-
-if (shouldReject) {
-  return {
-    ...normalized,
-    accepted: false,
-  };
-}
+  if (shouldRejectScore(normalized, thresholds, viewType)) {
+    return {
+      ...normalized,
+      accepted: false,
+      thresholds,
+      thresholdFailureReasons,
+      reason:
+        normalized.reason ||
+        thresholdFailureReasons[0] ||
+        (normalized.failureType !== "none" ? normalized.failureType : "score_below_threshold"),
+    };
+  }
 
   return {
     ...normalized,
@@ -2654,7 +2612,7 @@ repairedResult = {
   label: failedView.label,
   url: generated.tempUrl,      // temporary for now
   evalUrl: generated.tempUrl,
-  sort_order: SORT_ORDER[failedView.type],
+  sort_order: IMAGE_ORDER[failedView.type],
       accepted: true,
       attemptsUsed: (failedView.attemptsUsed || 0) + attempt + 1,
       validationReason: validation.reason,
@@ -2724,7 +2682,7 @@ async function repairFailedViews({
   dnaIdentityBlock = "",
   lockedTraitsBlock = "",
 }) {
-  const repairQueue = buildRepairQueue(results);// const repairQueue = buildRepairQueue(results);
+  const repairQueue = buildRepairQueue(results);
   if (!repairQueue.length) {
     return {
       results,
@@ -2735,9 +2693,7 @@ async function repairFailedViews({
   const repairedResults = [...results];
   let currentFrontImageUrl = frontImageUrl;
 
-  for (const failedView of repairQueue) { // for (const failedView of repairQueue) {
-//   ... everything inside ...
-// }
+  for (const failedView of repairQueue) {
 const repaired = await runRepairPassForView({
   failedView,
   normalizedMaster,
@@ -2813,9 +2769,6 @@ export async function POST(req) {
 const routeStart = nowMs();
 console.log("PACK START", { characterId, userId });
 
-// FIX 4: Clear existing pack images at the START so running twice never produces 10 images
-await deleteExistingPackImages(characterId, userId);
-
 const characterMemory = await loadCharacterMemory(characterId, userId);
 const uploadedReferenceUrls = await loadUploadedReferenceUrls(characterId, userId);
 
@@ -2845,17 +2798,17 @@ console.log("🧠 Loaded character memory", {
     let maxReferenceCountUsed = 0;
 
 
-    for (const view of CLEAN_VIEWS) {
+    for (const view of PACK_VIEWS) {
       const size =
         view.key === IMAGE_TYPES.CLOSEUP ? "1024x1024" : "1024x1536";
 
-      const viewStart = nowMs();
-      console.log("VIEW START", { view: view.key });
+  const viewStart = nowMs();
+  console.log("VIEW START", { view: view.key });
 
 const referenceSelection = buildReferenceSet({
   viewType: view.key,
   masterImage: normalizedMaster,
-  acceptedViewMap, // FIX 3: pass actual map so each view gets context from previously accepted ones
+  acceptedViewMap,
   anchorRefs: baseAnchorRefs,
 });
 
@@ -2875,12 +2828,12 @@ const referenceSelection = buildReferenceSet({
       let lastError = null;
       let lastScore = null;
       const basePrompt = getViewPrompt(view.key);
-let generated = null;
+
       const maxAttempts = 1;
 
 for (let attempt = 0; attempt < maxAttempts; attempt++) {
         try {
-generated = await runSingleGeneration({
+const generated = await runSingleGeneration({
   prompt: basePrompt,
   refs: currentRefs,
   size,
@@ -2965,7 +2918,7 @@ acceptedResult = {
   label: view.label,
   url: generated.tempUrl,      // temporary for now
   evalUrl: generated.tempUrl,  // evaluator/source URL
-  sort_order: SORT_ORDER[view.key],
+  sort_order: IMAGE_ORDER[view.key],
   accepted: true,
   attemptsUsed: attempt + 1,
   validationReason: validation.reason,
@@ -3015,19 +2968,36 @@ if (shouldStopPackEarly(err)) {
         }
       }
 
- if (!acceptedResult) {
-  // 🔥 FORCE ACCEPT INSTEAD OF FAILING
-  acceptedResult = {
-    type: view.key,
-    label: view.label,
-    url: generated?.tempUrl || generated?.imageUrl || null,
-    sort_order: SORT_ORDER[view.key],
-    accepted: true,
-    attemptsUsed: 1,
-  };
-
-  console.log("⚠️ Forced accept:", view.key);
-}
+      if (!acceptedResult) {
+        results.push({
+          type: view.key,
+          label: view.label,
+          url: null,
+          sort_order: IMAGE_ORDER[view.key],
+          accepted: false,
+          attemptsUsed: maxAttempts,
+          scoreReason: lastError?.message || `Failed to generate acceptable ${view.key}`,
+          failureType: lastScore?.failureType || "unknown",
+          thresholds: lastScore?.thresholds || null,
+          thresholdFailureReasons: lastScore?.thresholdFailureReasons || [],
+          referenceCount: currentRefs.length,
+          referencesUsed: currentRefs,
+          selectedReferenceTypes: rankedCandidates
+            .filter((item) => currentRefs.includes(item.url))
+            .map((item) => item.type),
+          selectedReferenceScores: rankedCandidates
+            .filter((item) => currentRefs.includes(item.url))
+            .map((item) => ({
+              type: item.type,
+              finalScore: item.finalScore,
+              identityScore: item.identityScore,
+              qualityScore: item.qualityScore,
+            })),
+          repairedInPass2: false,
+          repairedFromCohesion: false,
+        });
+        continue;
+      }
 
       if (view.key === IMAGE_TYPES.FRONT) {
         frontImageUrl = acceptedResult.evalUrl || acceptedResult.url;
@@ -3139,30 +3109,16 @@ console.log("PACK FAILURE SUMMARY", {
       "Replicate rate limit hit. Wait about 10 seconds and try again."
     );
   }
+
+throw new Error(
+  `Pack incomplete after repair pass. Required views missing. Accepted: ${acceptedTypes.join(", ")}. Failed: ${failedViews.join(", ")}`
+);
 }
 
-// 🔥 FINAL OVERRIDE: accept whatever was generated
-
-const finalPack = {
-  front: acceptedViewMap[IMAGE_TYPES.FRONT]?.url || null,
-  closeup: acceptedViewMap[IMAGE_TYPES.CLOSEUP]?.url || null,
-  left: acceptedViewMap[IMAGE_TYPES.LEFT]?.url || null,
-  right: acceptedViewMap[IMAGE_TYPES.RIGHT]?.url || null,
-  back: acceptedViewMap[IMAGE_TYPES.BACK]?.url || null,
-};
-
-if (acceptedCount < totalViews) {
-  return Response.json({
-    success: true,
-    characterId,
-    pack: finalPack,
-  });
-}
-
-    console.log("FINAL UPLOAD START", {
-      acceptedCount,
-      elapsedSeconds: ((nowMs() - routeStart) / 1000).toFixed(2),
-    });
+console.log("FINAL UPLOAD START", {
+  acceptedCount,
+  elapsedSeconds: ((nowMs() - routeStart) / 1000).toFixed(2),
+});
 
 // Upload final accepted images to permanent storage only after full pack passes
 for (let i = 0; i < finalResults.length; i++) {
@@ -3252,18 +3208,36 @@ console.log("PACK COMPLETE", {
   acceptedCount: finalResults.filter((r) => r.accepted).length,
 });
 
-const finalOutput = {
-  front: finalResults.find(r => r.type === IMAGE_TYPES.FRONT)?.url,
-  closeup: finalResults.find(r => r.type === IMAGE_TYPES.CLOSEUP)?.url,
-  left: finalResults.find(r => r.type === IMAGE_TYPES.LEFT)?.url,
-  right: finalResults.find(r => r.type === IMAGE_TYPES.RIGHT)?.url,
-  back: finalResults.find(r => r.type === IMAGE_TYPES.BACK)?.url,
-};
-
 return Response.json({
   success: true,
   characterId,
-  pack: finalOutput
+  pack: finalResults.map((item) => ({
+    type: item.type,
+    label: item.label,
+    url: item.url,
+    sort_order: item.sort_order,
+    accepted: item.accepted,
+    finalScore: item.finalScore,
+  })),
+  meta: {
+    model: {
+  front: getModelForView(IMAGE_TYPES.FRONT),
+  left: getModelForView(IMAGE_TYPES.LEFT),
+  right: getModelForView(IMAGE_TYPES.RIGHT),
+  back: getModelForView(IMAGE_TYPES.BACK),
+  closeup: getModelForView(IMAGE_TYPES.CLOSEUP),
+},
+    evaluatorModel: EVALUATOR_MODEL,
+    referenceCount: maxReferenceCountUsed,
+    returnedCount: finalResults.length,
+    acceptedCount: finalResults.filter((r) => r.accepted).length,
+    averageFinalScore,
+    minimumFinalScore,
+    repairedCount,
+    frontImageUrl:
+      finalResults.find((r) => r.type === IMAGE_TYPES.FRONT)?.url || null,
+    anchorViews,
+  },
 });
   } catch (error) {
     console.error("PACK ROUTE ERROR:", error);
