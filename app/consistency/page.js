@@ -730,6 +730,11 @@ export default function ConsistencyPage() {
       return;
     }
 
+if (generatingRef.current) {
+  console.warn("Already generating — ignoring duplicate call.");
+  return;
+}
+
     // Resolve master reference image (must be a permanent URL, not blob)
     const masterRef =
       (typeof masterIdentityImage === "string" && !masterIdentityImage.startsWith("blob:") ? masterIdentityImage : null) ||
@@ -1339,8 +1344,8 @@ export default function ConsistencyPage() {
                     </div>
                   )}
                 </div>
-                {charOutputs.length > 0 && (
-                  <button onClick={deleteAllOutputs}
+              {charOutputs.length > 0 && !generating && (
+                 <button onClick={deleteAllOutputs}
                     style={{ height: 28, padding: "0 10px", borderRadius: 8, border: "1px solid rgba(248,113,113,0.25)", background: "rgba(248,113,113,0.07)", color: "#fca5a5", fontSize: 11.5, cursor: "pointer", fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: 5 }}>
                     <Trash2 size={11} /> Clear
                   </button>
