@@ -2891,12 +2891,12 @@ const referenceSelection = buildReferenceSet({
       let lastError = null;
       let lastScore = null;
       const basePrompt = getViewPrompt(view.key);
-
+let generated = null;
       const maxAttempts = 1;
 
 for (let attempt = 0; attempt < maxAttempts; attempt++) {
         try {
-const generated = await runSingleGeneration({
+generated = await runSingleGeneration({
   prompt: basePrompt,
   refs: currentRefs,
   size,
