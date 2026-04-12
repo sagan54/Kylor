@@ -1,6 +1,6 @@
 import Replicate from "replicate";
 import { createClient } from "@supabase/supabase-js";
-import { IMAGE_TYPES,} from "../../../lib/character-constants";
+import { IMAGE_TYPES } from "../../../lib/character-constants";
 
 const SORT_ORDER = {
   [IMAGE_TYPES.FRONT]: 0,
@@ -27,28 +27,11 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-// FIX 1: DreamO for identity-locked character pack generation
-// flux-1.1-pro-ultra only does style transfer via input_images — it does NOT lock identity.
-// DreamO with ref_task1:"id" is designed specifically for identity locking across views.
-const MODEL = "black-forest-labs/flux-1.1-pro-ultra"; // kept as fallback (no refs path)
-const DREAMO_MODEL = "zsxkib/dream-o:efe92b897afb0e7da9f83d0f2ee20355c3a48fa5553c46ffbc4c111f5ca87dbb";
+// ✅ ONLY MODEL (Flux locked)
+const MODEL = "black-forest-labs/flux-2-pro";
 
 function getModelForView(viewType) {
-  switch (viewType) {
-    case IMAGE_TYPES.FRONT:
-    case IMAGE_TYPES.CLOSEUP:
-      return "black-forest-labs/flux-2-pro";
-
-    case IMAGE_TYPES.LEFT:
-    case IMAGE_TYPES.RIGHT:
-      return "black-forest-labs/flux-2-pro";
-
-    case IMAGE_TYPES.BACK:
-      return "black-forest-labs/flux-2-pro";
-
-    default:
-      return "black-forest-labs/flux-2-pro";
-  }
+  return MODEL;
 }
 
 function shouldEvaluateViewOnFirstPass(viewType) {
@@ -82,9 +65,9 @@ function shouldRepairFailedView(failedView) {
     );
   }
 
-if (failedView.type === IMAGE_TYPES.BACK) {
-  return true;
-}
+  if (failedView.type === IMAGE_TYPES.BACK) {
+    return true;
+  }
 
   return false;
 }
@@ -98,7 +81,8 @@ function normalizeReferenceImage(image) {
   if (!image || typeof image !== "string") return null;
 
   if (image.startsWith("data:image/")) return image;
-  if (image.startsWith("http://") || image.startsWith("https://")) return image;
+  if (image.startsWith("http://") || image.startsWith("https://"))
+    return image;
 
   return null;
 }
@@ -152,7 +136,7 @@ async function runReplicateWithBackoff(fn, maxRetries = 2) {
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       if (attempt > 0) {
-        await sleep(10000); // 10 sec cooldown before retry
+        await sleep(10000);
       }
       return await fn();
     } catch (err) {
