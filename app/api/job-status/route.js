@@ -1,3 +1,10 @@
+import { createClient } from "@supabase/supabase-js";
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY
+);
+
 export async function GET(req) {
   try {
     const { searchParams } = new URL(req.url);
@@ -33,12 +40,14 @@ export async function GET(req) {
       });
     }
 
-    return Response.json({
-      success: true,
-      status: data.status,
-      result: data.result,
-      error: data.error,
-    });
+return Response.json({
+  success: true,
+  status: data.status,
+  progress: data.progress || 0,
+  step: data.step || "pending",
+  result: data.result,
+  error: data.error,
+});
 
   } catch (err) {
     console.error("Job-status crash:", err);
