@@ -2443,6 +2443,294 @@ return {
 };
 }
 
+async function runCharacterPackPipeline({
+  characterId,
+  masterImage,
+  userId,
+  negativePrompt,
+}) {
+  const normalizedMaster = normalizeReferenceImage(masterImage);
+  if (!normalizedMaster) throw new Error("Invalid or missing master image");
+
+  const characterMemory = await loadCharacterMemory(characterId, userId);
+  const uploadedAnchorRefs = await loadUploadedReferenceUrls(characterId, userId);
+
+  const anchorRefs = getAnchorRefs(characterMemory);
+  const allAnchorRefs = Array.from(new Set([...anchorRefs, ...uploadedAnchorRefs])).filter(Boolean);
+
+  const dnaIdentityBlock = buildDnaIdentityBlock(characterMemory?.dna_profile || {});
+  const lockedTraitsBlock = buildLockedTraitsBlock(characterMemory?.locked_traits || {});
+
+  await deleteExistingPackImages(characterId, userId);
+
+  const viewOrder = IMAGE_ORDER
+    ? Object.keys(IMAGE_ORDER).sort((a, b) => IMAGE_ORDER[a] - IMAGE_ORDER[b])
+    : [IMAGE_TYPES.FRONT, IMAGE_TYPES.LEFT, IMAGE_TYPES.RIGHT, IMAGE_TYPES.BACK, IMAGE_TYPES.CLOSEUP];
+
+  const results = [];
+  const acceptedViewMap = {};
+  let frontImageUrl = null;
+  let stopEarly = false;
+
+  // ── PASS 1: Generate all views ──
+  for (const viewType of viewOrder) {
+    if (stopEarly) break;
+    if (!shouldEvaluateViewOnFirstPass(viewType)) continue;
+
+    const size = viewType === IMAGE_TYPES.CLOSEUP ? "1024x1024" : "1024x1536";
+    const basePrompt = getViewPrompt(viewType);
+
+    const referenceSelection = buildReferenceSet({
+      viewType,
+      masterImage: normalizedMaster,
+      acceptedViewMap,
+      anchorRefs: allAnchorRefs,
+    });
+
+    const currentRefs = referenceSelection.refs;
+    const rankedCandidates = referenceSelection.rankedCandidates;
+
+    let viewResult = null;
+    let lastError = null;
+    let lastScore = null;
+    const maxAttempts = 3;
+
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      try {
+        const generated = await runSingleGeneration({
+          prompt: basePrompt,
+          refs: currentRefs,
+          size,
+          negativePrompt,
+          strictIdentity: true,
+          userId,
+          characterId,
+          viewType,
+          attempt,
+          failureType: lastScore?.failureType || "none",
+          rankedCandidates,
+          selectedRefs: currentRefs,
+          acceptedViewMap,
+          dnaIdentityBlock,
+          lockedTraitsBlock,
+        });
+
+        const validation = validateGeneratedView({
+          imageUrl: generated.imageUrl,
+          viewType,
+        });
+
+        if (!validation.ok) throw new Error(`Validation failed: ${validation.reason}`);
+
+        const score = await scoreGeneratedView({
+          imageUrl: generated.tempUrl || generated.imageUrl,
+          masterImage: normalizedMaster,
+          frontImageUrl,
+          viewType,
+          attempt,
+          referenceFusion: generated.referenceFusion,
+        });
+
+        lastScore = score;
+
+        if (!score.accepted) throw new Error(score.reason || `Score rejected for ${viewType}`);
+
+        viewResult = {
+          type: viewType,
+          url: generated.tempUrl,
+          evalUrl: generated.tempUrl,
+          sort_order: IMAGE_ORDER?.[viewType] ?? 0,
+          accepted: true,
+          attemptsUsed: attempt + 1,
+          validationReason: validation.reason,
+          identityScore: score.identityScore,
+          shotScore: score.shotScore,
+          compositionScore: score.compositionScore,
+          qualityScore: score.qualityScore,
+          finalScore: score.finalScore,
+          multiplePeople: score.multiplePeople,
+          wrongShot: score.wrongShot,
+          faceNotVisible: score.faceNotVisible,
+          identityDrift: score.identityDrift,
+          lowQuality: score.lowQuality,
+          hairMismatch: score.hairMismatch,
+          failureType: score.failureType,
+          scoreReason: score.reason,
+          generationAttempt: attempt,
+          referenceCount: generated.referenceCount,
+          referencesUsed: generated.referencesUsed,
+          referenceFusion: generated.referenceFusion,
+          thresholds: score.thresholds,
+          thresholdFailureReasons: score.thresholdFailureReasons,
+          selectedReferenceTypes: rankedCandidates
+            .filter((item) => currentRefs.includes(item.url))
+            .map((item) => item.type),
+        };
+
+        break;
+      } catch (err) {
+        lastError = err;
+        if (shouldStopPackEarly(err)) {
+          stopEarly = true;
+          break;
+        }
+      }
+    }
+
+    if (!viewResult) {
+      viewResult = {
+        type: viewType,
+        url: null,
+        evalUrl: null,
+        sort_order: IMAGE_ORDER?.[viewType] ?? 0,
+        accepted: false,
+        attemptsUsed: maxAttempts,
+        failureType: lastScore?.failureType || "none",
+        scoreReason: lastError?.message || "all_attempts_failed",
+      };
+    }
+
+    results.push(viewResult);
+
+    if (viewResult.accepted) {
+      acceptedViewMap[viewType] = viewResult;
+      if (viewType === IMAGE_TYPES.FRONT) {
+        frontImageUrl = viewResult.evalUrl || viewResult.url;
+      }
+    }
+  }
+
+  // ── PASS 2: Repair failed views ──
+  const { results: repairedResults, frontImageUrl: updatedFrontImageUrl } =
+    await repairFailedViews({
+      results,
+      normalizedMaster,
+      acceptedViewMap,
+      negativePrompt,
+      userId,
+      characterId,
+      frontImageUrl,
+      anchorRefs: allAnchorRefs,
+      dnaIdentityBlock,
+      lockedTraitsBlock,
+    });
+
+  frontImageUrl = updatedFrontImageUrl;
+
+  // Rebuild accepted map after repairs
+  const finalPackMap = buildPackMap(repairedResults);
+
+  // ── PASS 3: Pack cohesion check ──
+  let cohesionResult = null;
+  const allViewsAccepted = [
+    IMAGE_TYPES.FRONT,
+    IMAGE_TYPES.LEFT,
+    IMAGE_TYPES.RIGHT,
+    IMAGE_TYPES.BACK,
+    IMAGE_TYPES.CLOSEUP,
+  ].every((v) => finalPackMap[v]?.url);
+
+  if (allViewsAccepted) {
+    try {
+      cohesionResult = await evaluatePackCohesion({
+        masterImage: normalizedMaster,
+        packMap: finalPackMap,
+      });
+    } catch (err) {
+      cohesionResult = { accepted: false, reason: err.message };
+    }
+  }
+
+  // ── Save permanent images ──
+  const savedResults = [];
+  for (const item of repairedResults) {
+    if (!item.accepted || !item.url) {
+      savedResults.push(item);
+      continue;
+    }
+    try {
+      const permanentUrl = await savePermanentImage({
+        imageUrl: item.url,
+        userId,
+        characterId,
+        viewType: item.type,
+      });
+      savedResults.push({ ...item, url: permanentUrl || item.url });
+    } catch {
+      savedResults.push(item);
+    }
+  }
+
+  // ── Save to DB ──
+  const dbRows = savedResults
+    .filter((r) => r.accepted && r.url)
+    .map((r) => ({
+      character_id: characterId,
+      user_id: userId,
+      image_url: r.url,
+      image_type: "pack",
+      view_type: r.type,
+      sort_order: r.sort_order ?? 0,
+      metadata: {
+        finalScore: r.finalScore,
+        identityScore: r.identityScore,
+        shotScore: r.shotScore,
+        compositionScore: r.compositionScore,
+        qualityScore: r.qualityScore,
+        failureType: r.failureType,
+        attemptsUsed: r.attemptsUsed,
+      },
+    }));
+
+  if (dbRows.length) {
+    const { error: insertError } = await supabase
+      .from("character_images")
+      .insert(dbRows);
+    if (insertError) throw new Error(insertError.message);
+  }
+
+  // ── Extract DNA if pack is complete ──
+  let dnaProfile = null;
+  const finalMapForDna = buildPackMap(savedResults);
+  const allSaved = [
+    IMAGE_TYPES.FRONT,
+    IMAGE_TYPES.LEFT,
+    IMAGE_TYPES.RIGHT,
+    IMAGE_TYPES.BACK,
+    IMAGE_TYPES.CLOSEUP,
+  ].every((v) => finalMapForDna[v]?.url);
+
+  if (allSaved) {
+    try {
+      dnaProfile = await extractCharacterDNA({
+        masterImage: normalizedMaster,
+        packMap: finalMapForDna,
+      });
+
+      await supabase
+        .from("characters")
+        .update({
+          dna_profile: dnaProfile,
+          dna_confidence: dnaProfile.dnaConfidence,
+          anchor_views: buildAnchorViewSummary(savedResults),
+        })
+        .eq("id", characterId)
+        .eq("user_id", userId);
+    } catch {
+      // DNA extraction failure is non-fatal
+    }
+  }
+
+  return {
+    success: true,
+    characterId,
+    views: savedResults,
+    cohesion: cohesionResult,
+    dnaProfile,
+    anchorViews: buildAnchorViewSummary(savedResults),
+  };
+}
+
 async function scoreGeneratedView({
   imageUrl,
   masterImage,
