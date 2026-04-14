@@ -1,12 +1,48 @@
 export async function GET(req) {
-  const { searchParams } = new URL(req.url);
-  const jobId = searchParams.get("id");
+  try {
+    const { searchParams } = new URL(req.url);
+    const jobId = searchParams.get("id");
 
-  const { data } = await supabase
-    .from("jobs")
-    .select("*")
-    .eq("id", jobId)
-    .single();
+    if (!jobId) {
+      return Response.json(
+        { success: false, error: "Missing jobId" },
+        { status: 400 }
+      );
+    }
 
-  return Response.json(data);
+    const { data, error } = await supabase
+      .from("jobs")
+      .select("*")
+      .eq("id", jobId)
+      .single();
+
+    if (error) {
+      console.error("Job fetch error:", error);
+      return Response.json(
+        { success: false, error: error.message },
+        { status: 500 }
+      );
+    }
+
+    if (!data) {
+      return Response.json(
+        { success: false, error: "Job not found" },
+        { status: 404 }
+      );
+    }
+
+    return Response.json({
+      success: true,
+      status: data.status,
+      result: data.result,
+      error: data.error,
+    });
+
+  } catch (err) {
+    console.error("Job status crash:", err);
+    return Response.json(
+      { success: false, error: err.message },
+      { status: 500 }
+    );
+  }
 }
