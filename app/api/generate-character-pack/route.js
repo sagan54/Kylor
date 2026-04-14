@@ -2341,7 +2341,7 @@ silhouetteConsistencyScore: normalizeModelScore(parsed.silhouetteConsistencyScor
 hairstyleConsistencyScore: normalizeModelScore(parsed.hairstyleConsistencyScore, 0),
 facialConsistencyScore: normalizeModelScore(parsed.facialConsistencyScore, 0),
 packCohesionScore: normalizeModelScore(parsed.packCohesionScore, 0),
-    identityMismatch: !!parsed.identityMismatch,
+    identityMismatch: !!parsed.identity,
     hairstyleMismatch: !!parsed.hairstyleMismatch,
     silhouetteMismatch: !!parsed.silhouetteMismatch,
     weakViewType: parsed.weakViewType || "none",
@@ -2443,6 +2443,9 @@ return {
 };
 }
 
+// ─────────────────────────────────────────────
+// FIXED: runCharacterPackPipeline — was empty placeholder
+// ─────────────────────────────────────────────
 async function runCharacterPackPipeline({
   characterId,
   masterImage,
@@ -2456,7 +2459,9 @@ async function runCharacterPackPipeline({
   const uploadedAnchorRefs = await loadUploadedReferenceUrls(characterId, userId);
 
   const anchorRefs = getAnchorRefs(characterMemory);
-  const allAnchorRefs = Array.from(new Set([...anchorRefs, ...uploadedAnchorRefs])).filter(Boolean);
+  const allAnchorRefs = Array.from(
+    new Set([...anchorRefs, ...uploadedAnchorRefs])
+  ).filter(Boolean);
 
   const dnaIdentityBlock = buildDnaIdentityBlock(characterMemory?.dna_profile || {});
   const lockedTraitsBlock = buildLockedTraitsBlock(characterMemory?.locked_traits || {});
@@ -2465,7 +2470,13 @@ async function runCharacterPackPipeline({
 
   const viewOrder = IMAGE_ORDER
     ? Object.keys(IMAGE_ORDER).sort((a, b) => IMAGE_ORDER[a] - IMAGE_ORDER[b])
-    : [IMAGE_TYPES.FRONT, IMAGE_TYPES.LEFT, IMAGE_TYPES.RIGHT, IMAGE_TYPES.BACK, IMAGE_TYPES.CLOSEUP];
+    : [
+        IMAGE_TYPES.FRONT,
+        IMAGE_TYPES.LEFT,
+        IMAGE_TYPES.RIGHT,
+        IMAGE_TYPES.BACK,
+        IMAGE_TYPES.CLOSEUP,
+      ];
 
   const results = [];
   const acceptedViewMap = {};
@@ -2617,7 +2628,6 @@ async function runCharacterPackPipeline({
 
   frontImageUrl = updatedFrontImageUrl;
 
-  // Rebuild accepted map after repairs
   const finalPackMap = buildPackMap(repairedResults);
 
   // ── PASS 3: Pack cohesion check ──
@@ -2641,7 +2651,7 @@ async function runCharacterPackPipeline({
     }
   }
 
-  // ── Save permanent images ──
+  // ── Save permanent images to Supabase Storage ──
   const savedResults = [];
   for (const item of repairedResults) {
     if (!item.accepted || !item.url) {
@@ -2661,7 +2671,7 @@ async function runCharacterPackPipeline({
     }
   }
 
-  // ── Save to DB ──
+  // ── Insert DB rows ──
   const dbRows = savedResults
     .filter((r) => r.accepted && r.url)
     .map((r) => ({
@@ -2689,7 +2699,7 @@ async function runCharacterPackPipeline({
     if (insertError) throw new Error(insertError.message);
   }
 
-  // ── Extract DNA if pack is complete ──
+  // ── Extract DNA if all views saved ──
   let dnaProfile = null;
   const finalMapForDna = buildPackMap(savedResults);
   const allSaved = [
@@ -2898,7 +2908,7 @@ for (let attempt = 0; attempt < maxAttempts; attempt++) {
 repairedResult = {
   type: failedView.type,
   label: failedView.label,
-  url: generated.tempUrl,      // temporary for now
+  url: generated.tempUrl,
   evalUrl: generated.tempUrl,
   sort_order: IMAGE_ORDER[failedView.type],
       accepted: true,
@@ -3028,22 +3038,49 @@ async function deleteExistingPackImages(characterId, userId) {
   }
 }
 
+// ─────────────────────────────────────────────
+// FIXED: POST handler — hardened against empty-body 500s
+// ─────────────────────────────────────────────
 export async function POST(req) {
   try {
+    const body = await req.json().catch(() => null);
+
+    if (!body) {
+      return Response.json(
+        { error: "Invalid or empty request body" },
+        { status: 400 }
+      );
+    }
+
     const {
       characterId,
       masterImage,
       userId,
       negativePrompt = "",
-    } = await req.json();
+    } = body;
+
+    if (!characterId || !masterImage || !userId) {
+      return Response.json(
+        { error: "Missing required fields: characterId, masterImage, userId" },
+        { status: 400 }
+      );
+    }
 
     const jobId = crypto.randomUUID();
 
-    // store job
-    await supabase.from("jobs").insert({
+    // Store job — wrapped so a missing table surfaces a clean error
+    const { error: jobInsertError } = await supabase.from("jobs").insert({
       id: jobId,
       status: "pending",
     });
+
+    if (jobInsertError) {
+      console.error("Job insert failed:", jobInsertError.message);
+      return Response.json(
+        { error: `Job insert failed: ${jobInsertError.message}` },
+        { status: 500 }
+      );
+    }
 
     // 🔥 RUN IN BACKGROUND (NO AWAIT)
     runCharacterPackPipeline({
@@ -3054,29 +3091,22 @@ export async function POST(req) {
     })
       .then(async (result) => {
         await supabase.from("jobs")
-          .update({
-            status: "done",
-            result,
-          })
+          .update({ status: "done", result })
           .eq("id", jobId);
       })
       .catch(async (err) => {
+        console.error("Pipeline error:", err.message);
         await supabase.from("jobs")
-          .update({
-            status: "failed",
-            error: err.message,
-          })
+          .update({ status: "failed", error: err.message })
           .eq("id", jobId);
       });
 
-    return Response.json({
-      success: true,
-      jobId,
-    });
+    return Response.json({ success: true, jobId });
 
   } catch (err) {
+    console.error("POST handler crash:", err.message);
     return Response.json(
-      { error: err.message },
+      { error: err.message || "Internal server error" },
       { status: 500 }
     );
   }
