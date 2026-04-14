@@ -14,10 +14,10 @@ export async function GET(req) {
       .from("jobs")
       .select("*")
       .eq("id", jobId)
-      .single();
+      .maybeSingle(); // ✅ FIXED (IMPORTANT)
 
     if (error) {
-      console.error("Job fetch error:", error);
+      console.error("Supabase error:", error);
       return Response.json(
         { success: false, error: error.message },
         { status: 500 }
@@ -25,10 +25,12 @@ export async function GET(req) {
     }
 
     if (!data) {
-      return Response.json(
-        { success: false, error: "Job not found" },
-        { status: 404 }
-      );
+      return Response.json({
+        success: true,
+        status: "pending", // 👈 important fallback
+        result: null,
+        error: null,
+      });
     }
 
     return Response.json({
@@ -39,7 +41,7 @@ export async function GET(req) {
     });
 
   } catch (err) {
-    console.error("Job status crash:", err);
+    console.error("Job-status crash:", err);
     return Response.json(
       { success: false, error: err.message },
       { status: 500 }

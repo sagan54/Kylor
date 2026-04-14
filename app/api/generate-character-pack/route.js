@@ -2447,6 +2447,7 @@ return {
 // FIXED: runCharacterPackPipeline — was empty placeholder
 // ─────────────────────────────────────────────
 async function runCharacterPackPipeline({
+  jobId, // ✅ ADD THIS
   characterId,
   masterImage,
   userId,
@@ -2454,7 +2455,13 @@ async function runCharacterPackPipeline({
 }) {
   const normalizedMaster = normalizeReferenceImage(masterImage);
   if (!normalizedMaster) throw new Error("Invalid or missing master image");
-
+await supabase.from("jobs")
+  .update({
+    status: "processing",
+    progress: 5,
+    step: "Initializing generation"
+  })
+  .eq("id", jobId);
   const characterMemory = await loadCharacterMemory(characterId, userId);
   const uploadedAnchorRefs = await loadUploadedReferenceUrls(characterId, userId);
 
@@ -2485,6 +2492,20 @@ async function runCharacterPackPipeline({
 
   // ── PASS 1: Generate all views ──
   for (const viewType of viewOrder) {
+    const progressMap = {
+  front: 20,
+  left: 35,
+  right: 50,
+  back: 65,
+  closeup: 80,
+};
+
+await supabase.from("jobs")
+  .update({
+    progress: progressMap[viewType] || 10,
+    step: `Generating ${viewType.toUpperCase()} view`
+  })
+  .eq("id", jobId);
     if (stopEarly) break;
     if (!shouldEvaluateViewOnFirstPass(viewType)) continue;
 
@@ -2611,6 +2632,13 @@ async function runCharacterPackPipeline({
     }
   }
 
+await supabase.from("jobs")
+  .update({
+    progress: 85,
+    step: "Repairing failed views"
+  })
+  .eq("id", jobId);
+
   // ── PASS 2: Repair failed views ──
   const { results: repairedResults, frontImageUrl: updatedFrontImageUrl } =
     await repairFailedViews({
@@ -2698,6 +2726,13 @@ async function runCharacterPackPipeline({
       .insert(dbRows);
     if (insertError) throw new Error(insertError.message);
   }
+
+await supabase.from("jobs")
+  .update({
+    progress: 95,
+    step: "Extracting character DNA"
+  })
+  .eq("id", jobId);
 
   // ── Extract DNA if all views saved ──
   let dnaProfile = null;
@@ -3083,15 +3118,21 @@ export async function POST(req) {
     }
 
     // 🔥 RUN IN BACKGROUND (NO AWAIT)
-    runCharacterPackPipeline({
-      characterId,
-      masterImage,
-      userId,
-      negativePrompt,
-    })
+runCharacterPackPipeline({
+  jobId, // ✅ ADD THIS
+  characterId,
+  masterImage,
+  userId,
+  negativePrompt,
+})
       .then(async (result) => {
-        await supabase.from("jobs")
-          .update({ status: "done", result })
+await supabase.from("jobs")
+  .update({
+    status: "done",
+    progress: 100,
+    step: "Completed",
+    result,
+  })
           .eq("id", jobId);
       })
       .catch(async (err) => {
