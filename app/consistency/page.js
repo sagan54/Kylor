@@ -1981,168 +1981,155 @@ await supabase
       setSavingMaster(false);
     }
   }
+
+async function pollCharacterPack(jobId, activeChar, masterRef) {
+  for (let i = 0; i < 100; i++) {
+    const res = await fetch(`/api/job-status?id=${jobId}`);
+    const data = await res.json();
+
+    if (data.status === "done") {
+      console.log("✅ PACK DONE");
+
+      await refreshCharacterPackState(activeChar, masterRef);
+
+      setGenerating(false);
+      generatingRef.current = false;
+      return;
+    }
+
+    if (data.status === "failed") {
+      console.error("❌ PACK FAILED:", data.error);
+
+      setGenerating(false);
+      generatingRef.current = false;
+      return;
+    }
+
+    await new Promise((r) => setTimeout(r, 3000));
+  }
+
+  // fallback timeout
+  setGenerating(false);
+  generatingRef.current = false;
+}
+
 async function handleGenerateCharacterPack() {
   if (!activeChar || generating) return;
 
-const firstPermanentRef =
-  (activeChar?.refEntries || []).find(
-    (entry) =>
-      typeof entry?.previewUrl === "string" &&
-      entry.previewUrl &&
-      !entry.previewUrl.startsWith("blob:")
-  )?.previewUrl || null;
+  const firstPermanentRef =
+    (activeChar?.refEntries || []).find(
+      (entry) =>
+        typeof entry?.previewUrl === "string" &&
+        entry.previewUrl &&
+        !entry.previewUrl.startsWith("blob:")
+    )?.previewUrl || null;
 
-let masterRef =
-  activeChar?.masterImage ||
-  activeChar?.coverImage ||
-  firstPermanentRef ||
-  masterIdentityImage ||
-  getMasterImageForCharacter(activeChar);
+  let masterRef =
+    activeChar?.masterImage ||
+    activeChar?.coverImage ||
+    firstPermanentRef ||
+    masterIdentityImage ||
+    getMasterImageForCharacter(activeChar);
 
-if (typeof masterRef === "string" && masterRef.startsWith("blob:")) {
-  masterRef = null;
-}
+  if (typeof masterRef === "string" && masterRef.startsWith("blob:")) {
+    masterRef = null;
+  }
 
-if (!masterRef) {
-  alert("Please save the character first so the reference image gets uploaded.");
-  return;
-}
+  if (!masterRef) {
+    alert("Please save the character first so the reference image gets uploaded.");
+    return;
+  }
 
-console.log("PACK MASTER DEBUG", {
-  masterRef,
-  masterImage: activeChar?.masterImage,
-  coverImage: activeChar?.coverImage,
-  firstPermanentRef,
-  refEntries: activeChar?.refEntries,
-  masterIdentityImage,
-});
+  console.log("PACK MASTER DEBUG", {
+    masterRef,
+    masterImage: activeChar?.masterImage,
+    coverImage: activeChar?.coverImage,
+    firstPermanentRef,
+    refEntries: activeChar?.refEntries,
+    masterIdentityImage,
+  });
 
   generatingRef.current = true;
   setGenerating(true);
 
   try {
     const res = await fetch("/api/generate-character-pack", {
-  method: "POST",
-  headers: {
-    "Content-Type": "application/json",
-  },
-  body: JSON.stringify({
-    characterId: activeChar.id,
-    masterImage: masterRef,
-    userId,
-    negativePrompt:
-      "different person, identity drift, altered face shape, altered hairstyle, altered skin tone, generic face, beauty filter, CGI, 3D render, multiple people, collage, split screen, text, watermark",
-  }),
-});
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        characterId: activeChar.id,
+        masterImage: masterRef,
+        userId,
+        negativePrompt:
+          "different person, identity drift, altered face shape, altered hairstyle, altered skin tone, generic face, beauty filter, CGI, 3D render, multiple people, collage, split screen, text, watermark",
+      }),
+    });
 
-const raw = await res.text();
+    const raw = await res.text();
 
-let data;
-try {
-  data = JSON.parse(raw);
-} catch {
-  console.error("PACK API NON-JSON RESPONSE:", raw);
-
-  try {
-  const mapped = await refreshCharacterPackState(activeChar, masterRef);
-  if ((mapped?.generatedImages || []).length > 0) {
-    return;
-  }
-} catch (refreshErr) {
-    console.error("Post-failure refresh also failed:", refreshErr);
-  }
-
-  return;
-}
-
-if (!res.ok || !data?.success) {
-  console.error("PACK GENERATION ERROR RESPONSE:", data);
-
- try {
-  const mapped = await refreshCharacterPackState(activeChar, masterRef);
-  if ((mapped?.generatedImages || []).length > 0) {
-    return;
-  }
-} catch (refreshErr) {
-    console.error("Refresh after failed pack response also failed:", refreshErr);
-  }
-
-  throw new Error(data?.error || "Character pack generation failed");
-}
-
-fetch("/api/process-character-dna", {
-  method: "POST",
-  headers: {
-    "Content-Type": "application/json",
-  },
-  body: JSON.stringify({
-    characterId: activeChar.id,
-    userId,
-  }),
-})
-  .then(async (dnaRes) => {
-    const dnaRaw = await dnaRes.text();
-
-    let dnaData = null;
+    let data;
     try {
-      dnaData = JSON.parse(dnaRaw);
+      data = JSON.parse(raw);
     } catch {
-      console.error("DNA API NON-JSON RESPONSE:", dnaRaw);
-      return;
+      console.error("PACK API NON-JSON RESPONSE:", raw);
+      return; // ❌ removed premature refresh
     }
 
-    if (!dnaRes.ok) {
-      console.error("DNA processing failed:", dnaData);
-      return;
+    if (!res.ok || !data?.success) {
+      console.error("PACK GENERATION ERROR RESPONSE:", data);
+      throw new Error(data?.error || "Character pack generation failed");
     }
 
-    console.log("DNA processing complete:", dnaData);
-  })
-  .catch((err) => {
-    console.error("Failed to trigger DNA processing:", err);
-  });
+    // ✅ NEW FLOW STARTS HERE
+    const jobId = data.jobId;
 
-const pack = Array.isArray(data?.pack) ? data.pack : [];
+    // 🔥 Start polling instead of using pack response
+    pollCharacterPack(jobId, activeChar, masterRef);
 
-const nextOutputs = pack
-  .filter((item) => item?.url)
-  .map((item) => ({
-    id: `${activeChar.id}-${item.type}`,
-    charId: activeChar.id,
-    prompt: "",
-    scene: PACK_VIEWS.find((v) => v.key === item.type)?.label || item.type,
-    url: item.url,
-    createdAt: new Date().toISOString(),
-  }));
+    // 🔥 DNA call can still run (optional)
+    fetch("/api/process-character-dna", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        characterId: activeChar.id,
+        userId,
+      }),
+    })
+      .then(async (dnaRes) => {
+        const dnaRaw = await dnaRes.text();
 
-setOutputs((prev) => [
-  ...prev.filter((o) => o.charId !== activeChar.id),
-  ...nextOutputs,
-]);
-
-setCharacters((prev) => {
-  const updated = prev.map((c) =>
-    c.id === activeChar.id
-      ? {
-          ...c,
-          masterImage: masterRef,
-          generatedImages: pack.map((item) => item.url).filter(Boolean),
-          generations: pack.filter((item) => item.url).length,
+        let dnaData = null;
+        try {
+          dnaData = JSON.parse(dnaRaw);
+        } catch {
+          console.error("DNA API NON-JSON RESPONSE:", dnaRaw);
+          return;
         }
-      : c
-  );
-  updateCharactersCache(updated);
-  return updated;
-});
 
-await refreshCharacterPackState(activeChar, masterRef);
+        if (!dnaRes.ok) {
+          console.error("DNA processing failed:", dnaData);
+          return;
+        }
+
+        console.log("DNA processing complete:", dnaData);
+      })
+      .catch((err) => {
+        console.error("Failed to trigger DNA processing:", err);
+      });
+
   } catch (err) {
     console.error("Character pack generation failed:", err);
     alert(err?.message || "Failed to generate character pack.");
-  } finally {
+    
     generatingRef.current = false;
     setGenerating(false);
   }
+
+  // ❌ finally block REMOVED (important)
 }
   async function generateOtherProfiles() {
     if (!activeChar || generatingMore) return;
