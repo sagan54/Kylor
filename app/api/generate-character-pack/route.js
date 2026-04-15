@@ -206,6 +206,18 @@ async function fileOutputToUrl(output) {
   return null;
 }
 
+function buildPhotoshootConsistencyBlock() {
+  return [
+    "Same exact studio photoshoot environment across all images.",
+    "Neutral soft studio background, no environment change.",
+    "Consistent soft diffused lighting with a fixed direction across all views.",
+    "No dramatic shadows, no harsh lighting changes.",
+    "Same camera settings and lens across all views.",
+    "Same color tone, same exposure, same white balance.",
+    "All images must look like they were taken in the same session.",
+  ].join(" ");
+}
+
 function buildShotInstruction(viewType) {
   switch (viewType) {
     case IMAGE_TYPES.FRONT:
@@ -214,9 +226,20 @@ function buildShotInstruction(viewType) {
         "Front-facing full body.",
         "Standing straight, neutral pose, relaxed arms.",
         "Face clearly visible and highly recognizable.",
+        
+       "Lighting direction must remain identical across all views.",
+       "Camera distance and framing must remain consistent across all views except for the required angle change.",
+       "The subject must wear the exact same outfit in all views, no variation.",
+        
         "Preserve exact facial identity.",
         "Full body visible from head to toe.",
         "Centered composition.",
+        "Highly realistic human skin with visible pores and natural texture. No artificial smoothing.",
+        "Ultra photorealistic DSLR photography, 50mm lens, shallow depth of field, natural soft lighting, no retouching, no studio beauty lighting.",
+        "No CGI, no 3D render, no digital painting, no synthetic skin appearance.",
+        "Consistent shadows and highlights across all views.",
+        
+        buildPhotoshootConsistencyBlock(),
       ].join(" ");
 
 case IMAGE_TYPES.LEFT:
@@ -225,6 +248,11 @@ case IMAGE_TYPES.LEFT:
     "Strict LEFT side profile only.",
     "The subject must face LEFT.",
     "The nose must point to the LEFT edge of the frame.",
+    
+    "Lighting direction must remain identical across all views.",
+    "Camera distance and framing must remain consistent across all views except for the required angle change.",
+    "The subject must wear the exact same outfit in all views, no variation.",
+    
     "The chest, hips, knees, and feet must also face LEFT.",
     "Only the LEFT side of the face is visible.",
     "The RIGHT side of the face must not be visible.",
@@ -239,6 +267,12 @@ case IMAGE_TYPES.LEFT:
     "Full body visible from head to toe.",
     "Standing straight, neutral pose, relaxed arms.",
     "Centered composition.",
+    "Highly realistic human skin with visible pores and natural texture. No artificial smoothing.",
+    "Ultra photorealistic DSLR photography, 50mm lens, shallow depth of field, natural soft lighting, no retouching, no studio beauty lighting.",
+    "No CGI, no 3D render, no digital painting, no synthetic skin appearance.",
+    "Consistent shadows and highlights across all views.",
+
+    buildPhotoshootConsistencyBlock(),
   ].join(" ");
 
 case IMAGE_TYPES.RIGHT:
@@ -247,6 +281,11 @@ case IMAGE_TYPES.RIGHT:
     "Strict RIGHT side profile only.",
     "The subject must face RIGHT.",
     "The nose must point to the RIGHT edge of the frame.",
+    
+    "Lighting direction must remain identical across all views.",
+    "Camera distance and framing must remain consistent across all views except for the required angle change.",
+    "The subject must wear the exact same outfit in all views, no variation.",
+    
     "The chest, hips, knees, and feet must also face RIGHT.",
     "Only the RIGHT side of the face is visible.",
     "The LEFT side of the face must not be visible.",
@@ -261,6 +300,12 @@ case IMAGE_TYPES.RIGHT:
     "Full body visible from head to toe.",
     "Standing straight, neutral pose, relaxed arms.",
     "Centered composition.",
+    "Highly realistic human skin with visible pores and natural texture. No artificial smoothing.",
+    "Ultra photorealistic DSLR photography, 50mm lens, shallow depth of field, natural soft lighting, no retouching, no studio beauty lighting.",
+    "No CGI, no 3D render, no digital painting, no synthetic skin appearance.",
+    "Consistent shadows and highlights across all views.",
+
+  buildPhotoshootConsistencyBlock(),
   ].join(" ");
 
     case IMAGE_TYPES.BACK:
@@ -270,8 +315,19 @@ case IMAGE_TYPES.RIGHT:
         "Facing away from camera.",
         "Full body visible from head to toe.",
         "Standing straight, neutral pose, relaxed arms.",
+        
+       "Lighting direction must remain identical across all views.",
+        "Camera distance and framing must remain consistent across all views except for the required angle change.",
+       "The subject must wear the exact same outfit in all views, no variation.",
+        
         "Only the viewing angle changes.",
         "Identity, body type, hairstyle, hair length, neck, shoulders, silhouette, and outfit remain the same person.",
+        "Highly realistic human skin with visible pores and natural texture. No artificial smoothing.",
+        "Ultra photorealistic DSLR photography, 50mm lens, shallow depth of field, natural soft lighting, no retouching, no studio beauty lighting.",
+        "No CGI, no 3D render, no digital painting, no synthetic skin appearance.",
+        "Consistent shadows and highlights across all views.",
+
+      buildPhotoshootConsistencyBlock(),
       ].join(" ");
 
 case IMAGE_TYPES.CLOSEUP:
@@ -280,21 +336,21 @@ case IMAGE_TYPES.CLOSEUP:
     "Tight close-up portrait.",
     "Face clearly visible and highly recognizable.",
     "Close-up must look unmistakably like the same person as the master identity and front image.",
+    
+    "Lighting direction must remain identical across all views.",
+    "Camera distance and framing must remain consistent across all views except for the required angle change.",
+    "The subject must wear the exact same outfit in all views, no variation.",
+   
     "Preserve exact face shape, cheek structure, jawline, chin, forehead, brow shape, eyebrow thickness, eyelids, eye shape, nose bridge, nose tip, lips, ears, hairline, hairstyle, skin tone, beard or moustache pattern, and natural facial asymmetry.",
-    "Natural real human skin texture.",
-    "Matte skin, not glossy.",
-    "Real pores and subtle natural skin texture.",
-"Skin must be clean, smooth, and healthy.",
-"No acne, no pimples, no skin spots, no blemishes.",
-"No artificial imperfections or added marks.",
-"Keep natural realism without introducing defects.",
-    "No skin smoothing, no beauty retouching, no airbrushed face, no cosmetic enhancement.",
-    "No glossy skin, no shiny forehead, no waxy skin, no plastic skin, no polished skin, no studio beauty look.",
-    "Realistic passport-photo-like facial rendering.",
-    "Natural realistic photography.",
-    "Skin must appear clean and healthy.",
-"No acne, no pimples, no facial blemishes.",
-"Preserve real texture but without added imperfections.",
+    "Natural human skin with visible pores and micro texture.",
+    "Clean skin without acne or pimples, but NOT overly smooth.",
+    "No beauty filter, no airbrushed or plastic skin.",
+    "Skin must look realistic, slightly imperfect but healthy.",
+    "Ultra photorealistic DSLR photography, 50mm lens, shallow depth of field, natural soft lighting, no retouching, no studio beauty lighting.",
+    "No CGI, no 3D render, no digital painting, no synthetic skin appearance.",
+    "Consistent shadows and highlights across all views.",
+
+  buildPhotoshootConsistencyBlock(),
   ].join(" ");
 
     default:
@@ -2511,7 +2567,7 @@ await supabase.from("jobs")
     let viewResult = null;
     let lastError = null;
     let lastScore = null;
-    const maxAttempts = 3;
+    const maxAttempts = 2;
 
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       try {

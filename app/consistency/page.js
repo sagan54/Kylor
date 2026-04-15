@@ -2063,7 +2063,7 @@ async function handleGenerateCharacterPack() {
         masterImage: masterRef,
         userId,
         negativePrompt:
-          "different person, identity drift, altered face shape, altered hairstyle, altered skin tone, generic face, beauty filter, CGI, 3D render, multiple people, collage, split screen, text, watermark",
+        "different person, identity drift, beauty filter, plastic skin, waxy skin, over-smoothed skin, airbrushed skin, glossy skin, CGI, 3D render"
       }),
     });
 
