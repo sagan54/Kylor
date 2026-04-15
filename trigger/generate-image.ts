@@ -216,6 +216,21 @@ function buildIdentityVisibilityBlock(sceneText?: string | null) {
   return lines.join("\n");
 }
 
+function mapFalQueueStage(status: unknown) {
+  const queueStatus = String((status as any)?.status || "").toUpperCase();
+
+  switch (queueStatus) {
+    case "IN_QUEUE":
+      return "queued_at_fal";
+    case "IN_PROGRESS":
+      return "generating_image";
+    case "COMPLETED":
+      return "fal_completed";
+    default:
+      return "generating_image";
+  }
+}
+
 async function updateGenerationRow(
   generationId: string,
   patch: Record<string, any>,
@@ -479,11 +494,13 @@ async function runSeedreamCharacterGeneration({
   referenceUrls,
   size,
   seed,
+  onQueueUpdate,
 }: {
   prompt: string;
   referenceUrls: string[];
   size?: string | null;
   seed?: number | null;
+  onQueueUpdate?: (status: unknown) => void;
 }) {
   const cleanedRefs = (referenceUrls || [])
     .map((url) => normalizeImageUrl(url))
@@ -503,6 +520,8 @@ async function runSeedreamCharacterGeneration({
       sync_mode: true,
     },
     logs: true,
+    startTimeout: 30,
+    onQueueUpdate,
   })) as any;
 
   const image = extractImageOutput(result);
@@ -517,17 +536,20 @@ async function runCharacterModel({
   referenceUrls,
   size,
   seed,
+  onQueueUpdate,
 }: {
   prompt: string;
   referenceUrls: string[];
   size?: string | null;
   seed?: number | null;
+  onQueueUpdate?: (status: unknown) => void;
 }) {
   return runSeedreamCharacterGeneration({
     prompt,
     referenceUrls,
     size,
     seed,
+    onQueueUpdate,
   });
 }
 
@@ -621,11 +643,54 @@ export const generateImageTask = task({
         referenceCount: referenceUrls.length,
       });
 
+      let lastQueueStatus = "";
+      let lastQueuePosition: number | null = null;
+      let lastQueueUpdateAt = 0;
+      const handleFalQueueUpdate = (status: unknown) => {
+        const queueStatus = String((status as any)?.status || "").toUpperCase();
+        const queuePosition =
+          typeof (status as any)?.queue_position === "number"
+            ? (status as any).queue_position
+            : null;
+        const queueRequestId = String((status as any)?.request_id || "").trim() || null;
+        const nowMs = Date.now();
+        const shouldSkip =
+          queueStatus === lastQueueStatus &&
+          queuePosition === lastQueuePosition &&
+          nowMs - lastQueueUpdateAt < 10000;
+
+        if (shouldSkip) return;
+
+        lastQueueStatus = queueStatus;
+        lastQueuePosition = queuePosition;
+        lastQueueUpdateAt = nowMs;
+
+        void persistGenerationRow({
+          metadata: {
+            lastProgressAt: new Date(nowMs).toISOString(),
+            progressStage: mapFalQueueStage(status),
+            falQueueStatus: queueStatus || null,
+            falQueuePosition: queuePosition,
+            falRequestId: queueRequestId,
+          },
+        }).catch((queueUpdateError: any) => {
+          console.warn("generate-image: failed to persist FAL queue update", {
+            generationId,
+            queueStatus,
+            queuePosition,
+            error:
+              queueUpdateError?.message ||
+              "Unknown FAL queue update persistence error",
+          });
+        });
+      };
+
       const generatedRemote = await runCharacterModel({
         prompt: seedreamPrompt,
         referenceUrls,
         size: size || ratio,
         seed,
+        onQueueUpdate: handleFalQueueUpdate,
       });
 
       const outputContentType = generatedRemote?.content_type || "image/png";

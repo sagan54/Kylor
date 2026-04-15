@@ -374,15 +374,19 @@ export async function GET(req) {
 
     const metadata = data?.metadata || {};
     const state = String(metadata?.state || "").toLowerCase() || "processing";
+    const provider = String(metadata?.provider || "").toLowerCase();
     const hasImages = Array.isArray(data?.images) && data.images.length > 0;
     const createdAtMs = getTimeMs(data?.created_at);
     const startedAtMs = getTimeMs(metadata?.startedAt);
+    const lastProgressAtMs = getTimeMs(metadata?.lastProgressAt);
     const completedAtMs = getTimeMs(metadata?.completedAt);
     const now = Date.now();
     const ageMs = createdAtMs ? now - createdAtMs : null;
     const runtimeMs =
       (startedAtMs ? now - startedAtMs : null) ??
       (createdAtMs ? now - createdAtMs : null);
+    const progressAgeMs =
+      (lastProgressAtMs ? now - lastProgressAtMs : null) ?? runtimeMs;
     const errorMessage = metadata?.error || "";
 
     if (hasImages || completedAtMs) {
@@ -447,6 +451,37 @@ export async function GET(req) {
         error:
           "Generation did not start in time. The background worker may be offline. Please try again.",
         errorType: "generation_failure",
+        generation: buildGenerationPayload(data),
+      });
+    }
+
+    if (
+      provider === "fal" &&
+      progressAgeMs !== null &&
+      progressAgeMs > STALE_JOB_MS
+    ) {
+      console.warn("generate-image-status: FAL generation stalled", {
+        generationId: data.id,
+        state,
+        provider,
+        runtimeMs,
+        progressAgeMs,
+        progressStage: metadata?.progressStage || null,
+        falQueueStatus: metadata?.falQueueStatus || null,
+        falQueuePosition:
+          typeof metadata?.falQueuePosition === "number"
+            ? metadata.falQueuePosition
+            : null,
+      });
+
+      return Response.json({
+        success: false,
+        status: "failed",
+        error:
+          metadata?.falQueueStatus === "IN_QUEUE"
+            ? "Generation is waiting too long in the image queue. Please try again."
+            : "Generation is taking longer than expected and appears stalled. Please try again.",
+        errorType: "generation_stalled",
         generation: buildGenerationPayload(data),
       });
     }
