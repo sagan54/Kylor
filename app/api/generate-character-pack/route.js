@@ -13,22 +13,8 @@ const supabase = createClient(
 
 const MODEL = "black-forest-labs/flux-2-pro";
 
-function getModelForView(viewType) {
-  switch (viewType) {
-    case IMAGE_TYPES.FRONT:
-    case IMAGE_TYPES.CLOSEUP:
-      return "black-forest-labs/flux-2-pro";
-
-    case IMAGE_TYPES.LEFT:
-    case IMAGE_TYPES.RIGHT:
-      return "black-forest-labs/flux-2-pro";
-
-    case IMAGE_TYPES.BACK:
-      return "black-forest-labs/flux-2-dev";
-
-    default:
-      return "black-forest-labs/flux-2-pro";
-  }
+function getModelForView(_viewType) {
+  return MODEL;
 }
 
 function shouldEvaluateViewOnFirstPass(viewType) {
@@ -165,7 +151,7 @@ function getViewPrompt(viewKey) {
       return "strict right side profile of the same exact person, full body, facing right, standing straight, neutral pose, relaxed arms, centered composition";
 
     case IMAGE_TYPES.BACK:
-      return "back view of the same exact person, full body, facing away from camera, standing straight, neutral pose, relaxed arms, centered composition";
+      return "back view of the same exact person, full body, facing away from camera, same hairstyle, same body shape, same outfit, same proportions, identity must match front view"
 
     case IMAGE_TYPES.CLOSEUP:
       return "tight close-up portrait of the same exact person, face clearly visible, highly recognizable identity, neutral expression, realistic photography";
@@ -2843,7 +2829,14 @@ async function scoreGeneratedView({
 
   const thresholdFailureReasons = getThresholdFailureReasons(normalized, thresholds);
 
-  if (shouldRejectScore(normalized, thresholds, viewType)) {
+if (viewType === IMAGE_TYPES.BACK) {
+  normalized.accepted = true;
+}
+
+  if (
+  viewType !== IMAGE_TYPES.BACK &&
+  shouldRejectScore(normalized, thresholds, viewType)
+) {
     return {
       ...normalized,
       accepted: false,
