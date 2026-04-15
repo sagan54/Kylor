@@ -73,20 +73,147 @@ function mapSizeToSeedreamImageSize(size?: string | null) {
   switch (String(size || "").toLowerCase()) {
     case "square":
     case "1:1":
+    case "1024x1024":
       return "square_hd";
     case "portrait":
     case "4:5":
     case "3:4":
+    case "1024x1536":
       return "portrait_4_3";
     case "9:16":
       return "portrait_16_9";
     case "16:9":
+    case "1536x1024":
       return "landscape_16_9";
     case "4:3":
       return "landscape_4_3";
     default:
       return "landscape_16_9";
   }
+}
+
+function inferSceneProfile(sceneText?: string | null, ratio?: string | null) {
+  const haystack = `${String(sceneText || "")} ${String(ratio || "")}`.toLowerCase();
+  const has = (pattern: RegExp) => pattern.test(haystack);
+
+  const action = has(
+    /(action|fight|fighting|boxing|boxer|ring|combat|battle|sparring|mid-punch|punch|kick|attack|impact|opponent|motion|running|sprinting|chase)/
+  );
+  const fullBody = has(
+    /(full body|full-body|head to toe|head-to-toe|from head to toe|entire body)/
+  );
+  const closeUp = has(
+    /(close up|close-up|tight shot|headshot|portrait crop|extreme close-up)/
+  );
+  const mediumShot = has(/(medium shot|mid shot|mid-shot|waist up|torso up)/);
+  const wide = has(
+    /(wide shot|wide-angle|wide angle|establishing shot|environment shot|arena|stadium|crowd|audience|inside a ring|16:9|21:9)/
+  );
+  const multiSubject = has(
+    /(opponent|another person|another male fighter|another fighter|second person|two people|duo|group|crowd|audience|versus|vs\.?|faceoff)/
+  );
+  const dynamicAngle = has(
+    /(dynamic angle|low angle|high angle|dramatic angle|tracking shot|cinematic angle|over the shoulder|over-the-shoulder)/
+  );
+
+  return {
+    action,
+    closeUp,
+    mediumShot,
+    fullBody,
+    wide: wide || (action && !closeUp && !mediumShot && !fullBody),
+    multiSubject,
+    dynamicAngle: dynamicAngle || action,
+  };
+}
+
+function buildReferenceUsageBlock(sceneText?: string | null) {
+  const scene = String(sceneText || "").trim();
+
+  return [
+    "REFERENCE USAGE (HIGH PRIORITY):",
+    "Use the provided reference images only to preserve the primary character's facial identity and recognizable likeness.",
+    "Do not copy the reference background, blank wall, plain studio look, t-shirt, pose, framing, camera angle, or expression unless the scene explicitly asks for them.",
+    "Replace the reference clothing, environment, action, and composition with the requested scene details.",
+    scene
+      ? `The final image must visibly show the requested scene, wardrobe, action, and environment: ${scene}`
+      : "The final image must visibly show the requested scene, wardrobe, action, and environment.",
+  ].join("\n");
+}
+
+function buildCompositionBlock(sceneText?: string | null, ratio?: string | null) {
+  const profile = inferSceneProfile(sceneText, ratio);
+  const lines = [
+    "COMPOSITION AND CAMERA (HIGH PRIORITY):",
+    "Do not collapse the result into a plain centered portrait unless the scene explicitly asks for a portrait.",
+  ];
+
+  if (profile.closeUp) {
+    lines.push(
+      "Use a close-up or portrait crop only because the scene explicitly requests it."
+    );
+  } else if (profile.fullBody) {
+    lines.push(
+      "Use full-body framing so the body, pose, wardrobe, and action are all clearly visible."
+    );
+  } else if (profile.wide) {
+    lines.push(
+      "Use a medium-wide or wide cinematic frame so the environment and action read clearly."
+    );
+  } else if (profile.mediumShot) {
+    lines.push(
+      "Use a medium shot that preserves identity without losing the requested scene context."
+    );
+  } else {
+    lines.push(
+      "Choose framing that best expresses the requested scene, not a default passport-style portrait."
+    );
+  }
+
+  if (profile.dynamicAngle) {
+    lines.push(
+      "Allow dynamic camera angle, asymmetrical framing, motion, and foreshortening when the scene calls for action."
+    );
+  } else {
+    lines.push("Use a natural cinematic camera angle instead of a rigid head-on studio setup.");
+  }
+
+  if (profile.multiSubject) {
+    lines.push(
+      "Keep the identity-locked character as the primary subject, but include the secondary person or opponent when requested."
+    );
+  } else {
+    lines.push("Keep one primary identity-locked subject unless the scene explicitly adds more people.");
+  }
+
+  return lines.join("\n");
+}
+
+function buildIdentityVisibilityBlock(sceneText?: string | null) {
+  const profile = inferSceneProfile(sceneText);
+  const lines = [
+    "IDENTITY VISIBILITY:",
+    "Keep the primary character recognizable and anatomically consistent.",
+    "When the face is visible, preserve the same eyes, nose, mouth, jawline, hairline, hairstyle, skin tone, and overall likeness.",
+    "Do not turn the character into a different person.",
+  ];
+
+  if (profile.action || profile.wide || profile.fullBody) {
+    lines.push(
+      "Do not force direct eye contact, a centered front view, or perfectly symmetrical face presentation in action scenes."
+    );
+    lines.push(
+      "Partial profile, motion, strain, and dynamic pose are allowed as long as the identity remains believable."
+    );
+  } else {
+    lines.push("Prefer a readable face when the scene does not call for heavy motion or distance.");
+  }
+
+  lines.push(
+    "Avoid fully hidden or rear-only views unless the scene explicitly requests them."
+  );
+
+  return lines.join("\n");
 }
 
 async function updateGenerationRow(
@@ -226,6 +353,7 @@ function buildSeedreamPrompt({
   scenePrompt,
   characterName,
   characterPrompt,
+  negativePrompt,
   style,
   ratio,
   referenceUrls = [],
@@ -234,6 +362,7 @@ function buildSeedreamPrompt({
   scenePrompt?: string | null;
   characterName?: string | null;
   characterPrompt?: string | null;
+  negativePrompt?: string | null;
   style?: string | null;
   ratio?: string | null;
   referenceUrls?: string[];
@@ -250,6 +379,7 @@ function buildSeedreamPrompt({
     characterPrompt || `Exact identity lock for ${charName}.`
   ).trim();
   const expression = inferSceneExpression(sceneText, style || "");
+  const userNegativePrompt = String(negativePrompt || "").trim();
   const lightingBlock = buildRealismLightingBlock(sceneText, style || "");
   const sceneIntegrationBlock = buildSceneIntegrationBlock(sceneText, style || "");
   const skinRealismBlock = buildSkinRealismBlock(sceneText, style || "");
@@ -258,12 +388,13 @@ function buildSeedreamPrompt({
   const shadowInteractionBlock = buildShadowInteractionBlock();
   const microDetailBlock = buildMicroDetailBlock();
   const avoidBlock = [
+    userNegativePrompt,
     "different person",
     "identity drift",
-    "rear view",
-    "extreme side profile",
-    "tiny face",
-    "distant subject",
+    "unrecognizable primary character",
+    "reference background copied into final scene",
+    "reference clothing copied into final scene",
+    "neutral studio portrait instead of requested scene",
     buildLightingNegativeBlock(sceneText, style || ""),
     buildExpressionNegativeBlock(sceneText, style || ""),
     buildNegativeRealismBlock(),
@@ -273,6 +404,10 @@ function buildSeedreamPrompt({
 
   return `
 Use ${figureGuide} as reference images of the SAME real person.
+
+SCENE PRIORITY (HIGHEST PRIORITY):
+The requested scene, wardrobe, action, environment, and expression must be visible in the final image.
+Do not recreate the reference photo setup if it conflicts with the requested scene.
 
 IDENTITY LOCK (STRICT):
 Keep the exact same facial identity of ${charName}.
@@ -284,19 +419,17 @@ Do not preserve the previous expression, mood, or facial muscle tension.
 Identity anchor:
 ${resolvedCharacterPrompt}
 
+${buildReferenceUsageBlock(sceneText)}
+
 Reference rules:
 - Figure 1 is the primary identity anchor.
 - All other figures are supporting views of the same person.
 - Keep identity locked even if angle, lighting, camera distance, pose, wardrobe, or environment changes.
+- Preserve identity from the references, but obey the new scene instead of copying the source photo composition.
 
-Face visibility rules:
-- Face must remain clearly visible and readable.
-- Eyes, nose, mouth, jawline, and full facial structure must remain unobstructed.
-- No silhouette and no back-facing angle.
-- No heavy fog, smoke, rain streaks, hair, or props completely hiding the face.
-- Prefer front-facing or slight 3/4 view.
-- Use eye-level framing.
-- Use medium shot or medium close-up framing.
+${buildCompositionBlock(sceneText, ratio)}
+
+${buildIdentityVisibilityBlock(sceneText)}
 
 Expression:
 ${expression.guidance}
@@ -334,7 +467,7 @@ Aspect ratio:
 ${ratio || "16:9"}
 
 Quality:
-photorealistic, realistic lighting interaction, realistic eyes, cinematic composition, grounded atmosphere, one main subject only.
+photorealistic, realistic lighting interaction, realistic eyes, cinematic composition, grounded atmosphere, identity-locked primary subject.
 
 Avoid:
 ${avoidBlock}
@@ -466,6 +599,7 @@ export const generateImageTask = task({
         scenePrompt: scenePrompt || finalPrompt || prompt || "",
         characterName,
         characterPrompt,
+        negativePrompt,
         style,
         ratio,
         referenceUrls,
