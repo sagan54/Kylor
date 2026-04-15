@@ -1961,9 +1961,16 @@ async function runSingleGeneration({
   dnaIdentityBlock = "",
   lockedTraitsBlock = "",
 }) {
+  console.log("RUN SINGLE GENERATION START:", viewType);
+
   void strictIdentity;
 
-  const hasRefs = refs.length > 0;
+  // ✅ SAFE REFS FIX
+  const safeRefs = Array.isArray(refs) ? refs : [];
+  const hasRefs = safeRefs.length > 0;
+
+  console.log("REFS DEBUG:", safeRefs);
+
   const aspect_ratio = mapSizeToAspectRatio(size);
 
   const referenceFusion = analyzeReferenceFusion({
@@ -1977,193 +1984,172 @@ async function runSingleGeneration({
     acceptedViewMap,
   });
 
-const basePrompt = buildIntelligentPrompt({
-  prompt,
-  hasRefs,
-  viewType,
-  negativePrompt,
-  attempt,
-  failureType,
-  referenceFusion,
-  packContextBlock,
-});
-
-const finalPrompt = [
-  basePrompt,
-  dnaIdentityBlock,
-  lockedTraitsBlock,
-].filter(Boolean).join("\n\n");
-
-const enforcedNegativePrompt = [
-  negativePrompt,
-  "glossy skin",
-  "shiny skin",
-  "oily skin",
-  "plastic skin",
-  "waxy skin",
-  "airbrushed skin",
-  "over-smoothed skin",
-  "beauty retouching",
-  "beauty filter",
-  "skin smoothing",
-  "polished face",
-  "cosmetic skin cleanup",
-  "hyper smooth skin",
-  "fake skin texture",
-  "cg skin",
-  "3d skin",
-  "rendered face",
-  "beauty ad face",
-  "fashion editorial face",
-  "makeup campaign lighting",
-  "overexposed forehead shine",
-  "glamour portrait",
-  "retouched portrait",
-  "logo shirt",
-  "graphic t-shirt",
-  "printed shirt",
-  "colored shirt",
-  "blue shirt",
-  "green shirt",
-  "red shirt",
-  "sports jersey",
-  "shorts",
-  "patterned clothes",
-  "fashion styling",
-  "logo shirt",
-  "graphic t-shirt",
-  "printed shirt",
-  "colored shirt",
-  "blue shirt",
-  "green shirt",
-  "red shirt",
-  "sports jersey",
-  "shorts",
-  "patterned clothes",
-  "fashion styling",
-  "pure white background",
-"white studio background",
-"overexposed background",
-"washed out background",
-"high key background",
-"acne",
-"pimples",
-"skin blemishes",
-"skin spots",
-"face spots",
-"facial acne",
-"breakouts",
-"skin imperfections dots",
-].filter(Boolean).join(", ");
-
-const viewSpecificNegativePrompt =
-  viewType === IMAGE_TYPES.LEFT
-    ? [
-        "facing right",
-        "nose pointing right",
-        "right profile",
-        "mirrored right profile",
-        "wrong side profile",
-        "three-quarter face",
-        "front-facing",
-        "semi-front angle",
-        "partial front view",
-        "camera-facing head",
-      ].join(", ")
-    : viewType === IMAGE_TYPES.RIGHT
-    ? [
-        "facing left",
-        "nose pointing left",
-        "left profile",
-        "mirrored left profile",
-        "wrong side profile",
-        "three-quarter face",
-        "front-facing",
-        "semi-front angle",
-        "partial front view",
-        "camera-facing head",
-      ].join(", ")
-    : viewType === IMAGE_TYPES.CLOSEUP
-    ? "beauty lighting, glossy forehead, polished skin, studio glamour retouching, makeup-ad skin"
-    : "";
-
-const finalNegativePrompt = [
-  enforcedNegativePrompt,
-  viewSpecificNegativePrompt,
-].filter(Boolean).join(", ");
-
-const cleanedRefs = refs
-  .map((r) => normalizeReferenceImage(r))
-  .filter(Boolean)
-  .slice(0, 8);
-
-const input = cleanedRefs.length > 0
-  ? {
-      prompt: finalPrompt,
-      negative_prompt: finalNegativePrompt,
-      aspect_ratio,
-      output_format: "png",
-      input_images: cleanedRefs,
-    }
-  : {
-      prompt: finalPrompt,
-      negative_prompt: finalNegativePrompt,
-      aspect_ratio,
-      output_format: "png",
-    };
-
-const modelToUse = getModelForView(viewType);
-
-const output = await runReplicateWithBackoff(async () => {
-  console.log("REPLICATE DEBUG", {
-    model: modelToUse,
+  const basePrompt = buildIntelligentPrompt({
+    prompt,
+    hasRefs,
     viewType,
-    refCount: cleanedRefs.length,
-    refsPreview: cleanedRefs.slice(0, 3),
-    inputKeys: Object.keys(input),
+    negativePrompt,
+    attempt,
+    failureType,
+    referenceFusion,
+    packContextBlock,
   });
 
-  console.log("REPLICATE INPUT SUMMARY", {
-  viewType,
-  model: modelToUse,
-  refCount: cleanedRefs.length,
-  aspect_ratio,
-  hasNegativePrompt: !!finalNegativePrompt,
-  promptLength: finalPrompt.length,
-});
+  const finalPrompt = [
+    basePrompt,
+    dnaIdentityBlock,
+    lockedTraitsBlock,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
 
-  return await replicate.run(modelToUse, { input });
-}, 1);
+  console.log("FINAL PROMPT LENGTH:", finalPrompt.length);
 
-const tempUrl = await fileOutputToUrl(output);
+  const enforcedNegativePrompt = [
+    negativePrompt,
+    "glossy skin",
+    "shiny skin",
+    "oily skin",
+    "plastic skin",
+    "waxy skin",
+    "airbrushed skin",
+    "over-smoothed skin",
+    "beauty retouching",
+    "beauty filter",
+    "skin smoothing",
+    "polished face",
+    "cosmetic skin cleanup",
+    "hyper smooth skin",
+    "fake skin texture",
+    "cg skin",
+    "3d skin",
+    "rendered face",
+    "beauty ad face",
+    "fashion editorial face",
+    "makeup campaign lighting",
+    "overexposed forehead shine",
+    "glamour portrait",
+    "retouched portrait",
+    "logo shirt",
+    "graphic t-shirt",
+    "printed shirt",
+    "colored shirt",
+    "blue shirt",
+    "green shirt",
+    "red shirt",
+    "sports jersey",
+    "shorts",
+    "patterned clothes",
+    "fashion styling",
+    "pure white background",
+    "white studio background",
+    "overexposed background",
+    "washed out background",
+    "high key background",
+    "acne",
+    "pimples",
+    "skin blemishes",
+    "skin spots",
+    "face spots",
+    "facial acne",
+    "breakouts",
+    "skin imperfections dots",
+  ]
+    .filter(Boolean)
+    .join(", ");
 
-console.log("REPLICATE OUTPUT DEBUG", {
-  model: modelToUse,
-  viewType,
-  tempUrl,
-  refCount: cleanedRefs.length,
-  refsPreview: cleanedRefs.slice(0, 3),
-  inputKeys: Object.keys(input),
-});
+  const viewSpecificNegativePrompt =
+    viewType === IMAGE_TYPES.LEFT
+      ? [
+          "facing right",
+          "nose pointing right",
+          "right profile",
+          "mirrored right profile",
+          "wrong side profile",
+          "three-quarter face",
+          "front-facing",
+          "semi-front angle",
+          "partial front view",
+          "camera-facing head",
+        ].join(", ")
+      : viewType === IMAGE_TYPES.RIGHT
+      ? [
+          "facing left",
+          "nose pointing left",
+          "left profile",
+          "mirrored left profile",
+          "wrong side profile",
+          "three-quarter face",
+          "front-facing",
+          "semi-front angle",
+          "partial front view",
+          "camera-facing head",
+        ].join(", ")
+      : viewType === IMAGE_TYPES.CLOSEUP
+      ? "beauty lighting, glossy forehead, polished skin, studio glamour retouching"
+      : "";
 
-if (!tempUrl) {
-  throw new Error(`No image URL returned for ${viewType}`);
-}
+  const finalNegativePrompt = [
+    enforcedNegativePrompt,
+    viewSpecificNegativePrompt,
+  ]
+    .filter(Boolean)
+    .join(", ");
 
-return {
-  imageUrl: tempUrl, // use temp URL for evaluation first
-  tempUrl,
-  finalPrompt,
-  viewType,
-  hasRefs,
-  aspect_ratio,
-  attempt,
-  failureType,
-  referenceCount: cleanedRefs.length,
-  referencesUsed: cleanedRefs,
-  referenceFusion,
-  packContextBlock,
-};
+  // ✅ SAFE CLEAN REFS
+  const cleanedRefs = safeRefs
+    .map((r) => normalizeReferenceImage(r))
+    .filter(Boolean)
+    .slice(0, 8);
+
+  console.log("CLEANED REFS COUNT:", cleanedRefs.length);
+
+  const input =
+    cleanedRefs.length > 0
+      ? {
+          prompt: finalPrompt,
+          negative_prompt: finalNegativePrompt,
+          aspect_ratio,
+          output_format: "png",
+          input_images: cleanedRefs,
+        }
+      : {
+          prompt: finalPrompt,
+          negative_prompt: finalNegativePrompt,
+          aspect_ratio,
+          output_format: "png",
+        };
+
+  const modelToUse = getModelForView(viewType);
+
+  console.log("ABOUT TO CALL REPLICATE:", viewType, modelToUse);
+
+  const output = await runReplicateWithBackoff(async () => {
+    return await replicate.run(modelToUse, { input });
+  }, 1);
+
+  const tempUrl = await fileOutputToUrl(output);
+
+  console.log("REPLICATE OUTPUT:", tempUrl);
+
+  if (!tempUrl) {
+    throw new Error(`No image URL returned for ${viewType}`);
+  }
+
+  return {
+    imageUrl: tempUrl,
+    tempUrl,
+    finalPrompt,
+    viewType,
+    hasRefs,
+    aspect_ratio,
+    attempt,
+    failureType,
+    referenceCount: cleanedRefs.length,
+    referencesUsed: cleanedRefs,
+    referenceFusion,
+    packContextBlock,
+  };
 }
 
 function validateGeneratedView({ imageUrl, viewType }) {
