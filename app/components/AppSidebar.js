@@ -49,8 +49,17 @@ function getSidebarItems(active) {
     { label: "Home", icon: Compass, active: active === "Home", href: "/" },
     { label: "Explore", icon: Compass, active: active === "Explore", href: "/explore" },
     { label: "Story", icon: Clapperboard, active: active === "Story", href: "/story" },
-    { label: "Image", icon: ImageIcon, active: active === "Image", href: "/image" },
-    { label: "Video", icon: Video, active: active === "Video", href: "/video" },
+{ label: "Image", icon: ImageIcon, active: active === "Image", href: "/image" },
+
+// 🎬 NEW CORE FEATURE
+{
+  label: "Movie Studio",
+  icon: Clapperboard,
+  active: active === "Movie Studio",
+  href: "/studio",
+},
+
+{ label: "Video", icon: Video, active: active === "Video", href: "/video" },
     {
       label: "Consistency",
       icon: UserCircle2,
@@ -76,9 +85,12 @@ function SidebarItem({ item }) {
         gap: "6px",
         padding: "10px 6px",
         borderRadius: radius.lg,
-        background: item.active
-          ? "linear-gradient(160deg, rgba(79,70,229,0.22), rgba(124,58,237,0.14))"
-          : "transparent",
+background:
+  item.label === "Movie Studio"
+    ? "linear-gradient(160deg, rgba(124,58,237,0.25), rgba(79,70,229,0.18))"
+    : item.active
+    ? "linear-gradient(160deg, rgba(79,70,229,0.22), rgba(124,58,237,0.14))"
+    : "transparent",
         border: `1px solid ${item.active ? C.border : "transparent"}`,
         color: item.active ? C.text : C.textMuted,
         cursor: "pointer",
