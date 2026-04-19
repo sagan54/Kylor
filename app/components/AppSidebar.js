@@ -14,32 +14,30 @@ import {
   ChevronRight,
   Flame,
   Plus,
-  FolderKanban,
-  Settings,
 } from "lucide-react";
 import { supabase } from "../../lib/supabase";
 
 const C = {
   accent: "#7c3aed",
   accentSoft: "rgba(124,58,237,0.15)",
-  accentBorder: "rgba(124,58,237,0.35)",
-  accentGlow: "rgba(124,58,237,0.25)",
+  accentBorder: "rgba(124,58,237,0.4)",
+  accentGlow: "rgba(124,58,237,0.22)",
   indigo: "#4f46e5",
-  border: "rgba(255,255,255,0.07)",
-  borderHover: "rgba(255,255,255,0.13)",
-  surface: "rgba(255,255,255,0.03)",
-  surfaceHover: "rgba(255,255,255,0.055)",
+  border: "rgba(255,255,255,0.06)",
+  borderHover: "rgba(255,255,255,0.12)",
+  surface: "rgba(255,255,255,0.025)",
+  surfaceHover: "rgba(255,255,255,0.05)",
   text: "white",
-  textMuted: "rgba(255,255,255,0.52)",
-  textDim: "rgba(255,255,255,0.32)",
+  textMuted: "rgba(255,255,255,0.42)",
+  textDim: "rgba(255,255,255,0.25)",
   bg: "#05070c",
-  sidebar: "#080a10",
+  sidebar: "#060810",
 };
 
 const radius = {
   sm: "10px",
   md: "14px",
-  lg: "18px",
+  lg: "16px",
   xl: "22px",
   full: "999px",
 };
@@ -49,17 +47,15 @@ function getSidebarItems(active) {
     { label: "Home", icon: Compass, active: active === "Home", href: "/" },
     { label: "Explore", icon: Compass, active: active === "Explore", href: "/explore" },
     { label: "Story", icon: Clapperboard, active: active === "Story", href: "/story" },
-{ label: "Image", icon: ImageIcon, active: active === "Image", href: "/image" },
-
-// 🎬 NEW CORE FEATURE
-{
-  label: "Movie Studio",
-  icon: Clapperboard,
-  active: active === "Movie Studio",
-  href: "/studio",
-},
-
-{ label: "Video", icon: Video, active: active === "Video", href: "/video" },
+    { label: "Image", icon: ImageIcon, active: active === "Image", href: "/image" },
+    {
+      label: "Movie Studio",
+      icon: Clapperboard,
+      active: active === "Movie Studio",
+      href: "/studio",
+      isFeature: true,
+    },
+    { label: "Video", icon: Video, active: active === "Video", href: "/video" },
     {
       label: "Consistency",
       icon: UserCircle2,
@@ -67,54 +63,154 @@ function getSidebarItems(active) {
       href: "/consistency",
     },
     { label: "Motion", icon: Orbit, active: active === "Motion", href: "#" },
-    { label: "Projects", icon: FolderKanban, active: active === "Projects", href: "/story" },
-    { label: "Settings", icon: Settings, active: active === "Settings", href: "#" },
   ];
+}
+
+/* ─── Divider between navigation groups ─── */
+function SectionDivider() {
+  return (
+    <div
+      style={{
+        height: "1px",
+        margin: "6px 8px",
+        background:
+          "linear-gradient(90deg, transparent, rgba(255,255,255,0.06) 40%, rgba(255,255,255,0.06) 60%, transparent)",
+      }}
+    />
+  );
 }
 
 function SidebarItem({ item }) {
   const Icon = item.icon;
+  const [hovered, setHovered] = useState(false);
+
+  const isStudio = item.isFeature;
 
   const inner = (
     <motion.div
-      whileHover={{ scale: 1.03 }}
-      whileTap={{ scale: 0.97 }}
+      onHoverStart={() => setHovered(true)}
+      onHoverEnd={() => setHovered(false)}
+      animate={{
+        scale: item.active ? 1.02 : hovered ? 1.015 : 1,
+        y: hovered && !item.active ? -1 : 0,
+      }}
+      transition={{ duration: 0.16, ease: "easeOut" }}
       style={{
         display: "grid",
         justifyItems: "center",
-        gap: "6px",
-        padding: "10px 6px",
+        gap: "7px",
+        padding: "11px 6px",
         borderRadius: radius.lg,
-background:
-  item.label === "Movie Studio"
-    ? "linear-gradient(160deg, rgba(124,58,237,0.25), rgba(79,70,229,0.18))"
-    : item.active
-    ? "linear-gradient(160deg, rgba(79,70,229,0.22), rgba(124,58,237,0.14))"
-    : "transparent",
-        border: `1px solid ${item.active ? C.border : "transparent"}`,
-        color: item.active ? C.text : C.textMuted,
+        background: isStudio
+          ? "linear-gradient(155deg, rgba(124,58,237,0.22) 0%, rgba(79,70,229,0.14) 100%)"
+          : item.active
+          ? "linear-gradient(155deg, rgba(79,70,229,0.2) 0%, rgba(124,58,237,0.12) 100%)"
+          : hovered
+          ? "rgba(255,255,255,0.04)"
+          : "transparent",
+        border: `1px solid ${
+          isStudio
+            ? "rgba(124,58,237,0.35)"
+            : item.active
+            ? "rgba(124,58,237,0.28)"
+            : hovered
+            ? "rgba(255,255,255,0.08)"
+            : "transparent"
+        }`,
+        boxShadow: item.active
+          ? "0 0 22px rgba(124,58,237,0.2), inset 0 1px 0 rgba(255,255,255,0.06)"
+          : isStudio
+          ? "0 0 28px rgba(124,58,237,0.18)"
+          : "none",
+        color: item.active || hovered ? C.text : C.textMuted,
         cursor: "pointer",
-        transition: "all 0.18s ease",
+        transition: "background 0.18s ease, border 0.18s ease, box-shadow 0.18s ease, color 0.18s ease",
+        position: "relative",
       }}
     >
+      {/* Active left-edge accent bar */}
+      {item.active && (
+        <div
+          style={{
+            position: "absolute",
+            left: "-1px",
+            top: "20%",
+            height: "60%",
+            width: "2px",
+            borderRadius: "0 2px 2px 0",
+            background: "linear-gradient(180deg, #7c3aed, #4f46e5)",
+            boxShadow: "0 0 8px rgba(124,58,237,0.6)",
+          }}
+        />
+      )}
+
       <div
         style={{
-          width: "36px",
-          height: "36px",
-          borderRadius: "12px",
+          width: "34px",
+          height: "34px",
+          borderRadius: "11px",
           display: "grid",
           placeItems: "center",
           background: item.active
-            ? "rgba(255,255,255,0.07)"
-            : "rgba(255,255,255,0.02)",
+            ? "rgba(255,255,255,0.08)"
+            : hovered
+            ? "rgba(255,255,255,0.05)"
+            : "rgba(255,255,255,0.025)",
+          border: `1px solid ${
+            item.active
+              ? "rgba(255,255,255,0.1)"
+              : hovered
+              ? "rgba(255,255,255,0.07)"
+              : "rgba(255,255,255,0.04)"
+          }`,
+          transition: "all 0.18s ease",
+          color: item.active
+            ? "rgba(255,255,255,0.92)"
+            : hovered
+            ? "rgba(255,255,255,0.75)"
+            : "rgba(255,255,255,0.48)",
         }}
       >
-        <Icon size={17} />
+        <Icon size={16} strokeWidth={item.active ? 2 : 1.75} />
       </div>
 
-      <span style={{ fontSize: "10.5px", textAlign: "center", lineHeight: 1.2 }}>
-        {item.label}
-      </span>
+      <div style={{ position: "relative" }}>
+        <span
+          style={{
+            fontSize: "10px",
+            fontWeight: item.active ? 600 : 500,
+            letterSpacing: "0.01em",
+            textAlign: "center",
+            lineHeight: 1.2,
+            display: "block",
+            transition: "color 0.18s ease",
+          }}
+        >
+          {item.label}
+        </span>
+
+        {/* "NEW" badge for Movie Studio */}
+        {isStudio && (
+          <div
+            style={{
+              position: "absolute",
+              top: "-14px",
+              right: "-18px",
+              padding: "1px 5px",
+              borderRadius: "4px",
+              background: "linear-gradient(135deg, #7c3aed, #4f46e5)",
+              color: "white",
+              fontSize: "8px",
+              fontWeight: 800,
+              letterSpacing: "0.06em",
+              lineHeight: 1.5,
+              boxShadow: "0 2px 8px rgba(124,58,237,0.45)",
+            }}
+          >
+            NEW
+          </div>
+        )}
+      </div>
     </motion.div>
   );
 
@@ -128,23 +224,32 @@ background:
 }
 
 function SidebarProfile({ credits = 0, onClick, isOpen }) {
+  const [hovered, setHovered] = useState(false);
+
   return (
     <motion.button
       type="button"
       onClick={onClick}
-      whileHover={{ scale: 1.03 }}
-      whileTap={{ scale: 0.97 }}
+      onHoverStart={() => setHovered(true)}
+      onHoverEnd={() => setHovered(false)}
+      animate={{ scale: hovered ? 1.015 : 1 }}
+      transition={{ duration: 0.16, ease: "easeOut" }}
       style={{
         width: "100%",
         display: "grid",
         justifyItems: "center",
         gap: "8px",
-        padding: "10px 6px",
+        padding: "11px 6px",
         borderRadius: radius.lg,
         background: isOpen
-          ? "linear-gradient(160deg, rgba(79,70,229,0.22), rgba(124,58,237,0.14))"
-          : "linear-gradient(160deg, rgba(255,255,255,0.04), rgba(124,58,237,0.06))",
-        border: `1px solid ${C.border}`,
+          ? "linear-gradient(155deg, rgba(79,70,229,0.2), rgba(124,58,237,0.12))"
+          : hovered
+          ? "rgba(255,255,255,0.04)"
+          : "transparent",
+        border: `1px solid ${
+          isOpen ? "rgba(124,58,237,0.28)" : hovered ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.04)"
+        }`,
+        boxShadow: isOpen ? "0 0 22px rgba(124,58,237,0.18)" : "none",
         color: C.text,
         cursor: "pointer",
         transition: "all 0.18s ease",
@@ -153,45 +258,45 @@ function SidebarProfile({ credits = 0, onClick, isOpen }) {
     >
       <div
         style={{
-          width: "40px",
-          height: "40px",
-          borderRadius: "14px",
+          width: "36px",
+          height: "36px",
+          borderRadius: "11px",
           display: "grid",
           placeItems: "center",
-          background: "rgba(255,255,255,0.05)",
-          border: `1px solid ${C.border}`,
-          position: "relative",
-          overflow: "hidden",
+          background: "rgba(255,255,255,0.06)",
+          border: `1px solid rgba(255,255,255,0.08)`,
         }}
       >
-        <UserCircle2 size={20} color="rgba(255,255,255,0.82)" />
+        <UserCircle2 size={18} color="rgba(255,255,255,0.75)" />
       </div>
 
       <div
         style={{
           display: "inline-flex",
           alignItems: "center",
-          gap: "4px",
-          padding: "3px 8px",
+          gap: "3px",
+          padding: "2px 7px",
           borderRadius: "999px",
           background: "rgba(34,197,94,0.1)",
-          border: "1px solid rgba(34,197,94,0.22)",
+          border: "1px solid rgba(34,197,94,0.2)",
           color: "#86efac",
-          fontSize: "11px",
+          fontSize: "10px",
           fontWeight: 700,
           lineHeight: 1,
         }}
       >
-        <Flame size={11} fill="#22c55e" color="#22c55e" />
+        <Flame size={10} fill="#22c55e" color="#22c55e" />
         <span>{credits}</span>
       </div>
 
       <span
         style={{
-          fontSize: "10.5px",
+          fontSize: "10px",
+          fontWeight: 500,
           textAlign: "center",
           lineHeight: 1.2,
-          color: C.textMuted,
+          color: hovered ? "rgba(255,255,255,0.7)" : C.textMuted,
+          transition: "color 0.18s ease",
         }}
       >
         Profile
@@ -206,25 +311,40 @@ function ProfilePopup({ session, credits, onClose, onLogout }) {
 
   return (
     <motion.div
-      initial={{ opacity: 0, x: -12, y: 8, scale: 0.98 }}
-      animate={{ opacity: 1, x: 0, y: 0, scale: 1 }}
-      exit={{ opacity: 0, x: -8, y: 8, scale: 0.98 }}
-      transition={{ duration: 0.2, ease: "easeOut" }}
+      initial={{ opacity: 0, x: -14, scale: 0.97 }}
+      animate={{ opacity: 1, x: 0, scale: 1 }}
+      exit={{ opacity: 0, x: -10, scale: 0.97 }}
+      transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
       style={{
         position: "absolute",
-        left: "92px",
+        left: "96px",
         bottom: "18px",
         width: "360px",
-        borderRadius: "24px",
-        border: `1px solid ${C.border}`,
+        borderRadius: "22px",
+        border: `1px solid rgba(255,255,255,0.08)`,
         background:
-          "linear-gradient(135deg, rgba(255,255,255,0.08), rgba(255,255,255,0.03) 42%, rgba(124,58,237,0.08))",
-        backdropFilter: "blur(18px)",
-        boxShadow: "0 30px 80px rgba(0,0,0,0.45)",
+          "linear-gradient(145deg, rgba(12,14,24,0.98) 0%, rgba(8,10,18,0.98) 100%)",
+        backdropFilter: "blur(24px)",
+        boxShadow:
+          "0 32px 80px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.04), inset 0 1px 0 rgba(255,255,255,0.06)",
         padding: "22px",
         zIndex: 300,
       }}
     >
+      {/* Subtle top glow */}
+      <div
+        style={{
+          position: "absolute",
+          top: 0,
+          left: "50%",
+          transform: "translateX(-50%)",
+          width: "60%",
+          height: "1px",
+          background:
+            "linear-gradient(90deg, transparent, rgba(124,58,237,0.5), transparent)",
+        }}
+      />
+
       <div
         style={{
           display: "flex",
@@ -237,29 +357,30 @@ function ProfilePopup({ session, credits, onClose, onLogout }) {
         <div style={{ display: "flex", alignItems: "center", gap: "14px", minWidth: 0 }}>
           <div
             style={{
-              width: "54px",
-              height: "54px",
+              width: "52px",
+              height: "52px",
               borderRadius: "999px",
               display: "grid",
               placeItems: "center",
-              background: "rgba(255,255,255,0.08)",
-              border: `1px solid ${C.border}`,
+              background: "rgba(255,255,255,0.06)",
+              border: `1px solid rgba(255,255,255,0.1)`,
               flexShrink: 0,
             }}
           >
-            <UserCircle2 size={28} color="rgba(255,255,255,0.72)" />
+            <UserCircle2 size={26} color="rgba(255,255,255,0.7)" />
           </div>
 
           <div style={{ minWidth: 0 }}>
             <div
               style={{
-                fontSize: "15px",
+                fontSize: "14px",
                 fontWeight: 700,
                 color: "white",
                 whiteSpace: "nowrap",
                 overflow: "hidden",
                 textOverflow: "ellipsis",
-                marginBottom: "4px",
+                marginBottom: "5px",
+                letterSpacing: "-0.01em",
               }}
             >
               {email}
@@ -271,17 +392,19 @@ function ProfilePopup({ session, credits, onClose, onLogout }) {
                 alignItems: "center",
                 gap: "6px",
                 color: C.textMuted,
-                fontSize: "12px",
+                fontSize: "11px",
               }}
             >
-              <span>ID</span>
+              <span style={{ color: C.textDim }}>ID</span>
               <span
                 style={{
                   padding: "2px 6px",
-                  borderRadius: "7px",
-                  background: "rgba(255,255,255,0.06)",
-                  border: `1px solid ${C.border}`,
-                  fontSize: "11px",
+                  borderRadius: "6px",
+                  background: "rgba(255,255,255,0.05)",
+                  border: `1px solid rgba(255,255,255,0.08)`,
+                  fontSize: "10px",
+                  fontFamily: "monospace",
+                  color: "rgba(255,255,255,0.5)",
                 }}
               >
                 {userId}
@@ -293,25 +416,25 @@ function ProfilePopup({ session, credits, onClose, onLogout }) {
         {session ? (
           <Link href="/story" style={{ textDecoration: "none" }}>
             <motion.div
-              whileHover={{ boxShadow: "0 10px 28px rgba(34,197,94,0.22)" }}
+              whileHover={{ boxShadow: "0 8px 24px rgba(34,197,94,0.2)" }}
               whileTap={{ scale: 0.97 }}
               style={{
-                height: "40px",
-                padding: "0 16px",
-                borderRadius: "12px",
-                background:
-                  "linear-gradient(135deg, rgba(34,197,94,0.22), rgba(34,197,94,0.12))",
-                border: "1px solid rgba(34,197,94,0.28)",
+                height: "38px",
+                padding: "0 15px",
+                borderRadius: "11px",
+                background: "rgba(34,197,94,0.1)",
+                border: "1px solid rgba(34,197,94,0.22)",
                 color: "#b7f7c8",
-                fontSize: "13px",
+                fontSize: "12px",
                 fontWeight: 700,
                 display: "inline-flex",
                 alignItems: "center",
-                gap: "8px",
+                gap: "6px",
                 cursor: "pointer",
+                letterSpacing: "0.01em",
               }}
             >
-              Profile <ChevronRight size={14} />
+              Profile <ChevronRight size={13} />
             </motion.div>
           </Link>
         ) : (
@@ -319,60 +442,66 @@ function ProfilePopup({ session, credits, onClose, onLogout }) {
             <motion.div
               whileTap={{ scale: 0.97 }}
               style={{
-                height: "40px",
-                padding: "0 16px",
-                borderRadius: "12px",
-                background:
-                  "linear-gradient(135deg, rgba(34,197,94,0.22), rgba(34,197,94,0.12))",
-                border: "1px solid rgba(34,197,94,0.28)",
+                height: "38px",
+                padding: "0 15px",
+                borderRadius: "11px",
+                background: "rgba(34,197,94,0.1)",
+                border: "1px solid rgba(34,197,94,0.22)",
                 color: "#b7f7c8",
-                fontSize: "13px",
+                fontSize: "12px",
                 fontWeight: 700,
                 display: "inline-flex",
                 alignItems: "center",
-                gap: "8px",
+                gap: "6px",
                 cursor: "pointer",
               }}
             >
-              Login <ChevronRight size={14} />
+              Login <ChevronRight size={13} />
             </motion.div>
           </Link>
         )}
       </div>
 
-      <div style={{ height: "1px", background: C.border, margin: "0 0 18px" }} />
+      <div
+        style={{
+          height: "1px",
+          background:
+            "linear-gradient(90deg, transparent, rgba(255,255,255,0.07) 30%, rgba(255,255,255,0.07) 70%, transparent)",
+          margin: "0 0 18px",
+        }}
+      />
 
       <div
         style={{
-          marginBottom: "14px",
+          marginBottom: "12px",
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
         }}
       >
-        <div style={{ color: "rgba(255,255,255,0.9)", fontWeight: 700, fontSize: "15px" }}>
+        <div style={{ color: "rgba(255,255,255,0.88)", fontWeight: 700, fontSize: "14px", letterSpacing: "-0.01em" }}>
           My Workspace
         </div>
         <div
           style={{
             display: "inline-flex",
             alignItems: "center",
-            gap: "6px",
+            gap: "4px",
             color: C.textMuted,
-            fontSize: "13px",
+            fontSize: "12px",
           }}
         >
-          All <ChevronRight size={14} />
+          All <ChevronRight size={13} />
         </div>
       </div>
 
       <div
         style={{
-          borderRadius: "16px",
-          border: `1px solid ${C.border}`,
-          background: "rgba(255,255,255,0.04)",
-          padding: "14px",
-          marginBottom: "12px",
+          borderRadius: "14px",
+          border: `1px solid rgba(255,255,255,0.07)`,
+          background: "rgba(255,255,255,0.03)",
+          padding: "13px",
+          marginBottom: "10px",
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
@@ -382,66 +511,71 @@ function ProfilePopup({ session, credits, onClose, onLogout }) {
         <div style={{ display: "flex", alignItems: "center", gap: "12px", minWidth: 0 }}>
           <div
             style={{
-              width: "44px",
-              height: "44px",
-              borderRadius: "999px",
+              width: "40px",
+              height: "40px",
+              borderRadius: "12px",
               display: "grid",
               placeItems: "center",
-              background: "rgba(255,255,255,0.07)",
-              border: `1px solid ${C.border}`,
+              background: "rgba(255,255,255,0.06)",
+              border: `1px solid rgba(255,255,255,0.08)`,
               flexShrink: 0,
             }}
           >
-            <UserCircle2 size={22} color="rgba(255,255,255,0.72)" />
+            <UserCircle2 size={20} color="rgba(255,255,255,0.65)" />
           </div>
 
           <div style={{ minWidth: 0 }}>
             <div
               style={{
-                fontSize: "15px",
+                fontSize: "13px",
                 fontWeight: 700,
-                color: "white",
-                marginBottom: "4px",
+                color: "rgba(255,255,255,0.9)",
+                marginBottom: "3px",
+                letterSpacing: "-0.01em",
               }}
             >
               Personal Workspace
             </div>
-            <div style={{ fontSize: "13px", color: C.textMuted }}>
-              {session ? "Private (Only Me)" : "Sign in to access"}
+            <div style={{ fontSize: "11px", color: C.textMuted }}>
+              {session ? "Private · Only Me" : "Sign in to access"}
             </div>
           </div>
         </div>
 
         <div
           style={{
-            width: "18px",
-            height: "18px",
+            width: "16px",
+            height: "16px",
             borderRadius: "999px",
-            border: "2px solid #4ade80",
-            boxShadow: "0 0 10px rgba(74,222,128,0.35)",
+            border: "1.5px solid #4ade80",
+            boxShadow: "0 0 8px rgba(74,222,128,0.3)",
             flexShrink: 0,
           }}
         />
       </div>
 
-      <div
+      <motion.div
+        whileHover={{ background: "rgba(255,255,255,0.06)", borderColor: "rgba(255,255,255,0.14)" }}
         style={{
-          borderRadius: "12px",
-          border: "1px solid rgba(255,255,255,0.12)",
-          background: "rgba(255,255,255,0.05)",
-          height: "46px",
+          borderRadius: "11px",
+          border: "1px solid rgba(255,255,255,0.08)",
+          background: "rgba(255,255,255,0.03)",
+          height: "42px",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          gap: "10px",
-          color: "rgba(255,255,255,0.85)",
+          gap: "8px",
+          color: "rgba(255,255,255,0.7)",
           fontWeight: 600,
-          fontSize: "14px",
+          fontSize: "13px",
           marginBottom: "14px",
+          cursor: "pointer",
+          transition: "all 0.18s ease",
+          letterSpacing: "0.01em",
         }}
       >
-        <Plus size={16} /> Create Workspace
-      </div>
+        <Plus size={15} /> Create Workspace
+      </motion.div>
 
       <div
         style={{
@@ -449,24 +583,23 @@ function ProfilePopup({ session, credits, onClose, onLogout }) {
           alignItems: "center",
           justifyContent: "space-between",
           gap: "12px",
-          paddingTop: "4px",
         }}
       >
         <div
           style={{
             display: "inline-flex",
             alignItems: "center",
-            gap: "6px",
-            padding: "6px 10px",
+            gap: "5px",
+            padding: "5px 10px",
             borderRadius: "999px",
-            background: "rgba(34,197,94,0.1)",
-            border: "1px solid rgba(34,197,94,0.22)",
+            background: "rgba(34,197,94,0.08)",
+            border: "1px solid rgba(34,197,94,0.18)",
             color: "#86efac",
-            fontSize: "12px",
+            fontSize: "11px",
             fontWeight: 700,
           }}
         >
-          <Flame size={12} fill="#22c55e" color="#22c55e" />
+          <Flame size={11} fill="#22c55e" color="#22c55e" />
           {credits} credits
         </div>
 
@@ -479,16 +612,17 @@ function ProfilePopup({ session, credits, onClose, onLogout }) {
               onClose();
             }}
             style={{
-              height: "36px",
+              height: "34px",
               padding: "0 14px",
-              borderRadius: "10px",
-              border: `1px solid ${C.border}`,
-              background: "rgba(255,255,255,0.04)",
-              color: "rgba(255,255,255,0.8)",
-              fontSize: "13px",
+              borderRadius: "9px",
+              border: `1px solid rgba(255,255,255,0.08)`,
+              background: "rgba(255,255,255,0.03)",
+              color: "rgba(255,255,255,0.65)",
+              fontSize: "12px",
               fontWeight: 600,
               cursor: "pointer",
               fontFamily: "inherit",
+              transition: "all 0.18s ease",
             }}
           >
             Logout
@@ -498,13 +632,13 @@ function ProfilePopup({ session, credits, onClose, onLogout }) {
             <motion.div
               whileTap={{ scale: 0.97 }}
               style={{
-                height: "36px",
+                height: "34px",
                 padding: "0 14px",
-                borderRadius: "10px",
-                border: `1px solid ${C.border}`,
-                background: "rgba(255,255,255,0.04)",
-                color: "rgba(255,255,255,0.8)",
-                fontSize: "13px",
+                borderRadius: "9px",
+                border: `1px solid rgba(255,255,255,0.08)`,
+                background: "rgba(255,255,255,0.03)",
+                color: "rgba(255,255,255,0.65)",
+                fontSize: "12px",
                 fontWeight: 600,
                 display: "inline-flex",
                 alignItems: "center",
@@ -627,44 +761,70 @@ export default function AppSidebar({ active = "Home" }) {
         position: "fixed",
         top: 0,
         left: 0,
-        width: "88px",
+        width: "84px",
         height: "100vh",
-        borderRight: `1px solid ${C.border}`,
-        background: C.sidebar,
-        padding: "18px 10px",
+        borderRight: `1px solid rgba(255,255,255,0.05)`,
+        background:
+          "linear-gradient(180deg, #07090f 0%, #060810 60%, #050710 100%)",
+        padding: "20px 8px 20px",
         display: "flex",
         flexDirection: "column",
         overflow: "visible",
         zIndex: 100,
+        boxShadow: "inset -1px 0 0 rgba(255,255,255,0.03), 4px 0 32px rgba(0,0,0,0.4)",
       }}
     >
-      <div
-        style={{
-          width: "46px",
-          height: "46px",
-          borderRadius: "16px",
-          margin: "0 auto 22px",
-          display: "grid",
-          placeItems: "center",
-          background:
-            "linear-gradient(135deg, rgba(79,70,229,0.28), rgba(124,58,237,0.18))",
-          border: `1px solid ${C.border}`,
-          boxShadow: `0 0 20px ${C.accentGlow}`,
-        }}
-      >
-        <Sparkles size={20} color="#a78bfa" />
+      {/* Logo mark */}
+      <div style={{ display: "grid", placeItems: "center", marginBottom: "24px" }}>
+        <motion.div
+          whileHover={{ scale: 1.06 }}
+          whileTap={{ scale: 0.96 }}
+          style={{
+            width: "42px",
+            height: "42px",
+            borderRadius: "14px",
+            display: "grid",
+            placeItems: "center",
+            background:
+              "linear-gradient(135deg, rgba(79,70,229,0.3), rgba(124,58,237,0.2))",
+            border: `1px solid rgba(124,58,237,0.3)`,
+            boxShadow: `0 0 24px rgba(124,58,237,0.18), inset 0 1px 0 rgba(255,255,255,0.08)`,
+            cursor: "pointer",
+          }}
+        >
+          <Sparkles size={18} color="#a78bfa" strokeWidth={1.75} />
+        </motion.div>
       </div>
 
-      <div style={{ display: "grid", gap: "8px" }}>
-        {SIDEBAR_ITEMS.map((item) => (
-          <SidebarItem key={item.label} item={item} />
-        ))}
+      {/* Nav items */}
+      <div style={{ display: "grid", gap: "4px" }}>
+        {SIDEBAR_ITEMS.map((item, i) => {
+          // Insert a subtle divider before "Movie Studio" and before "Projects"
+          const dividerBefore = item.label === "Movie Studio";
+          return (
+            <div key={item.label}>
+              {dividerBefore && <SectionDivider />}
+              <SidebarItem item={item} />
+            </div>
+          );
+        })}
       </div>
 
+      {/* Profile */}
       <div
         ref={profileWrapRef}
-        style={{ marginTop: "auto", paddingTop: "14px", position: "relative" }}
+        style={{ marginTop: "auto", paddingTop: "12px", position: "relative" }}
       >
+        {/* Divider above profile */}
+        <div
+          style={{
+            height: "1px",
+            background:
+              "linear-gradient(90deg, transparent, rgba(255,255,255,0.06) 40%, rgba(255,255,255,0.06) 60%, transparent)",
+            marginBottom: "10px",
+          }}
+        />
+
         <SidebarProfile
           credits={credits}
           isOpen={profileOpen}
