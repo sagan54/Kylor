@@ -30,6 +30,7 @@ import {
   ChevronDown,
 } from "lucide-react";
 import { useMemo, useRef, useState, useEffect } from "react";
+import AppSidebar from "./components/AppSidebar";
 
 const C = {
   accent: "#7c3aed",

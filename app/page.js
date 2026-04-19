@@ -215,8 +215,9 @@ export default function Home() {
         fontFamily: "'Inter', 'SF Pro Display', sans-serif",
       }}
     >
-      <div style={{ display: "grid", gridTemplateColumns: "88px 1fr", minHeight: "100vh" }}>
-        <AppSidebar active="Home" />
+<div style={{ display: "grid", gridTemplateColumns: "88px 1fr" }}>
+  <AppSidebar active="Home" />
+
 
         <div style={{ gridColumn: "2", minHeight: "100vh", overflowY: "auto" }}>
 
@@ -1573,7 +1574,7 @@ export default function Home() {
           </section>
 
         </div>
-      </div>
+        </div>
     </main>
   );
 }

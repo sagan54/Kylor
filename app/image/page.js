@@ -34,6 +34,7 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { supabase } from "../../lib/supabase";
+import AppSidebar from "../components/AppSidebar";
 
 // ─── Cache keys ──────────────────────────────────────────────────────────────
 const SESSION_KEY = "kylor_img_cache_v2";
