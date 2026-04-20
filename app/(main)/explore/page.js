@@ -19,7 +19,6 @@ import {
   Flame,
 } from "lucide-react";
 import { useState, useRef } from "react";
-import AppSidebar from "../components/AppSidebar";
 
 // ─── Tokens (matches all other pages) ────────────────────────────────────────
 const C = {
@@ -250,9 +249,6 @@ return (
       fontFamily: "'Inter', 'SF Pro Display', sans-serif",
     }}
   >
-    <div style={{ display: "grid", gridTemplateColumns: "88px 1fr", minHeight: "100vh" }}>
-      <AppSidebar active="Explore" />
-
       <div
         style={{
           display: "grid",
@@ -593,7 +589,6 @@ return (
       <AnimatePresence>
         {lightboxItem && <Lightbox item={lightboxItem} onClose={() => setLightboxItem(null)} />}
       </AnimatePresence>
-    </div>
   </main>
 );
 }

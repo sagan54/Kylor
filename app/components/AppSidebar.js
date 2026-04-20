@@ -756,24 +756,23 @@ export default function AppSidebar({ active = "Home" }) {
   }
 
   return (
-    <aside
-      style={{
-        position: "fixed",
-        top: 0,
-        left: 0,
-        width: "84px",
-        height: "100vh",
-        borderRight: `1px solid rgba(255,255,255,0.05)`,
-        background:
-          "linear-gradient(180deg, #07090f 0%, #060810 60%, #050710 100%)",
-        padding: "20px 8px 20px",
-        display: "flex",
-        flexDirection: "column",
-        overflow: "visible",
-        zIndex: 100,
-        boxShadow: "inset -1px 0 0 rgba(255,255,255,0.03), 4px 0 32px rgba(0,0,0,0.4)",
-      }}
-    >
+<aside
+  style={{
+    position: "sticky",
+    top: 0,
+    height: "100vh",   // ✅ NOT 100dvh
+    width: "88px",
+
+    borderRight: "1px solid rgba(255,255,255,0.05)",
+    background:
+      "linear-gradient(180deg, #07090f 0%, #060810 60%, #050710 100%)",
+
+    padding: "20px 6px",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+  }}
+>
       {/* Logo mark */}
       <div style={{ display: "grid", placeItems: "center", marginBottom: "24px" }}>
         <motion.div
@@ -797,7 +796,7 @@ export default function AppSidebar({ active = "Home" }) {
       </div>
 
       {/* Nav items */}
-      <div style={{ display: "grid", gap: "4px" }}>
+      <div style={{ display: "grid", gap: "4px", justifyItems: "center" }}>
         {SIDEBAR_ITEMS.map((item, i) => {
           // Insert a subtle divider before "Movie Studio" and before "Projects"
           const dividerBefore = item.label === "Movie Studio";

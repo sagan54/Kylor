@@ -17,8 +17,8 @@ import {
   Play,
   Film,
 } from "lucide-react";
-import { supabase } from "../lib/supabase";
-import AppSidebar from "./components/AppSidebar";
+import { supabase } from "../../lib/supabase"; 
+import AppSidebar from "../components/AppSidebar";
 
 // ─── Design Tokens ────────────────────────────────────────────────────────────
 const C = {
@@ -207,19 +207,19 @@ export default function Home() {
   }
 
   return (
-    <main
-      style={{
-        minHeight: "100vh",
-        background: C.bg,
-        color: C.text,
-        fontFamily: "'Inter', 'SF Pro Display', sans-serif",
-      }}
-    >
-<div style={{ display: "grid", gridTemplateColumns: "88px 1fr" }}>
-  <AppSidebar active="Home" />
+<main
+  style={{
+    minHeight: "100vh",
+    background: C.bg,
+    color: C.text,
+    width: "100%",
+    maxWidth: "100%",
+    overflowX: "hidden",   // 🔥 THIS IS KEY
+  }}
+>
 
 
-        <div style={{ gridColumn: "2", minHeight: "100vh", overflowY: "auto" }}>
+        <div style={{ minHeight: "100vh" }}>
 
           {/* ── Top bar ── */}
           <div
@@ -1573,7 +1573,6 @@ export default function Home() {
             </motion.div>
           </section>
 
-        </div>
         </div>
     </main>
   );

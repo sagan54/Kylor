@@ -29,7 +29,7 @@ import {
   FileText,
   Clock,
 } from "lucide-react";
-import { supabase } from "../../lib/supabase";
+import { supabase } from "../../../lib/supabase";
 
 
 // ─── Tokens (matches image page) ─────────────────────────────────────────────
@@ -57,19 +57,6 @@ const radius = {
   xl: "22px",
   full: "999px",
 };
-
-// ─── Sidebar items ────────────────────────────────────────────────────────────
-const SIDEBAR_ITEMS = [
-  { label: "Home", icon: Compass, href: "/" },
-  { label: "Explore", icon: Compass, href: "/explore" },
-  { label: "Story", icon: Clapperboard, href: "/story", active: true },
-  { label: "Image", icon: ImageIcon, href: "/image" },
-  { label: "Video", icon: Video, href: "/video" },
-  { label: "Consistency", icon: UserCircle2, href: "/consistency" },
-  { label: "Motion", icon: Orbit, href: "#" },
-  { label: "Projects", icon: FolderKanban, href: "/story" },
-  { label: "Settings", icon: Settings, href: "#" },
-];
 
 const GENRES = ["Sci-Fi", "Thriller", "Drama", "Horror", "Action", "Mystery", "Romance"];
 const TONES = ["Cinematic", "Dark", "Emotional", "Gritty", "Epic", "Suspenseful"];
@@ -152,32 +139,6 @@ function CustomSelect({ value, onChange, options, placeholder = "Select" }) {
         )}
       </AnimatePresence>
     </div>
-  );
-}
-
-// ─── Sidebar Item ─────────────────────────────────────────────────────────────
-function SidebarItem({ item }) {
-  const Icon = item.icon;
-  const inner = (
-    <motion.div
-      whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
-      style={{
-        display: "grid", justifyItems: "center", gap: "6px",
-        padding: "10px 6px", borderRadius: radius.lg,
-        background: item.active ? "linear-gradient(160deg, rgba(79,70,229,0.22), rgba(124,58,237,0.14))" : "transparent",
-        border: `1px solid ${item.active ? C.border : "transparent"}`,
-        color: item.active ? C.text : C.textMuted,
-        cursor: "pointer", transition: "all 0.18s ease",
-      }}
-    >
-      <div style={{ width: "36px", height: "36px", borderRadius: "12px", display: "grid", placeItems: "center", background: item.active ? "rgba(255,255,255,0.07)" : "rgba(255,255,255,0.02)" }}>
-        <Icon size={17} />
-      </div>
-      <span style={{ fontSize: "10.5px", textAlign: "center", lineHeight: 1.2 }}>{item.label}</span>
-    </motion.div>
-  );
-  return item.href === "#" ? <div>{inner}</div> : (
-    <Link href={item.href} style={{ textDecoration: "none", color: "inherit" }}>{inner}</Link>
   );
 }
 
@@ -348,18 +309,8 @@ export default function StoryPage() {
       height: "100vh", overflow: "hidden",
       background: `radial-gradient(ellipse at 8% 12%, rgba(79,70,229,0.13), transparent 28%), radial-gradient(ellipse at 92% 8%, rgba(124,58,237,0.11), transparent 30%), ${C.bg}`,
       color: C.text, fontFamily: "'Inter', 'SF Pro Display', sans-serif",
-      display: "grid", gridTemplateColumns: "88px 1fr",
+      display: "grid", gridTemplateColumns: "1fr",
     }}>
-
-      {/* ── Sidebar ── */}
-      <aside style={{ borderRight: `1px solid ${C.border}`, background: C.sidebar, padding: "18px 10px", height: "100vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
-        <div style={{ width: "46px", height: "46px", borderRadius: "16px", margin: "0 auto 22px", display: "grid", placeItems: "center", background: "linear-gradient(135deg, rgba(79,70,229,0.28), rgba(124,58,237,0.18))", border: `1px solid ${C.border}`, boxShadow: `0 0 20px ${C.accentGlow}` }}>
-          <Sparkles size={20} color="#a78bfa" />
-        </div>
-        <div style={{ display: "grid", gap: "8px" }}>
-          {SIDEBAR_ITEMS.map((item) => <SidebarItem key={item.label} item={item} />)}
-        </div>
-      </aside>
 
       {/* ── Main ── */}
       <div style={{ display: "grid", gridTemplateRows: "48px 1fr", height: "100vh", overflow: "hidden" }}>

@@ -7,8 +7,10 @@
 html, body {
   margin: 0;
   padding: 0;
-  background: #050816; /* your dark background */
-  overflow-x: hidden;
+  background: #050816;
+  
+  height: 100%;        /* ✅ REQUIRED */
+  overflow: hidden;    /* ✅ THIS IS THE REAL FIX */
 }
 .kylor-scroll {
   scrollbar-width: thin;
@@ -34,4 +36,8 @@ html, body {
 .kylor-scroll::-webkit-scrollbar-thumb:hover {
   background: linear-gradient(180deg, rgba(129, 140, 248, 1), rgba(147, 51, 234, 1));
   background-clip: padding-box;
+}
+body {
+  font-size: 14px;
+  line-height: 1.4;
 }

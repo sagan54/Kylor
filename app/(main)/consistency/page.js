@@ -11,9 +11,9 @@ import {
   List, Folder, Bell, BellOff, ChevronLeft, MoreHorizontal,
   Shuffle, BookOpen, Camera, Sliders, ArrowRight, ExternalLink,
 } from "lucide-react";
-import { IMAGE_TYPES, IMAGE_ORDER, PACK_VIEWS } from "../../lib/character-constants";
+import { IMAGE_TYPES, IMAGE_ORDER, PACK_VIEWS } from "../../../lib/character-constants";
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
-import { supabase } from "../../lib/supabase";
+import { supabase } from "../../../lib/supabase";
 
 const CHAR_BUCKET = "character-refs";
 const SESSION_KEY = "kylor_chars_cache_v2";
@@ -28,18 +28,6 @@ const C = {
   bg: "#05070c", sidebar: "#080a10",
 };
 const radius = { sm: "10px", md: "14px", lg: "18px", xl: "22px", full: "999px" };
-
-const SIDEBAR_ITEMS = [
-  { label: "Home",        icon: Compass,      href: "/" },
-  { label: "Explore",     icon: Compass,      href: "/explore" },
-  { label: "Story",       icon: Clapperboard, href: "/story" },
-  { label: "Image",       icon: ImageIcon,    href: "/image" },
-  { label: "Video",       icon: Video,        href: "/video" },
-  { label: "Consistency", icon: UserCircle2,  href: "/consistency", active: true },
-  { label: "Motion",      icon: Orbit,        href: "#" },
-  { label: "Projects",    icon: FolderKanban, href: "/story" },
-  { label: "Settings",    icon: Settings,     href: "#" },
-];
 
 const GENDERS     = ["Female", "Male", "Non-binary", "Unspecified"];
 const AGE_RANGE   = ["Teen (13–17)", "Young Adult (18–30)", "Adult (30–50)", "Senior (50+)", "Unspecified"];
@@ -416,24 +404,6 @@ function getMasterImageForCharacter(char) {
   if (coverRef?.previewUrl) return coverRef.previewUrl;
 
   return char.coverImage || null;
-}
-
-function SidebarItem({ item }) {
-  const Icon = item.icon;
-  const inner = (
-    <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
-      style={{ display: "grid", justifyItems: "center", gap: "6px", padding: "10px 6px", borderRadius: radius.lg,
-        background: item.active ? "linear-gradient(160deg,rgba(79,70,229,0.22),rgba(124,58,237,0.14))" : "transparent",
-        border: `1px solid ${item.active ? C.border : "transparent"}`,
-        color: item.active ? C.text : C.textMuted, cursor: "pointer", transition: "all 0.18s ease" }}>
-      <div style={{ width: 36, height: 36, borderRadius: 12, display: "grid", placeItems: "center",
-        background: item.active ? "rgba(255,255,255,0.07)" : "rgba(255,255,255,0.02)" }}>
-        <Icon size={17} />
-      </div>
-      <span style={{ fontSize: "10.5px", textAlign: "center", lineHeight: 1.2 }}>{item.label}</span>
-    </motion.div>
-  );
-  return item.href === "#" ? <div>{inner}</div> : <Link href={item.href} style={{ textDecoration: "none", color: "inherit" }}>{inner}</Link>;
 }
 
 function Select({ label, options, value, onChange }) {
@@ -2434,15 +2404,7 @@ cover_image: savedUrl,
   return (
     <main style={{ height: "100vh", overflow: "hidden",
       background: `radial-gradient(ellipse at 8% 12%,rgba(79,70,229,0.13),transparent 28%),radial-gradient(ellipse at 92% 8%,rgba(124,58,237,0.11),transparent 30%),${C.bg}`,
-      color: C.text, fontFamily: "'Inter','SF Pro Display',sans-serif", display: "grid", gridTemplateColumns: "88px 1fr" }}>
-
-      <aside style={{ borderRight: `1px solid ${C.border}`, background: C.sidebar, padding: "18px 10px", height: "100vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
-        <div style={{ width: 46, height: 46, borderRadius: 16, margin: "0 auto 22px", display: "grid", placeItems: "center",
-          background: "linear-gradient(135deg,rgba(79,70,229,0.28),rgba(124,58,237,0.18))", border: `1px solid ${C.border}`, boxShadow: `0 0 20px ${C.accentGlow}` }}>
-          <Sparkles size={20} color="#a78bfa" />
-        </div>
-        <div style={{ display: "grid", gap: 8 }}>{SIDEBAR_ITEMS.map(item => <SidebarItem key={item.label} item={item} />)}</div>
-      </aside>
+      color: C.text, fontFamily: "'Inter','SF Pro Display',sans-serif", display: "grid", gridTemplateColumns: "1fr" }}>
 
       <div style={{ display: "grid", gridTemplateRows: "48px 1fr", height: "100vh", overflow: "hidden" }}>
 

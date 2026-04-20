@@ -58,18 +58,6 @@ const radius = {
   full: "999px",
 };
 
-const SIDEBAR_ITEMS = [
-  { label: "Home", icon: Compass, href: "/" },
-  { label: "Explore", icon: Compass, href: "/explore" },
-  { label: "Story", icon: Clapperboard, href: "/story" },
-  { label: "Image", icon: ImageIcon, href: "/image" },
-  { label: "Video", icon: Video, href: "/video", active: true },
-  { label: "Consistency", icon: UserCircle2, href: "/consistency" },
-  { label: "Motion", icon: Orbit, href: "#" },
-  { label: "Projects", icon: FolderKanban, href: "/story" },
-  { label: "Settings", icon: Settings, href: "#" },
-];
-
 const CREATE_TABS = ["Create Video", "Edit Video", "Motion Control"];
 const RIGHT_TABS = ["History", "How it works"];
 const PRESETS = [
@@ -81,57 +69,6 @@ const RESULT_TAGS = ["5s", "16:9", "720p"];
 const DURATIONS = ["5s", "8s", "10s"];
 const RATIOS = ["Auto", "9:16", "2:3", "3:4", "1:1", "4:3", "3:2", "16:9", "21:9"];
 const RESOLUTIONS = ["720p", "1080p"];
-
-function SidebarItem({ item }) {
-  const Icon = item.icon;
-
-  const inner = (
-    <motion.div
-      whileHover={{ scale: 1.03 }}
-      whileTap={{ scale: 0.97 }}
-      style={{
-        display: "grid",
-        justifyItems: "center",
-        gap: "6px",
-        padding: "10px 6px",
-        borderRadius: radius.lg,
-        background: item.active
-          ? "linear-gradient(160deg,rgba(79,70,229,0.22),rgba(124,58,237,0.14))"
-          : "transparent",
-        border: `1px solid ${item.active ? C.border : "transparent"}`,
-        color: item.active ? C.text : C.textMuted,
-        cursor: "pointer",
-        transition: "all 0.18s ease",
-      }}
-    >
-      <div
-        style={{
-          width: 36,
-          height: 36,
-          borderRadius: 12,
-          display: "grid",
-          placeItems: "center",
-          background: item.active
-            ? "rgba(255,255,255,0.07)"
-            : "rgba(255,255,255,0.02)",
-        }}
-      >
-        <Icon size={17} />
-      </div>
-      <span style={{ fontSize: "10.5px", textAlign: "center", lineHeight: 1.2 }}>
-        {item.label}
-      </span>
-    </motion.div>
-  );
-
-  return item.href === "#" ? (
-    <div>{inner}</div>
-  ) : (
-    <Link href={item.href} style={{ textDecoration: "none", color: "inherit" }}>
-      {inner}
-    </Link>
-  );
-}
 
 function PillButton({ active, onClick, children }) {
   return (
@@ -421,43 +358,9 @@ export default function VideoPage() {
         color: C.text,
         fontFamily: "'Inter','SF Pro Display',sans-serif",
         display: "grid",
-        gridTemplateColumns: "88px 1fr",
+        gridTemplateColumns: "1fr",
       }}
     >
-      <aside
-        style={{
-          borderRight: `1px solid ${C.border}`,
-          background: C.sidebar,
-          padding: "18px 10px",
-          height: "100vh",
-          display: "flex",
-          flexDirection: "column",
-          overflow: "hidden",
-        }}
-      >
-        <div
-          style={{
-            width: 46,
-            height: 46,
-            borderRadius: 16,
-            margin: "0 auto 22px",
-            display: "grid",
-            placeItems: "center",
-            background: "linear-gradient(135deg,rgba(79,70,229,0.28),rgba(124,58,237,0.18))",
-            border: `1px solid ${C.border}`,
-            boxShadow: `0 0 20px ${C.accentGlow}`,
-          }}
-        >
-          <Sparkles size={20} color="#a78bfa" />
-        </div>
-
-        <div style={{ display: "grid", gap: 8 }}>
-          {SIDEBAR_ITEMS.map((item) => (
-            <SidebarItem key={item.label} item={item} />
-          ))}
-        </div>
-      </aside>
-
       <div
         style={{
           height: "100vh",

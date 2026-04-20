@@ -8,15 +8,22 @@ export default function MainLayout({ children }) {
       style={{
         display: "grid",
         gridTemplateColumns: "88px 1fr",
-        minHeight: "100vh",
+        height: "100vh",          // ✅ FIXED HEIGHT
+        overflow: "hidden",       // ✅ PREVENT BODY SCROLL
         background: "#05070c",
       }}
     >
-      {/* Sidebar (persistent) */}
+      {/* Sidebar */}
       <AppSidebar />
 
-      {/* Page content */}
-      <div style={{ overflowY: "auto" }}>
+      {/* Main Content (ONLY SCROLL HERE) */}
+      <div
+        style={{
+          overflowY: "auto",      // ✅ ONLY SCROLL CONTAINER
+          height: "100vh",
+        }}
+        className="kylor-scroll"
+      >
         {children}
       </div>
     </div>
