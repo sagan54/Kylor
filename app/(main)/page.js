@@ -480,7 +480,7 @@ export default function Home() {
                 transition={{ duration: 0.6, delay: 0.5 }}
                 style={{ display: "flex", justifyContent: "center", gap: "12px", flexWrap: "wrap" }}
               >
-                <Link href={session ? "/video" : "/signup"} style={{ textDecoration: "none" }}>
+                <Link href={session ? "/studio" : "/signup"} style={{ textDecoration: "none" }}>
                   <motion.div
                     whileHover={{
                       boxShadow: "0 24px 60px rgba(124,58,237,0.45)",
