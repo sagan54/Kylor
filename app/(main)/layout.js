@@ -7,7 +7,7 @@ export default function MainLayout({ children }) {
     <div
       style={{
         display: "grid",
-        gridTemplateColumns: "88px 1fr",
+        gridTemplateColumns: "104px 1fr",
         height: "100vh",          // ✅ FIXED HEIGHT
         overflow: "hidden",       // ✅ PREVENT BODY SCROLL
         background: "#05070c",

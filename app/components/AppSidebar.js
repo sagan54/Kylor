@@ -16,6 +16,7 @@ import {
   Plus,
 } from "lucide-react";
 import { supabase } from "../../lib/supabase";
+import { usePathname } from "next/navigation";
 
 const C = {
   accent: "#7c3aed",
@@ -98,8 +99,8 @@ function SidebarItem({ item }) {
       style={{
         display: "grid",
         justifyItems: "center",
-        gap: "7px",
-        padding: "11px 6px",
+        gap: "8px",
+        padding: "10px 12px",
         borderRadius: radius.lg,
         background: isStudio
           ? "linear-gradient(155deg, rgba(124,58,237,0.22) 0%, rgba(79,70,229,0.14) 100%)"
@@ -660,6 +661,8 @@ export default function AppSidebar({ active = "Home" }) {
   const [profileOpen, setProfileOpen] = useState(false);
   const profileWrapRef = useRef(null);
 
+  const pathname = usePathname();
+
   const SIDEBAR_ITEMS = getSidebarItems(active);
 
   useEffect(() => {
@@ -761,7 +764,7 @@ export default function AppSidebar({ active = "Home" }) {
     position: "sticky",
     top: 0,
     height: "100vh",   // ✅ NOT 100dvh
-    width: "88px",
+    width: "110px",
 
     borderRight: "1px solid rgba(255,255,255,0.05)",
     background:
@@ -796,18 +799,34 @@ export default function AppSidebar({ active = "Home" }) {
       </div>
 
       {/* Nav items */}
-      <div style={{ display: "grid", gap: "4px", justifyItems: "center" }}>
-        {SIDEBAR_ITEMS.map((item, i) => {
-          // Insert a subtle divider before "Movie Studio" and before "Projects"
-          const dividerBefore = item.label === "Movie Studio";
-          return (
-            <div key={item.label}>
-              {dividerBefore && <SectionDivider />}
-              <SidebarItem item={item} />
-            </div>
-          );
-        })}
-      </div>
+      <div style={{
+  display: "grid",
+  gap: "6px",
+  justifyItems: "center"  // ✅ bring this back
+}}>
+
+{SIDEBAR_ITEMS.map((item, i) => {
+  const dividerBefore = item.label === "Movie Studio";
+
+  const isActive =
+    item.href === "/"
+      ? pathname === "/"
+      : pathname.startsWith(item.href);
+
+  return (
+    <div key={item.label}>
+      {dividerBefore && <SectionDivider />}
+
+      <SidebarItem
+        item={{
+          ...item,
+          active: isActive, // 🔥 dynamic active
+        }}
+      />
+    </div>
+  );
+})}
+</div>
 
       {/* Profile */}
       <div
