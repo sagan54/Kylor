@@ -24,6 +24,38 @@ const DURATION_OPTIONS = ["4s", "8s", "16s"];
 const RESOLUTION_OPTIONS = ["720p", "1080p", "4K"];
 const MODES = ["Image", "Video"];
 
+// ─── Error Normalizer ─────────────────────────────────────────────────────────
+function friendlyError(raw) {
+  if (!raw) return "Generation failed. Please try again.";
+  const s = typeof raw === "string" ? raw : JSON.stringify(raw);
+  // 402 / insufficient credit
+  if (s.includes("402") || s.toLowerCase().includes("insufficient credit") || s.toLowerCase().includes("payment required")) {
+    return "Insufficient credits. Please top up your account to continue generating.";
+  }
+  // 401 / auth
+  if (s.includes("401") || s.toLowerCase().includes("unauthorized") || s.toLowerCase().includes("authentication")) {
+    return "Authentication error. Please check your API configuration.";
+  }
+  // 429 / rate limit
+  if (s.includes("429") || s.toLowerCase().includes("rate limit") || s.toLowerCase().includes("too many requests")) {
+    return "Too many requests. Please wait a moment before trying again.";
+  }
+  // 500 / server
+  if (s.includes("500") || s.toLowerCase().includes("internal server")) {
+    return "The generation service is temporarily unavailable. Please try again shortly.";
+  }
+  // Timeout
+  if (s.toLowerCase().includes("timed out") || s.toLowerCase().includes("timeout")) {
+    return "Generation timed out. Please try again.";
+  }
+  // Strip raw JSON / URLs — if it looks like a JSON blob or a URL-heavy string, replace entirely
+  if (s.startsWith("{") || s.startsWith("[") || (s.includes("https://") && s.length > 120)) {
+    return "Generation failed. Please try again.";
+  }
+  // Truncate anything still too long
+  return s.length > 100 ? s.slice(0, 97) + "…" : s;
+}
+
 // ─── Camera Settings Data ─────────────────────────────────────────────────────
 const CAMERA_MOVEMENTS = [
   { id: "Auto", label: "Auto", icon: "🎯" },
@@ -349,7 +381,7 @@ function DurationButton({ duration, setDuration }) {
   );
 }
 
-// ─── Camera Modal (centered, like Genre modal) ────────────────────────────────
+// ─── Camera Modal ─────────────────────────────────────────────────────────────
 function CameraModal({ camera, setCamera, onClose }) {
   const [lens, setLens] = useState("Clean Digital");
   const [focalLength, setFocalLength] = useState("28mm");
@@ -553,7 +585,6 @@ function CameraModal({ camera, setCamera, onClose }) {
 
           <div style={{ borderTop: `1px solid ${BORDER}`, padding: "14px 16px" }}>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
-
               <div>
                 <div style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: "0.12em", color: TEXT_DIM, textTransform: "uppercase", marginBottom: 8, textAlign: "center" }}>
                   Camera
@@ -675,7 +706,6 @@ function CameraModal({ camera, setCamera, onClose }) {
                   })}
                 </div>
               </div>
-
             </div>
           </div>
 
@@ -1106,7 +1136,7 @@ function GenerateButton({ isGenerating, onClick }) {
   );
 }
 
-// ─── Genre Pill (dock button) ─────────────────────────────────────────────────
+// ─── Genre Pill ───────────────────────────────────────────────────────────────
 function GenrePill({ genre, onClick }) {
   const g = GENRES.find((x) => x.id === genre) || GENRES[GENRES.length - 1];
   return (
@@ -1379,17 +1409,154 @@ function GenreModal({ genre, onSelect, onClose }) {
   );
 }
 
+// ─── Gallery Grid ─────────────────────────────────────────────────────────────
+function GalleryGrid({ outputs, viewMode, activeTab }) {
+  const filtered = outputs.filter(o => {
+    if (activeTab === "Image") return o.type === "Image";
+    if (activeTab === "Video") return o.type === "Video";
+    return true;
+  });
+
+  if (filtered.length === 0) {
+    return (
+      <div style={{
+        display: "flex", alignItems: "center", justifyContent: "center",
+        flex: 1, color: TEXT_DIM, fontSize: 13, letterSpacing: "0.03em",
+        flexDirection: "column", gap: 8, padding: "60px 0",
+      }}>
+        <span style={{ fontSize: 32, opacity: 0.3 }}>🎬</span>
+        <span>No {activeTab.toLowerCase()} generations yet</span>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: viewMode === "grid" ? "repeat(auto-fill, minmax(220px,1fr))" : "1fr",
+        gap: 12,
+        padding: "0 16px 16px",
+      }}
+    >
+      {filtered.map((o, idx) => (
+        <motion.div
+          key={o.id}
+          initial={{ opacity: 0, scale: 0.92, y: 10 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          transition={{ duration: 0.35, delay: idx * 0.04, ease: [0.22, 1, 0.36, 1] }}
+          style={{
+            borderRadius: 12,
+            border: `1px solid ${o.status === "succeeded" ? "rgba(124,58,237,0.25)" : o.status === "failed" ? "rgba(248,113,113,0.2)" : BORDER}`,
+            background: "rgba(10,12,22,0.8)",
+            overflow: "hidden",
+            cursor: "pointer",
+          }}
+        >
+          <div
+            style={{
+              position: "relative",
+              aspectRatio: "16/9",
+              background: "linear-gradient(135deg, #0d0f1a, #1a1f2e)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              overflow: "hidden",
+            }}
+          >
+            {o.status === "succeeded" && o.imageUrl ? (
+              <>
+                <img
+                  src={o.imageUrl}
+                  alt={o.prompt}
+                  style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                />
+                {o.type === "Video" && (
+                  <div style={{
+                    position: "absolute", inset: 0,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    background: "rgba(0,0,0,0.3)",
+                  }}>
+                    <div style={{
+                      width: 36, height: 36, borderRadius: "50%",
+                      background: "rgba(0,0,0,0.6)", border: "1.5px solid rgba(255,255,255,0.4)",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      fontSize: 14, paddingLeft: 2,
+                    }}>▶</div>
+                  </div>
+                )}
+              </>
+            ) : o.status === "failed" ? (
+              <div style={{ textAlign: "center", padding: 16 }}>
+                <div style={{ fontSize: 24, marginBottom: 6 }}>⚠️</div>
+                <div style={{ fontSize: 10, color: "rgba(248,113,113,0.8)", lineHeight: 1.4 }}>
+                  {o.errorMsg || "Generation failed"}
+                </div>
+              </div>
+            ) : (
+              <div style={{ textAlign: "center" }}>
+                <motion.div
+                  animate={{ rotate: 360 }}
+                  transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }}
+                  style={{
+                    width: 28, height: 28, borderRadius: "50%",
+                    border: "2px solid rgba(124,58,237,0.2)",
+                    borderTopColor: "#a78bfa",
+                    margin: "0 auto 8px",
+                  }}
+                />
+                <div style={{ fontSize: 10, color: TEXT_MUTED }}>Generating…</div>
+              </div>
+            )}
+
+            {o.status === "succeeded" && o.imageUrl && (
+              <motion.a
+                href={o.imageUrl}
+                download
+                target="_blank"
+                rel="noreferrer"
+                initial={{ opacity: 0 }}
+                whileHover={{ opacity: 1 }}
+                style={{
+                  position: "absolute", top: 6, right: 6,
+                  width: 26, height: 26, borderRadius: 7,
+                  background: "rgba(0,0,0,0.65)",
+                  border: "1px solid rgba(255,255,255,0.15)",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  fontSize: 12, cursor: "pointer", textDecoration: "none",
+                  opacity: 0,
+                }}
+              >
+                ⬇
+              </motion.a>
+            )}
+          </div>
+
+          <div style={{ padding: "8px 10px" }}>
+            <div style={{ fontSize: 10.5, color: TEXT_MUTED, lineHeight: 1.35, marginBottom: 4 }}>
+              {o.prompt.slice(0, 70)}{o.prompt.length > 70 ? "…" : ""}
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+              <div style={{
+                width: 5, height: 5, borderRadius: "50%", flexShrink: 0,
+                background: o.status === "succeeded" ? "#4ade80" : o.status === "failed" ? "#f87171" : "#a78bfa",
+                boxShadow: o.status === "processing" ? "0 0 5px #a78bfa" : "none",
+              }} />
+              <span style={{ fontSize: 9.5, color: TEXT_DIM, letterSpacing: "0.05em", textTransform: "uppercase" }}>
+                {o.status === "succeeded" ? "Ready" : o.status === "failed" ? "Failed" : "Processing"}
+              </span>
+            </div>
+          </div>
+        </motion.div>
+      ))}
+    </div>
+  );
+}
+
 // ─── Main Export ──────────────────────────────────────────────────────────────
 export default function MovieStudio() {
   const [prompt, setPrompt] = useState("");
   const [mode, setMode] = useState("Video");
   const [duration, setDuration] = useState("8s");
   const [resolution, setResolution] = useState("1K");
-
-  // Reset resolution default when mode changes
-  useEffect(() => {
-    setResolution(mode === "Image" ? "1K" : "1080p");
-  }, [mode]);
   const [camera, setCamera] = useState("Auto");
   const [genre, setGenre] = useState("general");
   const [variants, setVariants] = useState(1);
@@ -1403,20 +1570,22 @@ export default function MovieStudio() {
   const [outputs, setOutputs] = useState([]);
   const [genreOpen, setGenreOpen] = useState(false);
   const [cameraOpen, setCameraOpen] = useState(false);
+  const [hasGenerated, setHasGenerated] = useState(false);
+  const [galleryTab, setGalleryTab] = useState("All");
 
-  const textareaRef = useRef(null);
-  const overlayRef = useRef(null);
+  useEffect(() => {
+    setResolution(mode === "Image" ? "1K" : "1080p");
+  }, [mode]);
+
+  const editorRef = useRef(null);
   const mentionDropdownRef = useRef(null);
 
-  // ── @ mention state ──
   const [mentionQuery, setMentionQuery] = useState("");
   const [mentionOpen, setMentionOpen] = useState(false);
   const [mentionChars, setMentionChars] = useState([]);
   const [mentionLoading, setMentionLoading] = useState(false);
   const [selectedChar, setSelectedChar] = useState(null);
-  const [mentionDropPos, setMentionDropPos] = useState({ top: 0, left: 0 });
 
-  // Fetch characters from Supabase via a simple API call
   const fetchCharacters = useCallback(async (query = "") => {
     setMentionLoading(true);
     try {
@@ -1432,67 +1601,17 @@ export default function MovieStudio() {
     }
   }, []);
 
-  const handlePromptChange = useCallback((e) => {
-    const val = e.target.value;
-    setPrompt(val);
-
-    if (error) setError("");
-
-    const textarea = textareaRef.current;
-    if (!textarea) return;
-
-    textarea.style.height = "auto";
-    textarea.offsetHeight;
-
-    // Detect @ trigger
-    const cursorPos = e.target.selectionStart;
-    const textUpToCursor = val.slice(0, cursorPos);
-    const atMatch = textUpToCursor.match(/@([\w]*)$/);
-
-    if (atMatch) {
-      const query = atMatch[1];
-      setMentionQuery(query);
-      setMentionOpen(true);
-      fetchCharacters(query);
-    } else {
-      setMentionOpen(false);
-      setMentionQuery("");
-    }
-  }, [error, fetchCharacters]);
-
-  const handleMentionSelect = useCallback((char) => {
-    const cursorPos = textareaRef.current?.selectionStart ?? prompt.length;
-    const textUpToCursor = prompt.slice(0, cursorPos);
-    const afterAt = textUpToCursor.replace(/@[\w]*$/, "");
-    const afterCursor = prompt.slice(cursorPos);
-    const newPrompt = afterAt + "@" + char.name.replace(/\s+/g, "") + " " + afterCursor;
-    setPrompt(newPrompt);
-    setSelectedChar(char);
-    setMentionOpen(false);
-    setMentionQuery("");
-    textareaRef.current?.focus();
-  }, [prompt]);
-
-  // Close mention dropdown on outside click
   useEffect(() => {
     if (!mentionOpen) return;
     const handler = (e) => {
       if (mentionDropdownRef.current && !mentionDropdownRef.current.contains(e.target) &&
-          textareaRef.current && !textareaRef.current.contains(e.target)) {
+          editorRef.current && !editorRef.current.contains(e.target)) {
         setMentionOpen(false);
       }
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, [mentionOpen]);
-
-  // Sync overlay scroll with textarea scroll
-  useEffect(() => {
-    const textarea = textareaRef.current;
-    const overlay = overlayRef.current;
-    if (!textarea || !overlay) return;
-    overlay.scrollTop = textarea.scrollTop;
-  }, [prompt]);
 
   const fileInputRef = useRef(null);
   const [uploadedFile, setUploadedFile] = useState(null);
@@ -1535,15 +1654,16 @@ export default function MovieStudio() {
         }
 
         if (data.status === "failed") {
+          const msg = friendlyError(data.error);
           setOutputs((prev) =>
             prev.map((o) =>
               o.id === outputId
-                ? { ...o, status: "failed", errorMsg: data.error || "Generation failed." }
+                ? { ...o, status: "failed", errorMsg: msg }
                 : o
             )
           );
           setIsGenerating(false);
-          setError(data.error || "Generation failed. Please try again.");
+          setError(msg);
           return;
         }
       } catch (e) {
@@ -1565,11 +1685,15 @@ export default function MovieStudio() {
   const handleGenerate = useCallback(async () => {
     if (!prompt.trim()) {
       setError("Set the scene first — describe what you want to direct.");
-      textareaRef.current?.focus();
+      editorRef.current?.focus();
       return;
     }
     setError("");
     setIsGenerating(true);
+
+    if (!hasGenerated) {
+      setHasGenerated(true);
+    }
 
     const outputId = Date.now();
     setOutputs((prev) => [{ id: outputId, type: mode, prompt, status: "processing" }, ...prev]);
@@ -1591,7 +1715,7 @@ export default function MovieStudio() {
       const data = await res.json();
 
       if (!data.success || !data.predictionId) {
-        throw new Error(data.error || "Failed to start generation.");
+        throw new Error(friendlyError(data.error));
       }
 
       setOutputs((prev) =>
@@ -1602,15 +1726,16 @@ export default function MovieStudio() {
 
       pollStatus(data.predictionId, outputId);
     } catch (e) {
-      setError(e.message || "Generation failed. Please try again.");
+      const msg = friendlyError(e.message);
+      setError(msg);
       setOutputs((prev) =>
         prev.map((o) =>
-          o.id === outputId ? { ...o, status: "failed", errorMsg: e.message } : o
+          o.id === outputId ? { ...o, status: "failed", errorMsg: msg } : o
         )
       );
       setIsGenerating(false);
     }
-  }, [prompt, mode, genre, ratio, pollStatus]);
+  }, [prompt, mode, genre, ratio, pollStatus, hasGenerated]);
 
   useEffect(() => {
     const handler = (e) => {
@@ -1627,6 +1752,121 @@ export default function MovieStudio() {
     "Drone shot over a neon cyberpunk city",
   ];
 
+  const handleInput = useCallback((e) => {
+    const el = editorRef.current;
+    if (!el) return;
+
+    const text = el.innerText.replace(/\n$/, "");
+    setPrompt(text);
+    if (error) setError("");
+
+    const sel = window.getSelection();
+    if (!sel.rangeCount) return;
+
+    const range = sel.getRangeAt(0);
+    const preCaretRange = range.cloneRange();
+    preCaretRange.selectNodeContents(el);
+    preCaretRange.setEnd(range.endContainer, range.endOffset);
+
+    const textUpToCursor = preCaretRange.toString();
+    const atMatch = textUpToCursor.match(/@([\w]*)$/);
+
+    if (atMatch) {
+      setMentionQuery(atMatch[1]);
+      setMentionOpen(true);
+      fetchCharacters(atMatch[1]);
+    } else {
+      setMentionOpen(false);
+      setMentionQuery("");
+    }
+  }, [error, fetchCharacters]);
+
+  const handleMentionSelect = useCallback((char) => {
+    const el = editorRef.current;
+    if (!el) return;
+
+    const sel = window.getSelection();
+    if (!sel.rangeCount) return;
+
+    const range = sel.getRangeAt(0);
+    const preCaretRange = range.cloneRange();
+    preCaretRange.selectNodeContents(el);
+    preCaretRange.setEnd(range.endContainer, range.endOffset);
+
+    const textUpToCursor = preCaretRange.toString();
+    const beforeAt = textUpToCursor.replace(/@[\w]*$/, "");
+
+    const afterCursor = el.innerText.slice(textUpToCursor.length);
+    const mentionText = "@" + char.name.replace(/\s+/g, "") + " ";
+    const newText = beforeAt + mentionText + afterCursor;
+
+    setPrompt(newText);
+    editorRef.current.innerText = newText;
+    renderHighlights(el, newText);
+
+    const newCursorPos = beforeAt.length + mentionText.length;
+    setCursorPosition(el, newCursorPos);
+
+    setSelectedChar(char);
+    setMentionOpen(false);
+    setMentionQuery("");
+  }, []);
+
+  function renderHighlights(el, text) {
+    const parts = text.split(/(@[a-zA-Z0-9_]+)/g);
+    el.innerHTML = "";
+    parts.forEach((part) => {
+      if (/^@[a-zA-Z0-9_]+/.test(part)) {
+        const mark = document.createElement("mark");
+        mark.style.cssText =
+          "background:rgba(167,139,250,0.18);color:#c4b5fd;border-radius:4px;padding:1px 2px;";
+        mark.textContent = part;
+        el.appendChild(mark);
+      } else {
+        el.appendChild(document.createTextNode(part));
+      }
+    });
+  }
+
+  function setCursorPosition(el, pos) {
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    let node, remaining = pos;
+
+    while ((node = walker.nextNode())) {
+      if (remaining <= node.length) {
+        const range = document.createRange();
+        range.setStart(node, remaining);
+        range.collapse(true);
+
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+        return;
+      }
+      remaining -= node.length;
+    }
+  }
+
+  const imageCount = outputs.filter(o => o.type === "Image").length;
+  const videoCount = outputs.filter(o => o.type === "Video").length;
+
+  const composerProps = {
+    prompt, setPrompt, mode, setMode, duration, setDuration,
+    resolution, setResolution, camera, setCamera, genre, setGenre,
+    variants, setVariants, ratio, setRatio,
+    focused, setFocused, error, setError, isGenerating,
+    onGenerate: handleGenerate,
+    editorRef, mentionDropdownRef,
+    mentionOpen, setMentionOpen, mentionChars, mentionLoading, mentionQuery,
+    onMentionSelect: handleMentionSelect,
+    onInput: handleInput,
+    uploadedFile, fileInputRef,
+    onFileChange: handleFileChange,
+    onRemoveFile: handleRemoveFile,
+    onOpenGenre: () => setGenreOpen(true),
+    onOpenCamera: () => setCameraOpen(true),
+  };
+
   return (
     <div
       style={{
@@ -1635,12 +1875,16 @@ export default function MovieStudio() {
         color: "white", display: "flex", flexDirection: "column", overflow: "hidden",
       }}
     >
-      {/* ── Global styles for placeholder and range thumb ── */}
       <style>{`
         .studio-textarea::placeholder {
           color: rgba(255, 255, 255, 0.22);
           -webkit-text-fill-color: rgba(255, 255, 255, 0.22);
           opacity: 1;
+        }
+        [contenteditable][data-placeholder]:empty::before {
+          content: attr(data-placeholder);
+          color: rgba(255, 255, 255, 0.22);
+          pointer-events: none;
         }
         .studio-textarea::-webkit-input-placeholder {
           color: rgba(255, 255, 255, 0.22);
@@ -1649,6 +1893,28 @@ export default function MovieStudio() {
         .studio-textarea::-moz-placeholder {
           color: rgba(255, 255, 255, 0.22);
           opacity: 1;
+        }
+        .gallery-scroll::-webkit-scrollbar { width: 4px; }
+        .gallery-scroll::-webkit-scrollbar-track { background: transparent; }
+        .gallery-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 2px; }
+        input[type=range]::-webkit-slider-thumb {
+          -webkit-appearance: none;
+          width: 16px; height: 16px;
+          border-radius: 50%;
+          background: white;
+          box-shadow: 0 0 0 3px rgba(124,58,237,0.4), 0 2px 6px rgba(0,0,0,0.5);
+          cursor: pointer;
+          transition: box-shadow 0.15s;
+        }
+        input[type=range]::-webkit-slider-thumb:hover {
+          box-shadow: 0 0 0 4px rgba(124,58,237,0.55), 0 2px 8px rgba(0,0,0,0.6);
+        }
+        input[type=range]::-moz-range-thumb {
+          width: 16px; height: 16px;
+          border-radius: 50%; border: none;
+          background: white;
+          box-shadow: 0 0 0 3px rgba(124,58,237,0.4), 0 2px 6px rgba(0,0,0,0.5);
+          cursor: pointer;
         }
       `}</style>
 
@@ -1685,6 +1951,7 @@ export default function MovieStudio() {
           padding: "14px 28px", borderBottom: `1px solid ${BORDER}`,
           background: "rgba(8,10,16,0.7)",
           backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)",
+          flexShrink: 0,
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -1753,624 +2020,393 @@ export default function MovieStudio() {
         </div>
       </motion.header>
 
-      {/* ── Main ── */}
-      <main
-        style={{
-          flex: 1, display: "flex", flexDirection: "column",
-          alignItems: "center", justifyContent: "flex-end",
-          position: "relative", zIndex: 5, padding: "0 24px 100px", overflow: "hidden",
-        }}
-      >
-        <motion.div
-          initial={{ opacity: 0, y: 30 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.7, delay: 0.15, ease: [0.22, 1, 0.36, 1] }}
-          style={{ textAlign: "center", marginBottom: 32, width: "100%" }}
-        >
-          <div
-            style={{
-              fontSize: 11, fontWeight: 700, letterSpacing: "0.22em", color: "#a78bfa",
-              marginBottom: 18, textTransform: "uppercase",
-              display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-            }}
-          >
-            <span style={{ display: "inline-block", width: 24, height: 1, background: "linear-gradient(90deg, transparent, #a78bfa)" }} />
-            MOVIE STUDIO
-            <span style={{ display: "inline-block", width: 24, height: 1, background: "linear-gradient(90deg, #a78bfa, transparent)" }} />
-          </div>
-          <h1
-            style={{
-              fontSize: "clamp(30px, 4.8vw, 54px)", fontWeight: 800, margin: 0,
-              letterSpacing: "-0.03em", lineHeight: 1.1,
-            }}
-          >
-            <span
-              style={{
-                display: "block",
-                background: "linear-gradient(135deg, #ffffff 0%, rgba(255,255,255,0.72) 100%)",
-                WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text",
-              }}
-            >
-              Direct without limits.
-            </span>
-            <span
-              style={{
-                display: "block",
-                background: "linear-gradient(135deg, #c4b5fd 0%, #818cf8 40%, #22d3ee 100%)",
-                WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text",
-              }}
-            >
-              Every frame, exactly as you imagine.
-            </span>
-          </h1>
-          <p
-            style={{
-              margin: "18px auto 0", fontSize: 15, color: "rgba(255,255,255,0.52)",
-              fontWeight: 400, letterSpacing: "0.01em", lineHeight: 1.65, maxWidth: 520,
-            }}
-          >
-            Describe a scene.{" "}
-            <span style={{ color: "rgba(167,139,250,0.82)", fontWeight: 500 }}>Kylor</span>{" "}
-            handles the camera, motion, and world.
-          </p>
-        </motion.div>
+      {/* ── Main Area ── */}
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", position: "relative", zIndex: 5, overflow: "hidden" }}>
 
-        {outputs.length > 0 && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            style={{ width: "100%", maxWidth: 960, marginBottom: 28, overflowY: "auto", maxHeight: "45vh" }}
-          >
-            <div
+        {/* ══════════════════════════════════════════════════════════
+            HERO LAYOUT — shown before first generation
+            The hero text + centered composer live here.
+            On generate: hero text fades up, composer slides to bottom.
+        ══════════════════════════════════════════════════════════ */}
+        <AnimatePresence>
+          {!hasGenerated && (
+            <motion.div
+              key="hero-full"
+              initial={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.5, ease: [0.4, 0, 0.2, 1] }}
               style={{
-                display: "grid",
-                gridTemplateColumns: viewMode === "grid" ? "repeat(auto-fill, minmax(240px,1fr))" : "1fr",
-                gap: 16,
+                position: "absolute", inset: 0,
+                display: "flex", flexDirection: "column",
+                alignItems: "center", justifyContent: "flex-end",
+                padding: "0 24px 100px",
+                zIndex: 2,
               }}
             >
-              {outputs.map((o) => (
+              {/* ── Hero Text — fades up separately ── */}
+              <motion.div
+                exit={{
+                  opacity: 0,
+                  y: -32,
+                  transition: { duration: 0.38, ease: [0.4, 0, 0.2, 1] }
+                }}
+                style={{ textAlign: "center", marginBottom: 32, width: "100%" }}
+              >
                 <motion.div
-                  key={o.id}
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  transition={{ duration: 0.3 }}
-                  style={{
-                    borderRadius: 16,
-                    border: `1px solid ${o.status === "succeeded" ? "rgba(124,58,237,0.35)" : o.status === "failed" ? "rgba(248,113,113,0.3)" : BORDER}`,
-                    background: SURFACE,
-                    overflow: "hidden",
-                  }}
+                  initial={{ opacity: 0, y: 30 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.7, delay: 0.15, ease: [0.22, 1, 0.36, 1] }}
                 >
                   <div
                     style={{
-                      position: "relative",
-                      aspectRatio: "16/9",
-                      background: "linear-gradient(135deg, #0d0f1a, #1a1f2e)",
-                      display: "flex", alignItems: "center", justifyContent: "center",
-                      overflow: "hidden",
+                      fontSize: 11, fontWeight: 700, letterSpacing: "0.22em", color: "#a78bfa",
+                      marginBottom: 18, textTransform: "uppercase",
+                      display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
                     }}
                   >
-                    {o.status === "succeeded" && o.imageUrl ? (
-                      <img
-                        src={o.imageUrl}
-                        alt={o.prompt}
-                        style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                      />
-                    ) : o.status === "failed" ? (
-                      <div style={{ textAlign: "center", padding: 16 }}>
-                        <div style={{ fontSize: 28, marginBottom: 8 }}>⚠️</div>
-                        <div style={{ fontSize: 11, color: "rgba(248,113,113,0.8)", lineHeight: 1.4 }}>
-                          {o.errorMsg || "Generation failed"}
-                        </div>
-                      </div>
-                    ) : (
-                      <div style={{ textAlign: "center" }}>
-                        <motion.div
-                          animate={{ rotate: 360 }}
-                          transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }}
-                          style={{
-                            width: 32, height: 32, borderRadius: "50%",
-                            border: "2px solid rgba(124,58,237,0.2)",
-                            borderTopColor: "#a78bfa",
-                            margin: "0 auto 10px",
-                          }}
-                        />
-                        <div style={{ fontSize: 11, color: TEXT_MUTED }}>Generating…</div>
-                      </div>
-                    )}
-
-                    {o.status === "succeeded" && o.imageUrl && (
-                      <motion.a
-                        href={o.imageUrl}
-                        download
-                        target="_blank"
-                        rel="noreferrer"
-                        initial={{ opacity: 0 }}
-                        whileHover={{ opacity: 1 }}
-                        style={{
-                          position: "absolute", top: 8, right: 8,
-                          width: 28, height: 28, borderRadius: 8,
-                          background: "rgba(0,0,0,0.6)",
-                          border: "1px solid rgba(255,255,255,0.15)",
-                          display: "flex", alignItems: "center", justifyContent: "center",
-                          fontSize: 13, cursor: "pointer", textDecoration: "none",
-                          opacity: 0,
-                        }}
-                      >
-                        ⬇
-                      </motion.a>
-                    )}
+                    <span style={{ display: "inline-block", width: 24, height: 1, background: "linear-gradient(90deg, transparent, #a78bfa)" }} />
+                    MOVIE STUDIO
+                    <span style={{ display: "inline-block", width: 24, height: 1, background: "linear-gradient(90deg, #a78bfa, transparent)" }} />
                   </div>
-
-                  <div style={{ padding: "10px 12px" }}>
-                    <div style={{ fontSize: 11, color: TEXT_MUTED, lineHeight: 1.4, marginBottom: 4 }}>
-                      {o.prompt.slice(0, 90)}{o.prompt.length > 90 ? "…" : ""}
-                    </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                      <div style={{
-                        width: 6, height: 6, borderRadius: "50%", flexShrink: 0,
-                        background: o.status === "succeeded" ? "#4ade80" : o.status === "failed" ? "#f87171" : "#a78bfa",
-                        boxShadow: o.status === "processing" ? "0 0 6px #a78bfa" : "none",
-                      }} />
-                      <span style={{ fontSize: 10, color: TEXT_DIM, letterSpacing: "0.05em", textTransform: "uppercase" }}>
-                        {o.status === "succeeded" ? "Ready" : o.status === "failed" ? "Failed" : "Processing"}
-                      </span>
-                    </div>
-                  </div>
-                </motion.div>
-              ))}
-            </div>
-          </motion.div>
-        )}
-
-        {/* ── Composer Card ── */}
-        <motion.div
-          initial={{ opacity: 0, y: 40, scale: 0.97 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          transition={{ duration: 0.75, delay: 0.3, ease: [0.22, 1, 0.36, 1] }}
-          style={{ width: "100%", maxWidth: 960, position: "relative" }}
-        >
-          {/* Mode toggle */}
-          <div
-            style={{
-              position: "absolute", top: -42, left: 0,
-              display: "flex", zIndex: 2, borderRadius: 999,
-              border: `1px solid ${BORDER_HOVER}`,
-              background: "rgba(12,14,22,0.84)",
-              backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)",
-              overflow: "hidden", padding: 3, gap: 2,
-            }}
-          >
-            {MODES.map((m) => (
-              <motion.button
-                key={m}
-                onClick={() => setMode(m)}
-                whileHover={{ scale: 1.03 }}
-                whileTap={{ scale: 0.97 }}
-                style={{
-                  padding: "6px 16px", borderRadius: 999, border: "none",
-                  background: mode === m ? SURFACE_HOVER : "transparent",
-                  color: mode === m ? "white" : TEXT_MUTED,
-                  fontSize: 13, fontWeight: mode === m ? 600 : 400,
-                  cursor: "pointer", fontFamily: "inherit",
-                  transition: "all 0.2s", letterSpacing: "0.01em",
-                }}
-              >
-                {m}
-              </motion.button>
-            ))}
-          </div>
-
-          {/* ── @ Mention Dropdown ── */}
-          <AnimatePresence>
-            {mentionOpen && (
-              <motion.div
-                ref={mentionDropdownRef}
-                initial={{ opacity: 0, y: 6, scale: 0.97 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, y: 4, scale: 0.97 }}
-                transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
-                style={{
-                  position: "absolute",
-                  bottom: "calc(100% + 50px)",
-                  left: 0,
-                  zIndex: 9999,
-                  width: 260,
-                  borderRadius: 12,
-                  border: `1px solid ${BORDER_HOVER}`,
-                  background: "#0d1020",
-                  boxShadow: "0 -8px 32px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.04)",
-                  overflow: "hidden",
-                  maxHeight: 200,
-                  display: "flex", flexDirection: "column",
-                }}
-              >
-                <div style={{
-                  padding: "7px 12px 6px",
-                  fontSize: 9.5, fontWeight: 700, letterSpacing: "0.12em",
-                  color: TEXT_DIM, textTransform: "uppercase",
-                  borderBottom: `1px solid ${BORDER}`,
-                  flexShrink: 0,
-                  display: "flex", alignItems: "center", gap: 5,
-                }}>
-                  <span style={{ color: "#a78bfa" }}>@</span>
-                  Characters
-                  {mentionQuery && (
-                    <span style={{ color: TEXT_DIM, fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>
-                      — {mentionQuery}
-                    </span>
-                  )}
-                </div>
-
-                {mentionLoading ? (
-                  <div style={{ padding: "16px", textAlign: "center" }}>
-                    <motion.div
-                      animate={{ rotate: 360 }}
-                      transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+                  <h1
+                    style={{
+                      fontSize: "clamp(30px, 4.8vw, 54px)", fontWeight: 800, margin: 0,
+                      letterSpacing: "-0.03em", lineHeight: 1.1,
+                    }}
+                  >
+                    <span
                       style={{
-                        width: 18, height: 18, borderRadius: "50%",
-                        border: "2px solid rgba(167,139,250,0.2)",
-                        borderTopColor: "#a78bfa",
-                        margin: "0 auto",
+                        display: "block",
+                        background: "linear-gradient(135deg, #ffffff 0%, rgba(255,255,255,0.72) 100%)",
+                        WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text",
                       }}
-                    />
-                  </div>
-                ) : mentionChars.length === 0 ? (
-                  <div style={{ padding: "14px 16px", fontSize: 12, color: TEXT_DIM, textAlign: "center" }}>
-                    No characters found
-                  </div>
-                ) : (
-                  <div style={{ overflowY: "auto", flex: 1, scrollbarWidth: "none" }}>
-                    {mentionChars.map((char) => (
-                      <motion.button
-                        key={char.id}
-                        onMouseDown={(e) => { e.preventDefault(); handleMentionSelect(char); }}
-                        whileHover={{ background: "rgba(255,255,255,0.06)" }}
-                        style={{
-                          width: "100%", display: "flex", alignItems: "center", gap: 8,
-                          padding: "7px 12px",
-                          background: "transparent", border: "none",
-                          borderBottom: `1px solid rgba(255,255,255,0.04)`,
-                          cursor: "pointer", fontFamily: "inherit", textAlign: "left",
-                          transition: "background 0.12s",
-                        }}
-                      >
-                        <div style={{
-                          width: 28, height: 28, borderRadius: "50%",
-                          overflow: "hidden", flexShrink: 0,
-                          border: "1.5px solid rgba(167,139,250,0.3)",
-                          background: "rgba(124,58,237,0.15)",
-                          display: "flex", alignItems: "center", justifyContent: "center",
-                          fontSize: 12,
-                        }}>
-                          {char.master_image || char.reference_image || char.cover_image ? (
-                            <img
-                              src={char.master_image || char.reference_image || char.cover_image}
-                              alt={char.name}
-                              style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                              onError={(e) => { e.target.style.display = "none"; }}
-                            />
-                          ) : (
-                            <span>🎭</span>
-                          )}
-                        </div>
-                        <div>
-                          <div style={{ fontSize: 12, fontWeight: 600, color: "white", lineHeight: 1.2 }}>
-                            {char.name}
-                          </div>
-                          {char.description && (
-                            <div style={{ fontSize: 10.5, color: TEXT_MUTED, marginTop: 2, lineHeight: 1.3 }}>
-                              {String(char.description).slice(0, 50)}{char.description?.length > 50 ? "…" : ""}
-                            </div>
-                          )}
-                        </div>
-                      </motion.button>
-                    ))}
-                  </div>
-                )}
+                    >
+                      Direct without limits.
+                    </span>
+                    <span
+                      style={{
+                        display: "block",
+                        background: "linear-gradient(135deg, #c4b5fd 0%, #818cf8 40%, #22d3ee 100%)",
+                        WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text",
+                      }}
+                    >
+                      Every frame, exactly as you imagine.
+                    </span>
+                  </h1>
+                  <p
+                    style={{
+                      margin: "18px auto 0", fontSize: 15, color: "rgba(255,255,255,0.52)",
+                      fontWeight: 400, letterSpacing: "0.01em", lineHeight: 1.65, maxWidth: 520,
+                    }}
+                  >
+                    Describe a scene.{" "}
+                    <span style={{ color: "rgba(167,139,250,0.82)", fontWeight: 500 }}>Kylor</span>{" "}
+                    handles the camera, motion, and world.
+                  </p>
+                </motion.div>
               </motion.div>
-            )}
-          </AnimatePresence>
 
-          <motion.div
-            animate={{ opacity: [0.5, 0.85, 0.5], scale: [0.95, 1.02, 0.95] }}
-            transition={{ duration: 5, repeat: Infinity, ease: "easeInOut" }}
-            style={{
-              position: "absolute", inset: -20, borderRadius: 32,
-              background: `radial-gradient(ellipse at 50% 60%, ${ACCENT_GLOW} 0%, rgba(79,70,229,0.1) 50%, transparent 75%)`,
-              filter: "blur(24px)", zIndex: 0, pointerEvents: "none",
-            }}
-          />
-
-          <div
-            style={{
-              position: "relative", zIndex: 1, borderRadius: 24,
-              border: `1px solid ${focused ? "rgba(124,58,237,0.5)" : BORDER}`,
-              background: "rgba(12,14,22,0.84)",
-              backdropFilter: "blur(32px)", WebkitBackdropFilter: "blur(32px)",
-              overflow: "visible", transition: "border-color 0.3s, box-shadow 0.3s",
-              boxShadow: focused
-                ? `0 0 0 1px rgba(124,58,237,0.35), 0 32px 80px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.07)`
-                : `0 32px 80px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.05)`,
-            }}
-          >
-            {/* Textarea wrapper */}
-            <div style={{ position: "relative", borderRadius: "24px 24px 0 0", overflow: "visible" }}>
-              <AnimatePresence>
-                {focused && (
-                  <motion.div
-                    initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                    transition={{ duration: 0.35 }}
-                    style={{
-                      position: "absolute", inset: 0, borderRadius: "24px 24px 0 0",
-                      background: "radial-gradient(ellipse at 50% 0%, rgba(124,58,237,0.14) 0%, rgba(79,70,229,0.05) 50%, transparent 70%)",
-                      pointerEvents: "none", zIndex: 0,
-                    }}
-                  />
-                )}
-              </AnimatePresence>
-
-              {/* ── Highlight overlay — sits behind the textarea, renders all visible text ── */}
-              <div
-                ref={overlayRef}
-                aria-hidden="true"
-                style={{
-                  position: "absolute",
-                  top: 0, left: 0, right: 0, bottom: 0,
-                  padding: "26px 26px 20px",
-                  fontSize: 17,
-                  lineHeight: 1.65,
-                  letterSpacing: "0.01em",
-                  fontFamily: "'Space Grotesk', 'DM Sans', sans-serif",
-                  fontWeight: 400,
-                  whiteSpace: "pre-wrap",
-                  wordBreak: "break-word",
-                  overflowWrap: "break-word",
-                  pointerEvents: "none",
-                  zIndex: 1,
-                  boxSizing: "border-box",
-                  overflowY: "hidden",
+              {/* ── Hero Composer Card — slides down on exit ── */}
+              <motion.div
+                exit={{
+                  y: 80,
+                  opacity: 0,
+                  transition: { duration: 0.45, ease: [0.4, 0, 0.2, 1] }
                 }}
+                style={{ width: "100%", maxWidth: 960, position: "relative" }}
               >
-                {prompt.split(/(@[a-zA-Z0-9_]+)/g).map((part, i) =>
-                  /^@[a-zA-Z0-9_]+/.test(part) ? (
-                    // @mention → purple highlight
-                    <mark
-                      key={i}
-                      style={{
-                        background: "rgba(167,139,250,0.18)",
-                        color: "#c4b5fd",
-                        borderRadius: 4,
-                        padding: "1px 2px",
-                      }}
-                    >
-                      {part}
-                    </mark>
-                  ) : (
-                    // Normal text → white, fully visible through the transparent textarea
-                    <span key={i} style={{ color: "rgba(255,255,255,0.88)" }}>
-                      {part}
-                    </span>
-                  )
-                )}
-              </div>
-
-              {/* ── Actual textarea — fully transparent text, only caret is visible ── */}
-              <textarea
-                ref={textareaRef}
-                value={prompt}
-                onChange={handlePromptChange}
-                onFocus={() => setFocused(true)}
-                onBlur={() => setFocused(false)}
-                placeholder="Scene • Characters • Action • Camera • Lighting (e.g. Slow dolly into a warrior in rain, cinematic lighting)"
-                rows={5}
-                className="studio-textarea"
-                style={{
-                  position: "relative",
-                  width: "100%",
-                  background: "transparent",
-                  border: "none",
-                  outline: "none",
-                  resize: "none",
-                  fontSize: 17,
-                  lineHeight: 1.65,
-                  letterSpacing: "0.01em",
-                  padding: "26px 26px 20px",
-                  fontFamily: "'Space Grotesk', 'DM Sans', sans-serif",
-                  fontWeight: 400,
-                  caretColor: "#c4b5fd",
-                  zIndex: 2,
-                  boxSizing: "border-box",
-                  color: "transparent",
-                  WebkitTextFillColor: "transparent",
-                  // No transform, no textShadow, no rendering hints —
-                  // any of these shift the caret vs overlay by subpixels
-                }}
-              />
-            </div>
-
-            <AnimatePresence>
-              {error && (
-                <motion.div
-                  initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }}
-                  style={{ padding: "0 26px 10px", color: "#f87171", fontSize: 12 }}
-                >
-                  {error}
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-            {/* ── Dock ── */}
-            <div
-              style={{
-                display: "flex", alignItems: "stretch",
-                padding: "14px 16px 16px", borderTop: `1px solid ${BORDER}`,
-                gap: 14,
-              }}
-            >
-              {/* Hidden file input */}
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*,video/*"
-                style={{ display: "none" }}
-                onChange={handleFileChange}
-              />
-
-              {/* Upload button / thumbnail */}
-              <div style={{ position: "relative", flexShrink: 0 }}>
-                {uploadedFile ? (
-                  <motion.div
-                    initial={{ opacity: 0, scale: 0.9 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    style={{
-                      width: 56, height: 56, borderRadius: 14,
-                      border: `1px solid ${ACCENT_BORDER}`,
-                      overflow: "hidden", position: "relative", cursor: "pointer",
-                    }}
-                    onClick={() => fileInputRef.current?.click()}
-                  >
-                    {uploadedFile.type.startsWith("video/") ? (
-                      <video
-                        src={uploadedFile.url}
-                        style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                        muted playsInline
-                      />
-                    ) : (
-                      <img
-                        src={uploadedFile.url}
-                        alt="upload"
-                        style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                      />
-                    )}
-                    <motion.button
-                      onClick={(e) => { e.stopPropagation(); handleRemoveFile(); }}
-                      whileHover={{ scale: 1.15 }}
-                      whileTap={{ scale: 0.9 }}
-                      style={{
-                        position: "absolute", top: 3, right: 3,
-                        width: 16, height: 16, borderRadius: "50%",
-                        background: "rgba(0,0,0,0.75)",
-                        border: "1px solid rgba(255,255,255,0.3)",
-                        color: "white", fontSize: 9, fontWeight: 700,
-                        display: "flex", alignItems: "center", justifyContent: "center",
-                        cursor: "pointer", lineHeight: 1,
-                      }}
-                    >
-                      ✕
-                    </motion.button>
-                  </motion.div>
-                ) : (
-                  <motion.button
-                    onClick={() => fileInputRef.current?.click()}
-                    whileHover={{ scale: 1.04, background: SURFACE_HOVER }}
-                    whileTap={{ scale: 0.96 }}
-                    style={{
-                      width: 56, height: 56, flexShrink: 0, borderRadius: 14,
-                      border: `1px solid ${BORDER_HOVER}`, background: SURFACE,
-                      color: TEXT_MUTED,
-                      display: "flex", alignItems: "center", justifyContent: "center",
-                      cursor: "pointer", fontSize: 26, fontWeight: 300, lineHeight: 1,
-                      transition: "all 0.2s",
-                    }}
-                  >
-                    +
-                  </motion.button>
-                )}
-              </div>
-
-              <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 8, flexWrap: "nowrap", minWidth: 0 }}>
-                <GenrePill genre={genre} onClick={() => setGenreOpen(true)} />
-                <CameraButton camera={camera} setCamera={setCamera} onOpen={() => setCameraOpen(true)} />
-                {mode === "Video" && (
-                  <DurationButton duration={duration} setDuration={setDuration} />
-                )}
-                <ResolutionButton resolution={resolution} setResolution={setResolution} mode={mode} />
-                <RatioButton ratio={ratio} setRatio={setRatio} />
+                {/* Mode toggle */}
                 <div
                   style={{
-                    display: "flex", alignItems: "center", gap: 6,
-                    padding: "5px 12px", borderRadius: 999,
-                    border: `1px solid ${BORDER}`, background: SURFACE,
-                    flexShrink: 0,
+                    position: "absolute", top: -42, left: 0,
+                    display: "flex", zIndex: 2, borderRadius: 999,
+                    border: `1px solid ${BORDER_HOVER}`,
+                    background: "rgba(12,14,22,0.84)",
+                    backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)",
+                    overflow: "hidden", padding: 3, gap: 2,
                   }}
                 >
-                  <StepperButton icon="−" onClick={() => setVariants((v) => Math.max(1, v - 1))} />
-                  <span style={{ fontSize: 12, color: "white", fontWeight: 600, minWidth: 28, textAlign: "center" }}>
-                    {variants}/4
-                  </span>
-                  <StepperButton icon="+" onClick={() => setVariants((v) => Math.min(4, v + 1))} />
+                  {MODES.map((m) => (
+                    <motion.button
+                      key={m}
+                      onClick={() => setMode(m)}
+                      whileHover={{ scale: 1.03 }}
+                      whileTap={{ scale: 0.97 }}
+                      style={{
+                        padding: "6px 16px", borderRadius: 999, border: "none",
+                        background: mode === m ? SURFACE_HOVER : "transparent",
+                        color: mode === m ? "white" : TEXT_MUTED,
+                        fontSize: 13, fontWeight: mode === m ? 600 : 400,
+                        cursor: "pointer", fontFamily: "inherit",
+                        transition: "all 0.2s", letterSpacing: "0.01em",
+                      }}
+                    >
+                      {m}
+                    </motion.button>
+                  ))}
+                </div>
+
+                {/* Ambient glow */}
+                <motion.div
+                  animate={{ opacity: [0.5, 0.85, 0.5], scale: [0.95, 1.02, 0.95] }}
+                  transition={{ duration: 5, repeat: Infinity, ease: "easeInOut" }}
+                  style={{
+                    position: "absolute", inset: -20, borderRadius: 32,
+                    background: `radial-gradient(ellipse at 50% 60%, ${ACCENT_GLOW} 0%, rgba(79,70,229,0.1) 50%, transparent 75%)`,
+                    filter: "blur(24px)", zIndex: 0, pointerEvents: "none",
+                  }}
+                />
+
+                <div
+                  style={{
+                    position: "relative", zIndex: 1, borderRadius: 24,
+                    border: `1px solid ${focused ? "rgba(124,58,237,0.5)" : BORDER}`,
+                    background: "rgba(12,14,22,0.84)",
+                    backdropFilter: "blur(32px)", WebkitBackdropFilter: "blur(32px)",
+                    overflow: "visible", transition: "border-color 0.3s, box-shadow 0.3s",
+                    boxShadow: focused
+                      ? `0 0 0 1px rgba(124,58,237,0.35), 0 32px 80px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.07)`
+                      : `0 32px 80px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.05)`,
+                  }}
+                >
+                  <ComposerInner {...composerProps} compact={false} />
+                </div>
+
+                <motion.p
+                  initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.8 }}
+                  style={{
+                    textAlign: "center", fontSize: 11.5, color: TEXT_DIM,
+                    margin: "12px 0 0", letterSpacing: "0.02em",
+                  }}
+                >
+                  Press{" "}
+                  <kbd
+                    style={{
+                      padding: "1px 6px", borderRadius: 5,
+                      border: `1px solid ${BORDER_HOVER}`, background: SURFACE_HOVER,
+                      fontSize: 10.5, color: TEXT_MUTED, fontFamily: "monospace",
+                    }}
+                  >
+                    ⌘ Enter
+                  </kbd>
+                  {" "}to generate · Use{" "}
+                  <span style={{ color: "#a78bfa" }}>@</span> to reference characters &amp; locations
+                </motion.p>
+              </motion.div>
+
+              {/* ── Suggestions ── */}
+              <motion.div
+                exit={{
+                  opacity: 0,
+                  y: 20,
+                  transition: { duration: 0.25, ease: [0.4, 0, 0.2, 1] }
+                }}
+                initial={{ opacity: 0, y: 16 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.6, duration: 0.6 }}
+                style={{
+                  display: "flex", gap: 8, marginTop: 24,
+                  flexWrap: "wrap", justifyContent: "center", maxWidth: 700,
+                }}
+              >
+                {suggestions.map((s) => (
+                  <motion.button
+                    key={s}
+                    onClick={() => {
+                      setPrompt(s);
+                      if (editorRef.current) editorRef.current.innerText = s;
+                      editorRef.current?.focus();
+                    }}
+                    whileHover={{ scale: 1.03, y: -2, borderColor: ACCENT_BORDER }}
+                    whileTap={{ scale: 0.97 }}
+                    style={{
+                      padding: "6px 14px", borderRadius: 999,
+                      border: `1px solid ${BORDER}`, background: SURFACE,
+                      color: TEXT_DIM, fontSize: 12, fontWeight: 450,
+                      cursor: "pointer", fontFamily: "inherit",
+                      transition: "all 0.2s", letterSpacing: "0.01em",
+                    }}
+                  >
+                    {s}
+                  </motion.button>
+                ))}
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* ══════════════════════════════════════════════════════════
+            GALLERY LAYOUT — slides in after first generation
+        ══════════════════════════════════════════════════════════ */}
+        <AnimatePresence>
+          {hasGenerated && (
+            <motion.div
+              key="gallery-layout"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 0.45, delay: 0.25 }}
+              style={{
+                flex: 1,
+                display: "flex",
+                flexDirection: "column",
+                overflow: "hidden",
+                minHeight: 0,
+              }}
+            >
+              {/* Gallery tabs */}
+              <motion.div
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.4, delay: 0.35 }}
+                style={{
+                  display: "flex", alignItems: "center", gap: 4,
+                  padding: "10px 20px 0",
+                  flexShrink: 0,
+                  borderBottom: `1px solid ${BORDER}`,
+                }}
+              >
+                {["All", "Image", "Video"].map((tab) => {
+                  const count = tab === "All" ? outputs.length : tab === "Image" ? imageCount : videoCount;
+                  const isActive = galleryTab === tab;
+                  return (
+                    <motion.button
+                      key={tab}
+                      onClick={() => setGalleryTab(tab)}
+                      whileHover={{ y: -1 }}
+                      style={{
+                        display: "flex", alignItems: "center", gap: 6,
+                        padding: "8px 14px",
+                        borderRadius: "8px 8px 0 0",
+                        border: "none",
+                        borderBottom: isActive ? `2px solid ${ACCENT}` : "2px solid transparent",
+                        background: isActive ? ACCENT_SOFT : "transparent",
+                        color: isActive ? "#c4b5fd" : TEXT_MUTED,
+                        fontSize: 12, fontWeight: isActive ? 600 : 400,
+                        cursor: "pointer", fontFamily: "inherit",
+                        transition: "all 0.2s",
+                      }}
+                    >
+                      {tab}
+                      {count > 0 && (
+                        <span style={{
+                          fontSize: 10, fontWeight: 700,
+                          background: isActive ? ACCENT_BORDER : BORDER,
+                          color: isActive ? "#c4b5fd" : TEXT_DIM,
+                          borderRadius: 99, padding: "1px 6px",
+                          minWidth: 18, textAlign: "center",
+                        }}>
+                          {count}
+                        </span>
+                      )}
+                    </motion.button>
+                  );
+                })}
+              </motion.div>
+
+              {/* Gallery scrollable content */}
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.4, delay: 0.45 }}
+                className="gallery-scroll"
+                style={{
+                  flex: 1,
+                  overflowY: "auto",
+                  paddingTop: 16,
+                  minHeight: 0,
+                }}
+              >
+                <GalleryGrid outputs={outputs} viewMode={viewMode} activeTab={galleryTab} />
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* ══════════════════════════════════════════════════════════
+            BOTTOM COMPOSER — slides up from below after first gen
+        ══════════════════════════════════════════════════════════ */}
+        <AnimatePresence>
+          {hasGenerated && (
+            <motion.div
+              key="bottom-composer"
+              initial={{ opacity: 0, y: 80 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{
+                duration: 0.6,
+                delay: 0.15,
+                ease: [0.22, 1, 0.36, 1],
+              }}
+              style={{
+                flexShrink: 0,
+                padding: "12px 20px 54px",
+                background: "rgba(8,10,16,0.85)",
+                backdropFilter: "blur(24px)", WebkitBackdropFilter: "blur(24px)",
+                borderTop: `1px solid ${BORDER}`,
+                position: "relative", zIndex: 10,
+              }}
+            >
+              <div style={{ position: "relative", maxWidth: 1200, margin: "0 auto", width: "100%" }}>
+                {/* Mode toggle for bottom composer */}
+                <div
+                  style={{
+                    position: "absolute", top: -36, left: 0,
+                    display: "flex", zIndex: 2, borderRadius: 999,
+                    border: `1px solid ${BORDER_HOVER}`,
+                    background: "rgba(12,14,22,0.9)",
+                    overflow: "hidden", padding: 2, gap: 1,
+                  }}
+                >
+                  {MODES.map((m) => (
+                    <motion.button
+                      key={m}
+                      onClick={() => setMode(m)}
+                      whileHover={{ scale: 1.03 }}
+                      whileTap={{ scale: 0.97 }}
+                      style={{
+                        padding: "4px 14px", borderRadius: 999, border: "none",
+                        background: mode === m ? SURFACE_HOVER : "transparent",
+                        color: mode === m ? "white" : TEXT_MUTED,
+                        fontSize: 12, fontWeight: mode === m ? 600 : 400,
+                        cursor: "pointer", fontFamily: "inherit",
+                        transition: "all 0.2s",
+                      }}
+                    >
+                      {m}
+                    </motion.button>
+                  ))}
+                </div>
+
+                <div
+                  style={{
+                    position: "relative", zIndex: 1, borderRadius: 18,
+                    border: `1px solid ${focused ? "rgba(124,58,237,0.45)" : BORDER_HOVER}`,
+                    background: "rgba(14,16,26,0.92)",
+                    backdropFilter: "blur(32px)", WebkitBackdropFilter: "blur(32px)",
+                    overflow: "visible", transition: "border-color 0.3s, box-shadow 0.3s",
+                    boxShadow: focused
+                      ? `0 0 0 1px rgba(124,58,237,0.3), 0 8px 40px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.06)`
+                      : `0 8px 32px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.04)`,
+                  }}
+                >
+                  <ComposerInner {...composerProps} compact={true} />
                 </div>
               </div>
-
-              <div style={{ display: "flex", alignItems: "center", flexShrink: 0 }}>
-                <GenerateButton isGenerating={isGenerating} onClick={handleGenerate} />
-              </div>
-            </div>
-          </div>
-
-          <motion.p
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.8 }}
-            style={{
-              textAlign: "center", fontSize: 11.5, color: TEXT_DIM,
-              margin: "12px 0 0", letterSpacing: "0.02em",
-            }}
-          >
-            Press{" "}
-            <kbd
-              style={{
-                padding: "1px 6px", borderRadius: 5,
-                border: `1px solid ${BORDER_HOVER}`, background: SURFACE_HOVER,
-                fontSize: 10.5, color: TEXT_MUTED, fontFamily: "monospace",
-              }}
-            >
-              ⌘ Enter
-            </kbd>
-            {" "}to generate · Use{" "}
-            <span style={{ color: "#a78bfa" }}>@</span> to reference characters &amp; locations
-          </motion.p>
-        </motion.div>
-
-        {/* Suggestions */}
-        <motion.div
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.6, duration: 0.6 }}
-          style={{
-            display: "flex", gap: 8, marginTop: 24,
-            flexWrap: "wrap", justifyContent: "center", maxWidth: 700,
-          }}
-        >
-          {suggestions.map((s) => (
-            <motion.button
-              key={s}
-              onClick={() => { setPrompt(s); textareaRef.current?.focus(); }}
-              whileHover={{ scale: 1.03, y: -2, borderColor: ACCENT_BORDER }}
-              whileTap={{ scale: 0.97 }}
-              style={{
-                padding: "6px 14px", borderRadius: 999,
-                border: `1px solid ${BORDER}`, background: SURFACE,
-                color: TEXT_DIM, fontSize: 12, fontWeight: 450,
-                cursor: "pointer", fontFamily: "inherit",
-                transition: "all 0.2s", letterSpacing: "0.01em",
-              }}
-            >
-              {s}
-            </motion.button>
-          ))}
-        </motion.div>
-      </main>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
 
       {/* ── Status Bar ── */}
       <motion.div
         initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 1 }}
         style={{
-          position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 10,
+          position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 20,
           display: "flex", alignItems: "center", justifyContent: "space-between",
-          padding: "8px 28px", borderTop: `1px solid ${BORDER}`,
-          background: "rgba(8,10,16,0.7)",
+          padding: "6px 28px", borderTop: `1px solid ${BORDER}`,
+          background: "rgba(8,10,16,0.9)",
           backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)",
           fontSize: 11, color: TEXT_DIM, letterSpacing: "0.03em",
+          height: 36,
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
@@ -2399,3 +2435,286 @@ export default function MovieStudio() {
   );
 }
 
+// ─── Shared Composer Inner (used by both hero and bottom layouts) ──────────────
+function ComposerInner({
+  prompt, setPrompt, mode, setMode, duration, setDuration,
+  resolution, setResolution, camera, setCamera, genre, setGenre,
+  variants, setVariants, ratio, setRatio,
+  focused, setFocused, error, setError, isGenerating, onGenerate,
+  editorRef, mentionDropdownRef,
+  mentionOpen, setMentionOpen, mentionChars, mentionLoading, mentionQuery,
+  onMentionSelect, onInput, uploadedFile, fileInputRef, onFileChange, onRemoveFile,
+  onOpenGenre, onOpenCamera, compact = false,
+}) {
+  return (
+    <>
+      {/* @ Mention Dropdown */}
+      <AnimatePresence>
+        {mentionOpen && (
+          <motion.div
+            ref={mentionDropdownRef}
+            initial={{ opacity: 0, y: 6, scale: 0.97 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 4, scale: 0.97 }}
+            transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
+            style={{
+              position: "absolute",
+              bottom: "calc(100% + 50px)",
+              left: 0,
+              zIndex: 9999,
+              width: 260,
+              borderRadius: 12,
+              border: `1px solid ${BORDER_HOVER}`,
+              background: "#0d1020",
+              boxShadow: "0 -8px 32px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.04)",
+              overflow: "hidden",
+              maxHeight: 200,
+              display: "flex", flexDirection: "column",
+            }}
+          >
+            <div style={{
+              padding: "7px 12px 6px",
+              fontSize: 9.5, fontWeight: 700, letterSpacing: "0.12em",
+              color: TEXT_DIM, textTransform: "uppercase",
+              borderBottom: `1px solid ${BORDER}`,
+              flexShrink: 0,
+              display: "flex", alignItems: "center", gap: 5,
+            }}>
+              <span style={{ color: "#a78bfa" }}>@</span>
+              Characters
+              {mentionQuery && (
+                <span style={{ color: TEXT_DIM, fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>
+                  — {mentionQuery}
+                </span>
+              )}
+            </div>
+
+            {mentionLoading ? (
+              <div style={{ padding: "16px", textAlign: "center" }}>
+                <motion.div
+                  animate={{ rotate: 360 }}
+                  transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+                  style={{
+                    width: 18, height: 18, borderRadius: "50%",
+                    border: "2px solid rgba(167,139,250,0.2)",
+                    borderTopColor: "#a78bfa",
+                    margin: "0 auto",
+                  }}
+                />
+              </div>
+            ) : mentionChars.length === 0 ? (
+              <div style={{ padding: "14px 16px", fontSize: 12, color: TEXT_DIM, textAlign: "center" }}>
+                No characters found
+              </div>
+            ) : (
+              <div style={{ overflowY: "auto", flex: 1, scrollbarWidth: "none" }}>
+                {mentionChars.map((char) => (
+                  <motion.button
+                    key={char.id}
+                    onMouseDown={(e) => { e.preventDefault(); onMentionSelect(char); }}
+                    whileHover={{ background: "rgba(255,255,255,0.06)" }}
+                    style={{
+                      width: "100%", display: "flex", alignItems: "center", gap: 8,
+                      padding: "7px 12px",
+                      background: "transparent", border: "none",
+                      borderBottom: `1px solid rgba(255,255,255,0.04)`,
+                      cursor: "pointer", fontFamily: "inherit", textAlign: "left",
+                      transition: "background 0.12s",
+                    }}
+                  >
+                    <div style={{
+                      width: 28, height: 28, borderRadius: "50%",
+                      overflow: "hidden", flexShrink: 0,
+                      border: "1.5px solid rgba(167,139,250,0.3)",
+                      background: "rgba(124,58,237,0.15)",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      fontSize: 12,
+                    }}>
+                      {char.master_image || char.reference_image || char.cover_image ? (
+                        <img
+                          src={char.master_image || char.reference_image || char.cover_image}
+                          alt={char.name}
+                          style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                          onError={(e) => { e.target.style.display = "none"; }}
+                        />
+                      ) : (
+                        <span>🎭</span>
+                      )}
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: "white", lineHeight: 1.2 }}>
+                        {char.name}
+                      </div>
+                      {char.description && (
+                        <div style={{ fontSize: 10.5, color: TEXT_MUTED, marginTop: 2, lineHeight: 1.3 }}>
+                          {String(char.description).slice(0, 50)}{char.description?.length > 50 ? "…" : ""}
+                        </div>
+                      )}
+                    </div>
+                  </motion.button>
+                ))}
+              </div>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Textarea */}
+      <div style={{ position: "relative", borderRadius: compact ? "16px 16px 0 0" : "24px 24px 0 0", overflow: "visible" }}>
+        <AnimatePresence>
+          {focused && (
+            <motion.div
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              transition={{ duration: 0.35 }}
+              style={{
+                position: "absolute", inset: 0, borderRadius: compact ? "16px 16px 0 0" : "24px 24px 0 0",
+                background: "radial-gradient(ellipse at 50% 0%, rgba(124,58,237,0.14) 0%, rgba(79,70,229,0.05) 50%, transparent 70%)",
+                pointerEvents: "none", zIndex: 0,
+              }}
+            />
+          )}
+        </AnimatePresence>
+
+        <div
+          ref={editorRef}
+          contentEditable
+          suppressContentEditableWarning
+          onInput={onInput}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
+          data-placeholder="Scene • Characters • Action • Camera • Lighting"
+          style={{
+            position: "relative",
+            minHeight: compact ? 60 : 120,
+            maxHeight: compact ? 120 : 150,
+            overflowY: "auto",
+            padding: compact ? "16px 20px 14px" : "26px 26px 20px",
+            fontSize: compact ? 15 : 17,
+            lineHeight: 1.65,
+            letterSpacing: "0.01em",
+            fontFamily: "'Space Grotesk', 'DM Sans', sans-serif",
+            fontWeight: 400,
+            caretColor: "#c4b5fd",
+            color: "rgba(255,255,255,0.88)",
+            outline: "none",
+            whiteSpace: "pre-wrap",
+            wordBreak: "break-word",
+            zIndex: 2,
+            boxSizing: "border-box",
+          }}
+        />
+      </div>
+
+      {/* Error */}
+      <AnimatePresence>
+        {error && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }}
+            style={{ padding: compact ? "0 18px 8px" : "0 26px 10px", color: "#f87171", fontSize: 12 }}
+          >
+            {error}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Dock */}
+      <div
+        style={{
+          display: "flex", alignItems: "stretch",
+          padding: compact ? "10px 12px 12px" : "14px 16px 16px",
+          borderTop: `1px solid ${BORDER}`,
+          gap: compact ? 10 : 14,
+        }}
+      >
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*,video/*"
+          style={{ display: "none" }}
+          onChange={onFileChange}
+        />
+
+        <div style={{ position: "relative", flexShrink: 0 }}>
+          {uploadedFile ? (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              style={{
+                width: compact ? 42 : 56, height: compact ? 42 : 56, borderRadius: 12,
+                border: `1px solid ${ACCENT_BORDER}`,
+                overflow: "hidden", position: "relative", cursor: "pointer",
+              }}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              {uploadedFile.type.startsWith("video/") ? (
+                <video src={uploadedFile.url} style={{ width: "100%", height: "100%", objectFit: "cover" }} muted playsInline />
+              ) : (
+                <img src={uploadedFile.url} alt="upload" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+              )}
+              <motion.button
+                onClick={(e) => { e.stopPropagation(); onRemoveFile(); }}
+                whileHover={{ scale: 1.15 }}
+                whileTap={{ scale: 0.9 }}
+                style={{
+                  position: "absolute", top: 3, right: 3,
+                  width: 16, height: 16, borderRadius: "50%",
+                  background: "rgba(0,0,0,0.75)",
+                  border: "1px solid rgba(255,255,255,0.3)",
+                  color: "white", fontSize: 9, fontWeight: 700,
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  cursor: "pointer", lineHeight: 1,
+                }}
+              >
+                ✕
+              </motion.button>
+            </motion.div>
+          ) : (
+            <motion.button
+              onClick={() => fileInputRef.current?.click()}
+              whileHover={{ scale: 1.04, background: SURFACE_HOVER }}
+              whileTap={{ scale: 0.96 }}
+              style={{
+                width: compact ? 42 : 56, height: compact ? 42 : 56, flexShrink: 0, borderRadius: 12,
+                border: `1px solid ${BORDER_HOVER}`, background: SURFACE,
+                color: TEXT_MUTED,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                cursor: "pointer", fontSize: compact ? 20 : 26, fontWeight: 300, lineHeight: 1,
+                transition: "all 0.2s",
+              }}
+            >
+              +
+            </motion.button>
+          )}
+        </div>
+
+        <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 6, flexWrap: "nowrap", minWidth: 0, overflow: "hidden" }}>
+          <GenrePill genre={genre} onClick={onOpenGenre} />
+          <CameraButton camera={camera} setCamera={setCamera} onOpen={onOpenCamera} />
+          {mode === "Video" && (
+            <DurationButton duration={duration} setDuration={setDuration} />
+          )}
+          <ResolutionButton resolution={resolution} setResolution={setResolution} mode={mode} />
+          <RatioButton ratio={ratio} setRatio={setRatio} />
+          <div
+            style={{
+              display: "flex", alignItems: "center", gap: 5,
+              padding: "5px 10px", borderRadius: 999,
+              border: `1px solid ${BORDER}`, background: SURFACE,
+              flexShrink: 0,
+            }}
+          >
+            <StepperButton icon="−" onClick={() => setVariants((v) => Math.max(1, v - 1))} />
+            <span style={{ fontSize: 11, color: "white", fontWeight: 600, minWidth: 24, textAlign: "center" }}>
+              {variants}/4
+            </span>
+            <StepperButton icon="+" onClick={() => setVariants((v) => Math.min(4, v + 1))} />
+          </div>
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", flexShrink: 0 }}>
+          <GenerateButton isGenerating={isGenerating} onClick={onGenerate} />
+        </div>
+      </div>
+    </>
+  );
+}
