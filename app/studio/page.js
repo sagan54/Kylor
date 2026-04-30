@@ -1583,21 +1583,26 @@ export default function MovieStudio() {
   const [credits, setCredits] = useState(9680);
   const [error, setError] = useState("");
   const [focused, setFocused] = useState(false);
-  const [outputs, setOutputs] = useState(() => {
-    try {
-      const saved = localStorage.getItem("studio_outputs");
-      if (!saved) return [];
-      const parsed = JSON.parse(saved);
-      // Only restore completed outputs, drop any that were mid-processing
-      return parsed.filter(o => o.status === "succeeded" || o.status === "failed");
-    } catch { return []; }
-  });
+  const [outputs, setOutputs] = useState([]);
   const [genreOpen, setGenreOpen] = useState(false);
   const [cameraOpen, setCameraOpen] = useState(false);
-  const [hasGenerated, setHasGenerated] = useState(() => {
-    try { return localStorage.getItem("studio_has_generated") === "true"; } catch { return false; }
-  });
+  const [hasGenerated, setHasGenerated] = useState(false);
   const [galleryTab, setGalleryTab] = useState("All");
+
+  // ── Hydrate from localStorage after mount (client-side only) ──
+  useEffect(() => {
+    try {
+      const savedFlag = localStorage.getItem("studio_has_generated");
+      if (savedFlag === "true") setHasGenerated(true);
+
+      const savedOutputs = localStorage.getItem("studio_outputs");
+      if (savedOutputs) {
+        const parsed = JSON.parse(savedOutputs);
+        const restored = parsed.filter(o => o.status === "succeeded" || o.status === "failed");
+        if (restored.length > 0) setOutputs(restored);
+      }
+    } catch {}
+  }, []);
 
   useEffect(() => {
     setResolution(mode === "Image" ? "1K" : "1080p");
