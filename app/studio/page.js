@@ -1409,6 +1409,20 @@ function GenreModal({ genre, onSelect, onClose }) {
   );
 }
 
+// ─── Ratio → CSS aspect-ratio string ─────────────────────────────────────────
+function ratioToCss(r) {
+  const map = {
+    "1:1":  "1/1",
+    "3:4":  "3/4",
+    "9:16": "9/16",
+    "4:3":  "4/3",
+    "16:9": "16/9",
+    "21:9": "21/9",
+    "Auto": "16/9",
+  };
+  return map[r] || "16/9";
+}
+
 // ─── Gallery Grid ─────────────────────────────────────────────────────────────
 function GalleryGrid({ outputs, viewMode, activeTab }) {
   const filtered = outputs.filter(o => {
@@ -1434,19 +1448,21 @@ function GalleryGrid({ outputs, viewMode, activeTab }) {
     <div
       style={{
         display: "grid",
-        gridTemplateColumns: viewMode === "grid" ? "repeat(auto-fill, minmax(220px,1fr))" : "1fr",
-        gap: 12,
-        padding: "0 16px 16px",
+        gridTemplateColumns: viewMode === "grid" ? "repeat(auto-fill, minmax(480px,1fr))" : "1fr",
+        gap: 16,
+        padding: "0 20px 20px",
       }}
     >
-      {filtered.map((o, idx) => (
+      {filtered.map((o, idx) => {
+        const aspectRatio = ratioToCss(o.ratio);
+        return (
         <motion.div
           key={o.id}
           initial={{ opacity: 0, scale: 0.92, y: 10 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           transition={{ duration: 0.35, delay: idx * 0.04, ease: [0.22, 1, 0.36, 1] }}
           style={{
-            borderRadius: 12,
+            borderRadius: 14,
             border: `1px solid ${o.status === "succeeded" ? "rgba(124,58,237,0.25)" : o.status === "failed" ? "rgba(248,113,113,0.2)" : BORDER}`,
             background: "rgba(10,12,22,0.8)",
             overflow: "hidden",
@@ -1456,7 +1472,7 @@ function GalleryGrid({ outputs, viewMode, activeTab }) {
           <div
             style={{
               position: "relative",
-              aspectRatio: "16/9",
+              aspectRatio,
               background: "linear-gradient(135deg, #0d0f1a, #1a1f2e)",
               display: "flex", alignItems: "center", justifyContent: "center",
               overflow: "hidden",
@@ -1546,7 +1562,7 @@ function GalleryGrid({ outputs, viewMode, activeTab }) {
             </div>
           </div>
         </motion.div>
-      ))}
+      )})}
     </div>
   );
 }
@@ -1699,7 +1715,7 @@ export default function MovieStudio() {
     }
 
     const outputId = Date.now();
-    setOutputs((prev) => [{ id: outputId, type: mode, prompt, status: "processing" }, ...prev]);
+    setOutputs((prev) => [{ id: outputId, type: mode, prompt, status: "processing", ratio }, ...prev]);
 
     try {
       const res = await fetch("/api/generate-image", {
