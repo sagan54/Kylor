@@ -1623,6 +1623,7 @@ export default function MovieStudio() {
   const [mentionOpen, setMentionOpen] = useState(false);
   const [mentionChars, setMentionChars] = useState([]);
   const [mentionLoading, setMentionLoading] = useState(false);
+  const [mentionPos, setMentionPos] = useState({ bottom: 0, left: 0 });
   const [selectedChar, setSelectedChar] = useState(null);
 
   const fetchCharacters = useCallback(async (query = "") => {
@@ -1815,6 +1816,14 @@ export default function MovieStudio() {
       setMentionQuery(atMatch[1]);
       setMentionOpen(true);
       fetchCharacters(atMatch[1]);
+      // Compute fixed position relative to editor element
+      if (editorRef.current) {
+        const rect = editorRef.current.getBoundingClientRect();
+        setMentionPos({
+          bottom: window.innerHeight - rect.top + 8,
+          left: rect.left + 16,
+        });
+      }
     } else {
       setMentionOpen(false);
       setMentionQuery("");
@@ -1898,6 +1907,7 @@ export default function MovieStudio() {
     onGenerate: handleGenerate,
     editorRef, mentionDropdownRef,
     mentionOpen, setMentionOpen, mentionChars, mentionLoading, mentionQuery,
+    mentionPos,
     onMentionSelect: handleMentionSelect,
     onInput: handleInput,
     uploadedFile, fileInputRef,
@@ -2483,39 +2493,37 @@ function ComposerInner({
   variants, setVariants, ratio, setRatio,
   focused, setFocused, error, setError, isGenerating, onGenerate,
   editorRef, mentionDropdownRef,
-  mentionOpen, setMentionOpen, mentionChars, mentionLoading, mentionQuery,
+  mentionOpen, setMentionOpen, mentionChars, mentionLoading, mentionQuery, mentionPos,
   onMentionSelect, onInput, uploadedFile, fileInputRef, onFileChange, onRemoveFile,
   onOpenGenre, onOpenCamera, compact = false,
 }) {
   return (
     <div style={{ position: "relative" }}>
 
-      {/* Textarea */}
-      <div style={{ position: "relative", borderRadius: compact ? "16px 16px 0 0" : "24px 24px 0 0", overflow: "visible" }}>
-        {/* @ Mention Dropdown — anchored to textarea so bottom: 100% = just above the text box */}
-        <AnimatePresence>
-          {mentionOpen && (
-            <motion.div
-              ref={mentionDropdownRef}
-              initial={{ opacity: 0, y: 6, scale: 0.97 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 4, scale: 0.97 }}
-              transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
-              style={{
-                position: "absolute",
-                bottom: "calc(100% + 8px)",
-                left: 16,
-                zIndex: 9999,
-                width: 260,
-                borderRadius: 12,
-                border: `1px solid ${BORDER_HOVER}`,
-                background: "#0d1020",
-                boxShadow: "0 -8px 32px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.04)",
-                overflow: "hidden",
-                maxHeight: 200,
-                display: "flex", flexDirection: "column",
-              }}
-            >
+      {/* @ Mention Dropdown — position:fixed to escape all overflow:hidden parents */}
+      <AnimatePresence>
+        {mentionOpen && (
+          <motion.div
+            ref={mentionDropdownRef}
+            initial={{ opacity: 0, y: 6, scale: 0.97 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 4, scale: 0.97 }}
+            transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
+            style={{
+              position: "fixed",
+              bottom: mentionPos.bottom,
+              left: mentionPos.left,
+              zIndex: 99999,
+              width: 260,
+              borderRadius: 12,
+              border: `1px solid ${BORDER_HOVER}`,
+              background: "#0d1020",
+              boxShadow: "0 -8px 32px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.04)",
+              overflow: "hidden",
+              maxHeight: 240,
+              display: "flex", flexDirection: "column",
+            }}
+          >
               <div style={{
                 padding: "7px 12px 6px",
                 fontSize: 9.5, fontWeight: 700, letterSpacing: "0.12em",
@@ -2602,6 +2610,9 @@ function ComposerInner({
             </motion.div>
           )}
         </AnimatePresence>
+
+      {/* Textarea */}
+      <div style={{ position: "relative", borderRadius: compact ? "16px 16px 0 0" : "24px 24px 0 0", overflow: "visible" }}>
         <AnimatePresence>
           {focused && (
             <motion.div
