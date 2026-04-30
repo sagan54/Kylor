@@ -1580,25 +1580,33 @@ export default function MovieStudio() {
   const [genreOpen, setGenreOpen] = useState(false);
   const [cameraOpen, setCameraOpen] = useState(false);
   const [hasGenerated, setHasGenerated] = useState(false);
-  // ── CHANGE 1: Hydration state ──
   const [isHydrated, setIsHydrated] = useState(false);
   const [galleryTab, setGalleryTab] = useState("All");
 
-  // ── CHANGE 1+2: Hydrate from localStorage using user-specific keys ──
+  // ── TASK 2 & 3: Fixed hydration — read UID first, fall back to new-user if absent ──
   useEffect(() => {
     try {
       const uid =
         localStorage.getItem("kylor_user_uid") ||
-        sessionStorage.getItem("kylor_user_uid") ||
-        "guest";
+        sessionStorage.getItem("kylor_user_uid");
+
+      // If no UID → treat as new user, show hero
+      if (!uid) {
+        setHasGenerated(false);
+        setIsHydrated(true);
+        return;
+      }
 
       const savedFlag = localStorage.getItem(`studio_has_generated_${uid}`);
-      const savedOutputs = localStorage.getItem(`studio_outputs_${uid}`);
 
       if (savedFlag === "true") {
         setHasGenerated(true);
+      } else {
+        setHasGenerated(false);
       }
 
+      // Also restore completed outputs for this user
+      const savedOutputs = localStorage.getItem(`studio_outputs_${uid}`);
       if (savedOutputs) {
         const parsed = JSON.parse(savedOutputs);
         const restored = parsed.filter(
@@ -1607,7 +1615,7 @@ export default function MovieStudio() {
         if (restored.length > 0) setOutputs(restored);
       }
     } catch {}
-    // ── CHANGE 2: Mark hydration complete AFTER localStorage is read ──
+
     setIsHydrated(true);
   }, []);
 
@@ -1615,10 +1623,13 @@ export default function MovieStudio() {
     setResolution(mode === "Image" ? "1K" : "1080p");
   }, [mode]);
 
-  // ── CHANGE 3: Persist completed outputs using user-specific key ──
+  // Persist completed outputs using user-specific key
   useEffect(() => {
     try {
-      const uid = localStorage.getItem("kylor_user_uid") || sessionStorage.getItem("kylor_user_uid") || "guest";
+      const uid =
+        localStorage.getItem("kylor_user_uid") ||
+        sessionStorage.getItem("kylor_user_uid");
+      if (!uid) return;
       const toSave = outputs.filter(o => o.status === "succeeded" || o.status === "failed");
       localStorage.setItem(`studio_outputs_${uid}`, JSON.stringify(toSave));
     } catch {}
@@ -1739,16 +1750,17 @@ export default function MovieStudio() {
     setError("");
     setIsGenerating(true);
 
-    // ── CHANGE 5: Set hasGenerated flag using user-specific key ──
+    // ── TASK 5: Save flag on first generate, scoped to UID ──
     if (!hasGenerated) {
       setHasGenerated(true);
-      try {
-        const uid =
-          localStorage.getItem("kylor_user_uid") ||
-          sessionStorage.getItem("kylor_user_uid") ||
-          "guest";
+
+      const uid =
+        localStorage.getItem("kylor_user_uid") ||
+        sessionStorage.getItem("kylor_user_uid");
+
+      if (uid) {
         localStorage.setItem(`studio_has_generated_${uid}`, "true");
-      } catch {}
+      }
     }
 
     const outputId = Date.now();
@@ -1931,7 +1943,7 @@ export default function MovieStudio() {
     onOpenCamera: () => setCameraOpen(true),
   };
 
-  // ── CHANGE 3: Block UI render entirely until localStorage has been read ──
+  // ── TASK 3: Block UI render entirely until localStorage has been read ──
   if (!isHydrated) {
     return <div className="opacity-0" />;
   }
@@ -2092,7 +2104,7 @@ export default function MovieStudio() {
       {/* ── Main Area ── */}
       <div style={{ flex: 1, display: "flex", flexDirection: "column", position: "relative", zIndex: 5, overflow: "hidden" }}>
 
-        {/* ── CHANGE 4: Pure hasGenerated condition — Hero layout ── */}
+        {/* ── TASK 4: Pure hasGenerated condition — Hero layout ── */}
         {!hasGenerated && (
           <motion.div
             key="hero-full"
@@ -2298,7 +2310,7 @@ export default function MovieStudio() {
           </motion.div>
         )}
 
-        {/* ── CHANGE 4: Pure hasGenerated condition — Gallery layout ── */}
+        {/* ── TASK 4: Pure hasGenerated condition — Gallery layout ── */}
         {hasGenerated && (
           <motion.div
             key="gallery-layout"
@@ -2381,7 +2393,7 @@ export default function MovieStudio() {
           </motion.div>
         )}
 
-        {/* ── CHANGE 4: Pure hasGenerated condition — Bottom Composer ── */}
+        {/* ── TASK 4: Pure hasGenerated condition — Bottom Composer ── */}
         {hasGenerated && (
           <motion.div
             key="bottom-composer"
