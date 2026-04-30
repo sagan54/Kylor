@@ -7,23 +7,31 @@ import AppSidebar from "../components/AppSidebar";
 export default function MainLayout({ children }) {
 
   useEffect(() => {
-    // 🔥 Listen for auth changes (login, refresh, token restore)
+    // 🔥 1. Listen to auth state changes (login, refresh, magic link return)
     const { data: listener } = supabase.auth.onAuthStateChange(
       (_event, session) => {
         if (session?.user) {
           localStorage.setItem("kylor_user_uid", session.user.id);
         } else {
-          // optional: clear if logged out
           localStorage.removeItem("kylor_user_uid");
         }
       }
     );
 
-    // 🔥 Also check immediately on load (for existing session)
+    // 🔥 2. Handle delayed session (email login redirect case)
     const setUID = async () => {
-      const { data } = await supabase.auth.getUser();
-      if (data?.user) {
-        localStorage.setItem("kylor_user_uid", data.user.id);
+      let retries = 5;
+
+      while (retries--) {
+        const { data } = await supabase.auth.getUser();
+
+        if (data?.user) {
+          localStorage.setItem("kylor_user_uid", data.user.id);
+          return;
+        }
+
+        // wait a bit before retrying (session might not be ready yet)
+        await new Promise((res) => setTimeout(res, 300));
       }
     };
 
