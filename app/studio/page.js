@@ -1752,16 +1752,13 @@ export default function MovieStudio() {
 
     // ── TASK 5: Save flag on first generate, scoped to UID ──
     if (!hasGenerated) {
-      setHasGenerated(true);
+  setHasGenerated(true);
 
-      const uid =
-        localStorage.getItem("kylor_user_uid") ||
-        sessionStorage.getItem("kylor_user_uid");
-
-      if (uid) {
-        localStorage.setItem(`studio_has_generated_${uid}`, "true");
-      }
-    }
+  const uid = localStorage.getItem("kylor_user_uid");
+  if (uid) {
+    localStorage.setItem(`studio_has_generated_${uid}`, "true");
+  }
+}
 
     const outputId = Date.now();
     setOutputs((prev) => [{ id: outputId, type: mode, prompt, status: "processing", ratio }, ...prev]);
