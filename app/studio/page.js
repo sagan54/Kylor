@@ -1570,7 +1570,9 @@ export default function MovieStudio() {
   const [outputs, setOutputs] = useState([]);
   const [genreOpen, setGenreOpen] = useState(false);
   const [cameraOpen, setCameraOpen] = useState(false);
-  const [hasGenerated, setHasGenerated] = useState(false);
+  const [hasGenerated, setHasGenerated] = useState(() => {
+    try { return localStorage.getItem("studio_has_generated") === "true"; } catch { return false; }
+  });
   const [galleryTab, setGalleryTab] = useState("All");
 
   useEffect(() => {
@@ -1693,6 +1695,7 @@ export default function MovieStudio() {
 
     if (!hasGenerated) {
       setHasGenerated(true);
+      try { localStorage.setItem("studio_has_generated", "true"); } catch {}
     }
 
     const outputId = Date.now();
@@ -2343,6 +2346,7 @@ export default function MovieStudio() {
                 backdropFilter: "blur(24px)", WebkitBackdropFilter: "blur(24px)",
                 borderTop: `1px solid ${BORDER}`,
                 position: "relative", zIndex: 10,
+                overflow: "visible",
               }}
             >
               <div style={{ position: "relative", maxWidth: 1200, margin: "0 auto", width: "100%" }}>
@@ -2687,7 +2691,7 @@ function ComposerInner({
           )}
         </div>
 
-        <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 6, flexWrap: "nowrap", minWidth: 0, overflow: "hidden" }}>
+        <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 6, flexWrap: "nowrap", minWidth: 0, overflow: "visible" }}>
           <GenrePill genre={genre} onClick={onOpenGenre} />
           <CameraButton camera={camera} setCamera={setCamera} onOpen={onOpenCamera} />
           {mode === "Video" && (
@@ -2718,3 +2722,4 @@ function ComposerInner({
     </>
   );
 }
+
