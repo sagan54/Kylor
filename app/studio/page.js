@@ -1580,23 +1580,35 @@ export default function MovieStudio() {
   const [genreOpen, setGenreOpen] = useState(false);
   const [cameraOpen, setCameraOpen] = useState(false);
   const [hasGenerated, setHasGenerated] = useState(false);
+  // ── CHANGE 1: Hydration state ──
+  const [isHydrated, setIsHydrated] = useState(false);
   const [galleryTab, setGalleryTab] = useState("All");
 
-  // ── CHANGE 1: Hydrate from localStorage using user-specific keys ──
+  // ── CHANGE 1+2: Hydrate from localStorage using user-specific keys ──
   useEffect(() => {
     try {
-      const uid = localStorage.getItem("kylor_user_uid") || sessionStorage.getItem("kylor_user_uid") || "guest";
+      const uid =
+        localStorage.getItem("kylor_user_uid") ||
+        sessionStorage.getItem("kylor_user_uid") ||
+        "guest";
 
       const savedFlag = localStorage.getItem(`studio_has_generated_${uid}`);
-      if (savedFlag === "true") setHasGenerated(true);
-
       const savedOutputs = localStorage.getItem(`studio_outputs_${uid}`);
+
+      if (savedFlag === "true") {
+        setHasGenerated(true);
+      }
+
       if (savedOutputs) {
         const parsed = JSON.parse(savedOutputs);
-        const restored = parsed.filter(o => o.status === "succeeded" || o.status === "failed");
+        const restored = parsed.filter(
+          (o) => o.status === "succeeded" || o.status === "failed"
+        );
         if (restored.length > 0) setOutputs(restored);
       }
     } catch {}
+    // ── CHANGE 2: Mark hydration complete AFTER localStorage is read ──
+    setIsHydrated(true);
   }, []);
 
   useEffect(() => {
@@ -1727,11 +1739,14 @@ export default function MovieStudio() {
     setError("");
     setIsGenerating(true);
 
-    // ── CHANGE 2: Set hasGenerated flag using user-specific key ──
+    // ── CHANGE 5: Set hasGenerated flag using user-specific key ──
     if (!hasGenerated) {
       setHasGenerated(true);
       try {
-        const uid = localStorage.getItem("kylor_user_uid") || sessionStorage.getItem("kylor_user_uid") || "guest";
+        const uid =
+          localStorage.getItem("kylor_user_uid") ||
+          sessionStorage.getItem("kylor_user_uid") ||
+          "guest";
         localStorage.setItem(`studio_has_generated_${uid}`, "true");
       } catch {}
     }
@@ -1916,6 +1931,11 @@ export default function MovieStudio() {
     onOpenCamera: () => setCameraOpen(true),
   };
 
+  // ── CHANGE 3: Block UI render entirely until localStorage has been read ──
+  if (!isHydrated) {
+    return <div className="opacity-0" />;
+  }
+
   return (
     <div
       style={{
@@ -2072,369 +2092,364 @@ export default function MovieStudio() {
       {/* ── Main Area ── */}
       <div style={{ flex: 1, display: "flex", flexDirection: "column", position: "relative", zIndex: 5, overflow: "hidden" }}>
 
-        <AnimatePresence>
-          {!hasGenerated && (
+        {/* ── CHANGE 4: Pure hasGenerated condition — Hero layout ── */}
+        {!hasGenerated && (
+          <motion.div
+            key="hero-full"
+            initial={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.5, ease: [0.4, 0, 0.2, 1] }}
+            style={{
+              position: "absolute", inset: 0,
+              display: "flex", flexDirection: "column",
+              alignItems: "center", justifyContent: "flex-end",
+              padding: "0 24px 100px",
+              zIndex: 2,
+            }}
+          >
+            {/* ── Hero Text ── */}
             <motion.div
-              key="hero-full"
-              initial={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.5, ease: [0.4, 0, 0.2, 1] }}
-              style={{
-                position: "absolute", inset: 0,
-                display: "flex", flexDirection: "column",
-                alignItems: "center", justifyContent: "flex-end",
-                padding: "0 24px 100px",
-                zIndex: 2,
+              exit={{
+                opacity: 0,
+                y: -32,
+                transition: { duration: 0.38, ease: [0.4, 0, 0.2, 1] }
               }}
+              style={{ textAlign: "center", marginBottom: 32, width: "100%" }}
             >
-              {/* ── Hero Text ── */}
               <motion.div
-                exit={{
-                  opacity: 0,
-                  y: -32,
-                  transition: { duration: 0.38, ease: [0.4, 0, 0.2, 1] }
-                }}
-                style={{ textAlign: "center", marginBottom: 32, width: "100%" }}
-              >
-                <motion.div
-                  initial={{ opacity: 0, y: 30 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.7, delay: 0.15, ease: [0.22, 1, 0.36, 1] }}
-                >
-                  <div
-                    style={{
-                      fontSize: 11, fontWeight: 700, letterSpacing: "0.22em", color: "#a78bfa",
-                      marginBottom: 18, textTransform: "uppercase",
-                      display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-                    }}
-                  >
-                    <span style={{ display: "inline-block", width: 24, height: 1, background: "linear-gradient(90deg, transparent, #a78bfa)" }} />
-                    MOVIE STUDIO
-                    <span style={{ display: "inline-block", width: 24, height: 1, background: "linear-gradient(90deg, #a78bfa, transparent)" }} />
-                  </div>
-                  <h1
-                    style={{
-                      fontSize: "clamp(30px, 4.8vw, 54px)", fontWeight: 800, margin: 0,
-                      letterSpacing: "-0.03em", lineHeight: 1.1,
-                    }}
-                  >
-                    <span
-                      style={{
-                        display: "block",
-                        background: "linear-gradient(135deg, #ffffff 0%, rgba(255,255,255,0.72) 100%)",
-                        WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text",
-                      }}
-                    >
-                      Direct without limits.
-                    </span>
-                    <span
-                      style={{
-                        display: "block",
-                        background: "linear-gradient(135deg, #c4b5fd 0%, #818cf8 40%, #22d3ee 100%)",
-                        WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text",
-                      }}
-                    >
-                      Every frame, exactly as you imagine.
-                    </span>
-                  </h1>
-                  <p
-                    style={{
-                      margin: "18px auto 0", fontSize: 15, color: "rgba(255,255,255,0.52)",
-                      fontWeight: 400, letterSpacing: "0.01em", lineHeight: 1.65, maxWidth: 520,
-                    }}
-                  >
-                    Describe a scene.{" "}
-                    <span style={{ color: "rgba(167,139,250,0.82)", fontWeight: 500 }}>Kylor</span>{" "}
-                    handles the camera, motion, and world.
-                  </p>
-                </motion.div>
-              </motion.div>
-
-              {/* ── Hero Composer Card ── */}
-              <motion.div
-                exit={{
-                  y: 80,
-                  opacity: 0,
-                  transition: { duration: 0.45, ease: [0.4, 0, 0.2, 1] }
-                }}
-                style={{ width: "100%", maxWidth: 960, position: "relative" }}
-              >
-                {/* Mode toggle */}
-                <div
-                  style={{
-                    position: "absolute", top: -42, left: 0,
-                    display: "flex", zIndex: 2, borderRadius: 999,
-                    border: `1px solid ${BORDER_HOVER}`,
-                    background: "rgba(12,14,22,0.84)",
-                    backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)",
-                    overflow: "hidden", padding: 3, gap: 2,
-                  }}
-                >
-                  {MODES.map((m) => (
-                    <motion.button
-                      key={m}
-                      onClick={() => setMode(m)}
-                      whileHover={{ scale: 1.03 }}
-                      whileTap={{ scale: 0.97 }}
-                      style={{
-                        padding: "6px 16px", borderRadius: 999, border: "none",
-                        background: mode === m ? SURFACE_HOVER : "transparent",
-                        color: mode === m ? "white" : TEXT_MUTED,
-                        fontSize: 13, fontWeight: mode === m ? 600 : 400,
-                        cursor: "pointer", fontFamily: "inherit",
-                        transition: "all 0.2s", letterSpacing: "0.01em",
-                      }}
-                    >
-                      {m}
-                    </motion.button>
-                  ))}
-                </div>
-
-                {/* Ambient glow */}
-                <motion.div
-                  animate={{ opacity: [0.5, 0.85, 0.5], scale: [0.95, 1.02, 0.95] }}
-                  transition={{ duration: 5, repeat: Infinity, ease: "easeInOut" }}
-                  style={{
-                    position: "absolute", inset: -20, borderRadius: 32,
-                    background: `radial-gradient(ellipse at 50% 60%, ${ACCENT_GLOW} 0%, rgba(79,70,229,0.1) 50%, transparent 75%)`,
-                    filter: "blur(24px)", zIndex: 0, pointerEvents: "none",
-                  }}
-                />
-
-                <div
-                  style={{
-                    position: "relative", zIndex: 1, borderRadius: 24,
-                    border: `1px solid ${focused ? "rgba(124,58,237,0.5)" : BORDER}`,
-                    background: "rgba(12,14,22,0.84)",
-                    backdropFilter: "blur(32px)", WebkitBackdropFilter: "blur(32px)",
-                    overflow: "visible", transition: "border-color 0.3s, box-shadow 0.3s",
-                    boxShadow: focused
-                      ? `0 0 0 1px rgba(124,58,237,0.35), 0 32px 80px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.07)`
-                      : `0 32px 80px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.05)`,
-                  }}
-                >
-                  <ComposerInner {...composerProps} compact={false} />
-                </div>
-
-                <motion.p
-                  initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.8 }}
-                  style={{
-                    textAlign: "center", fontSize: 11.5, color: TEXT_DIM,
-                    margin: "12px 0 0", letterSpacing: "0.02em",
-                  }}
-                >
-                  Press{" "}
-                  <kbd
-                    style={{
-                      padding: "1px 6px", borderRadius: 5,
-                      border: `1px solid ${BORDER_HOVER}`, background: SURFACE_HOVER,
-                      fontSize: 10.5, color: TEXT_MUTED, fontFamily: "monospace",
-                    }}
-                  >
-                    ⌘ Enter
-                  </kbd>
-                  {" "}to generate · Use{" "}
-                  <span style={{ color: "#a78bfa" }}>@</span> to reference characters &amp; locations
-                </motion.p>
-              </motion.div>
-
-              {/* ── Suggestions ── */}
-              <motion.div
-                exit={{
-                  opacity: 0,
-                  y: 20,
-                  transition: { duration: 0.25, ease: [0.4, 0, 0.2, 1] }
-                }}
-                initial={{ opacity: 0, y: 16 }}
+                initial={{ opacity: 0, y: 30 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.6, duration: 0.6 }}
+                transition={{ duration: 0.7, delay: 0.15, ease: [0.22, 1, 0.36, 1] }}
+              >
+                <div
+                  style={{
+                    fontSize: 11, fontWeight: 700, letterSpacing: "0.22em", color: "#a78bfa",
+                    marginBottom: 18, textTransform: "uppercase",
+                    display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                  }}
+                >
+                  <span style={{ display: "inline-block", width: 24, height: 1, background: "linear-gradient(90deg, transparent, #a78bfa)" }} />
+                  MOVIE STUDIO
+                  <span style={{ display: "inline-block", width: 24, height: 1, background: "linear-gradient(90deg, #a78bfa, transparent)" }} />
+                </div>
+                <h1
+                  style={{
+                    fontSize: "clamp(30px, 4.8vw, 54px)", fontWeight: 800, margin: 0,
+                    letterSpacing: "-0.03em", lineHeight: 1.1,
+                  }}
+                >
+                  <span
+                    style={{
+                      display: "block",
+                      background: "linear-gradient(135deg, #ffffff 0%, rgba(255,255,255,0.72) 100%)",
+                      WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text",
+                    }}
+                  >
+                    Direct without limits.
+                  </span>
+                  <span
+                    style={{
+                      display: "block",
+                      background: "linear-gradient(135deg, #c4b5fd 0%, #818cf8 40%, #22d3ee 100%)",
+                      WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text",
+                    }}
+                  >
+                    Every frame, exactly as you imagine.
+                  </span>
+                </h1>
+                <p
+                  style={{
+                    margin: "18px auto 0", fontSize: 15, color: "rgba(255,255,255,0.52)",
+                    fontWeight: 400, letterSpacing: "0.01em", lineHeight: 1.65, maxWidth: 520,
+                  }}
+                >
+                  Describe a scene.{" "}
+                  <span style={{ color: "rgba(167,139,250,0.82)", fontWeight: 500 }}>Kylor</span>{" "}
+                  handles the camera, motion, and world.
+                </p>
+              </motion.div>
+            </motion.div>
+
+            {/* ── Hero Composer Card ── */}
+            <motion.div
+              exit={{
+                y: 80,
+                opacity: 0,
+                transition: { duration: 0.45, ease: [0.4, 0, 0.2, 1] }
+              }}
+              style={{ width: "100%", maxWidth: 960, position: "relative" }}
+            >
+              {/* Mode toggle */}
+              <div
                 style={{
-                  display: "flex", gap: 8, marginTop: 24,
-                  flexWrap: "wrap", justifyContent: "center", maxWidth: 700,
+                  position: "absolute", top: -42, left: 0,
+                  display: "flex", zIndex: 2, borderRadius: 999,
+                  border: `1px solid ${BORDER_HOVER}`,
+                  background: "rgba(12,14,22,0.84)",
+                  backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)",
+                  overflow: "hidden", padding: 3, gap: 2,
                 }}
               >
-                {suggestions.map((s) => (
+                {MODES.map((m) => (
                   <motion.button
-                    key={s}
-                    onClick={() => {
-                      setPrompt(s);
-                      if (editorRef.current) editorRef.current.innerText = s;
-                      editorRef.current?.focus();
-                    }}
-                    whileHover={{ scale: 1.03, y: -2, borderColor: ACCENT_BORDER }}
+                    key={m}
+                    onClick={() => setMode(m)}
+                    whileHover={{ scale: 1.03 }}
                     whileTap={{ scale: 0.97 }}
                     style={{
-                      padding: "6px 14px", borderRadius: 999,
-                      border: `1px solid ${BORDER}`, background: SURFACE,
-                      color: TEXT_DIM, fontSize: 12, fontWeight: 450,
+                      padding: "6px 16px", borderRadius: 999, border: "none",
+                      background: mode === m ? SURFACE_HOVER : "transparent",
+                      color: mode === m ? "white" : TEXT_MUTED,
+                      fontSize: 13, fontWeight: mode === m ? 600 : 400,
                       cursor: "pointer", fontFamily: "inherit",
                       transition: "all 0.2s", letterSpacing: "0.01em",
                     }}
                   >
-                    {s}
+                    {m}
                   </motion.button>
                 ))}
-              </motion.div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+              </div>
 
-        {/* ── Gallery Layout ── */}
-        <AnimatePresence>
-          {hasGenerated && (
+              {/* Ambient glow */}
+              <motion.div
+                animate={{ opacity: [0.5, 0.85, 0.5], scale: [0.95, 1.02, 0.95] }}
+                transition={{ duration: 5, repeat: Infinity, ease: "easeInOut" }}
+                style={{
+                  position: "absolute", inset: -20, borderRadius: 32,
+                  background: `radial-gradient(ellipse at 50% 60%, ${ACCENT_GLOW} 0%, rgba(79,70,229,0.1) 50%, transparent 75%)`,
+                  filter: "blur(24px)", zIndex: 0, pointerEvents: "none",
+                }}
+              />
+
+              <div
+                style={{
+                  position: "relative", zIndex: 1, borderRadius: 24,
+                  border: `1px solid ${focused ? "rgba(124,58,237,0.5)" : BORDER}`,
+                  background: "rgba(12,14,22,0.84)",
+                  backdropFilter: "blur(32px)", WebkitBackdropFilter: "blur(32px)",
+                  overflow: "visible", transition: "border-color 0.3s, box-shadow 0.3s",
+                  boxShadow: focused
+                    ? `0 0 0 1px rgba(124,58,237,0.35), 0 32px 80px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.07)`
+                    : `0 32px 80px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.05)`,
+                }}
+              >
+                <ComposerInner {...composerProps} compact={false} />
+              </div>
+
+              <motion.p
+                initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.8 }}
+                style={{
+                  textAlign: "center", fontSize: 11.5, color: TEXT_DIM,
+                  margin: "12px 0 0", letterSpacing: "0.02em",
+                }}
+              >
+                Press{" "}
+                <kbd
+                  style={{
+                    padding: "1px 6px", borderRadius: 5,
+                    border: `1px solid ${BORDER_HOVER}`, background: SURFACE_HOVER,
+                    fontSize: 10.5, color: TEXT_MUTED, fontFamily: "monospace",
+                  }}
+                >
+                  ⌘ Enter
+                </kbd>
+                {" "}to generate · Use{" "}
+                <span style={{ color: "#a78bfa" }}>@</span> to reference characters &amp; locations
+              </motion.p>
+            </motion.div>
+
+            {/* ── Suggestions ── */}
             <motion.div
-              key="gallery-layout"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ duration: 0.45, delay: 0.25 }}
+              exit={{
+                opacity: 0,
+                y: 20,
+                transition: { duration: 0.25, ease: [0.4, 0, 0.2, 1] }
+              }}
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.6, duration: 0.6 }}
+              style={{
+                display: "flex", gap: 8, marginTop: 24,
+                flexWrap: "wrap", justifyContent: "center", maxWidth: 700,
+              }}
+            >
+              {suggestions.map((s) => (
+                <motion.button
+                  key={s}
+                  onClick={() => {
+                    setPrompt(s);
+                    if (editorRef.current) editorRef.current.innerText = s;
+                    editorRef.current?.focus();
+                  }}
+                  whileHover={{ scale: 1.03, y: -2, borderColor: ACCENT_BORDER }}
+                  whileTap={{ scale: 0.97 }}
+                  style={{
+                    padding: "6px 14px", borderRadius: 999,
+                    border: `1px solid ${BORDER}`, background: SURFACE,
+                    color: TEXT_DIM, fontSize: 12, fontWeight: 450,
+                    cursor: "pointer", fontFamily: "inherit",
+                    transition: "all 0.2s", letterSpacing: "0.01em",
+                  }}
+                >
+                  {s}
+                </motion.button>
+              ))}
+            </motion.div>
+          </motion.div>
+        )}
+
+        {/* ── CHANGE 4: Pure hasGenerated condition — Gallery layout ── */}
+        {hasGenerated && (
+          <motion.div
+            key="gallery-layout"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.45, delay: 0.25 }}
+            style={{
+              flex: 1,
+              display: "flex",
+              flexDirection: "column",
+              overflow: "hidden",
+              minHeight: 0,
+            }}
+          >
+            {/* Gallery tabs */}
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: 0.35 }}
+              style={{
+                display: "flex", alignItems: "center", gap: 4,
+                padding: "10px 20px 0",
+                flexShrink: 0,
+                borderBottom: `1px solid ${BORDER}`,
+              }}
+            >
+              {["All", "Image", "Video"].map((tab) => {
+                const count = tab === "All" ? outputs.length : tab === "Image" ? imageCount : videoCount;
+                const isActive = galleryTab === tab;
+                return (
+                  <motion.button
+                    key={tab}
+                    onClick={() => setGalleryTab(tab)}
+                    whileHover={{ y: -1 }}
+                    style={{
+                      display: "flex", alignItems: "center", gap: 6,
+                      padding: "8px 14px",
+                      borderRadius: "8px 8px 0 0",
+                      border: "none",
+                      borderBottom: isActive ? `2px solid ${ACCENT}` : "2px solid transparent",
+                      background: isActive ? ACCENT_SOFT : "transparent",
+                      color: isActive ? "#c4b5fd" : TEXT_MUTED,
+                      fontSize: 12, fontWeight: isActive ? 600 : 400,
+                      cursor: "pointer", fontFamily: "inherit",
+                      transition: "all 0.2s",
+                    }}
+                  >
+                    {tab}
+                    {count > 0 && (
+                      <span style={{
+                        fontSize: 10, fontWeight: 700,
+                        background: isActive ? ACCENT_BORDER : BORDER,
+                        color: isActive ? "#c4b5fd" : TEXT_DIM,
+                        borderRadius: 99, padding: "1px 6px",
+                        minWidth: 18, textAlign: "center",
+                      }}>
+                        {count}
+                      </span>
+                    )}
+                  </motion.button>
+                );
+              })}
+            </motion.div>
+
+            {/* Gallery scrollable content */}
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: 0.45 }}
+              className="gallery-scroll"
               style={{
                 flex: 1,
-                display: "flex",
-                flexDirection: "column",
-                overflow: "hidden",
+                overflowY: "auto",
+                paddingTop: 16,
                 minHeight: 0,
               }}
             >
-              {/* Gallery tabs */}
-              <motion.div
-                initial={{ opacity: 0, y: -10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.4, delay: 0.35 }}
-                style={{
-                  display: "flex", alignItems: "center", gap: 4,
-                  padding: "10px 20px 0",
-                  flexShrink: 0,
-                  borderBottom: `1px solid ${BORDER}`,
-                }}
-              >
-                {["All", "Image", "Video"].map((tab) => {
-                  const count = tab === "All" ? outputs.length : tab === "Image" ? imageCount : videoCount;
-                  const isActive = galleryTab === tab;
-                  return (
-                    <motion.button
-                      key={tab}
-                      onClick={() => setGalleryTab(tab)}
-                      whileHover={{ y: -1 }}
-                      style={{
-                        display: "flex", alignItems: "center", gap: 6,
-                        padding: "8px 14px",
-                        borderRadius: "8px 8px 0 0",
-                        border: "none",
-                        borderBottom: isActive ? `2px solid ${ACCENT}` : "2px solid transparent",
-                        background: isActive ? ACCENT_SOFT : "transparent",
-                        color: isActive ? "#c4b5fd" : TEXT_MUTED,
-                        fontSize: 12, fontWeight: isActive ? 600 : 400,
-                        cursor: "pointer", fontFamily: "inherit",
-                        transition: "all 0.2s",
-                      }}
-                    >
-                      {tab}
-                      {count > 0 && (
-                        <span style={{
-                          fontSize: 10, fontWeight: 700,
-                          background: isActive ? ACCENT_BORDER : BORDER,
-                          color: isActive ? "#c4b5fd" : TEXT_DIM,
-                          borderRadius: 99, padding: "1px 6px",
-                          minWidth: 18, textAlign: "center",
-                        }}>
-                          {count}
-                        </span>
-                      )}
-                    </motion.button>
-                  );
-                })}
-              </motion.div>
-
-              {/* Gallery scrollable content */}
-              <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.4, delay: 0.45 }}
-                className="gallery-scroll"
-                style={{
-                  flex: 1,
-                  overflowY: "auto",
-                  paddingTop: 16,
-                  minHeight: 0,
-                }}
-              >
-                <GalleryGrid outputs={outputs} viewMode={viewMode} activeTab={galleryTab} />
-              </motion.div>
+              <GalleryGrid outputs={outputs} viewMode={viewMode} activeTab={galleryTab} />
             </motion.div>
-          )}
-        </AnimatePresence>
+          </motion.div>
+        )}
 
-        {/* ── Bottom Composer ── */}
-        <AnimatePresence>
-          {hasGenerated && (
-            <motion.div
-              key="bottom-composer"
-              initial={{ opacity: 0, y: 80 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{
-                duration: 0.6,
-                delay: 0.15,
-                ease: [0.22, 1, 0.36, 1],
-              }}
-              style={{
-                flexShrink: 0,
-                padding: "12px 20px 54px",
-                background: "rgba(8,10,16,0.85)",
-                backdropFilter: "blur(24px)", WebkitBackdropFilter: "blur(24px)",
-                borderTop: `1px solid ${BORDER}`,
-                position: "relative", zIndex: 10,
-                overflow: "visible",
-              }}
-            >
-              <div style={{ position: "relative", maxWidth: 1200, margin: "0 auto", width: "100%" }}>
-                {/* Mode toggle for bottom composer */}
-                <div
-                  style={{
-                    position: "absolute", top: -36, left: 0,
-                    display: "flex", zIndex: 2, borderRadius: 999,
-                    border: `1px solid ${BORDER_HOVER}`,
-                    background: "rgba(12,14,22,0.9)",
-                    overflow: "hidden", padding: 2, gap: 1,
-                  }}
-                >
-                  {MODES.map((m) => (
-                    <motion.button
-                      key={m}
-                      onClick={() => setMode(m)}
-                      whileHover={{ scale: 1.03 }}
-                      whileTap={{ scale: 0.97 }}
-                      style={{
-                        padding: "4px 14px", borderRadius: 999, border: "none",
-                        background: mode === m ? SURFACE_HOVER : "transparent",
-                        color: mode === m ? "white" : TEXT_MUTED,
-                        fontSize: 12, fontWeight: mode === m ? 600 : 400,
-                        cursor: "pointer", fontFamily: "inherit",
-                        transition: "all 0.2s",
-                      }}
-                    >
-                      {m}
-                    </motion.button>
-                  ))}
-                </div>
-
-                <div
-                  style={{
-                    position: "relative", zIndex: 1, borderRadius: 18,
-                    border: `1px solid ${focused ? "rgba(124,58,237,0.45)" : BORDER_HOVER}`,
-                    background: "rgba(14,16,26,0.92)",
-                    backdropFilter: "blur(32px)", WebkitBackdropFilter: "blur(32px)",
-                    overflow: "visible", transition: "border-color 0.3s, box-shadow 0.3s",
-                    boxShadow: focused
-                      ? `0 0 0 1px rgba(124,58,237,0.3), 0 8px 40px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.06)`
-                      : `0 8px 32px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.04)`,
-                  }}
-                >
-                  <ComposerInner {...composerProps} compact={true} />
-                </div>
+        {/* ── CHANGE 4: Pure hasGenerated condition — Bottom Composer ── */}
+        {hasGenerated && (
+          <motion.div
+            key="bottom-composer"
+            initial={{ opacity: 0, y: 80 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{
+              duration: 0.6,
+              delay: 0.15,
+              ease: [0.22, 1, 0.36, 1],
+            }}
+            style={{
+              flexShrink: 0,
+              padding: "12px 20px 54px",
+              background: "rgba(8,10,16,0.85)",
+              backdropFilter: "blur(24px)", WebkitBackdropFilter: "blur(24px)",
+              borderTop: `1px solid ${BORDER}`,
+              position: "relative", zIndex: 10,
+              overflow: "visible",
+            }}
+          >
+            <div style={{ position: "relative", maxWidth: 1200, margin: "0 auto", width: "100%" }}>
+              {/* Mode toggle for bottom composer */}
+              <div
+                style={{
+                  position: "absolute", top: -36, left: 0,
+                  display: "flex", zIndex: 2, borderRadius: 999,
+                  border: `1px solid ${BORDER_HOVER}`,
+                  background: "rgba(12,14,22,0.9)",
+                  overflow: "hidden", padding: 2, gap: 1,
+                }}
+              >
+                {MODES.map((m) => (
+                  <motion.button
+                    key={m}
+                    onClick={() => setMode(m)}
+                    whileHover={{ scale: 1.03 }}
+                    whileTap={{ scale: 0.97 }}
+                    style={{
+                      padding: "4px 14px", borderRadius: 999, border: "none",
+                      background: mode === m ? SURFACE_HOVER : "transparent",
+                      color: mode === m ? "white" : TEXT_MUTED,
+                      fontSize: 12, fontWeight: mode === m ? 600 : 400,
+                      cursor: "pointer", fontFamily: "inherit",
+                      transition: "all 0.2s",
+                    }}
+                  >
+                    {m}
+                  </motion.button>
+                ))}
               </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+
+              <div
+                style={{
+                  position: "relative", zIndex: 1, borderRadius: 18,
+                  border: `1px solid ${focused ? "rgba(124,58,237,0.45)" : BORDER_HOVER}`,
+                  background: "rgba(14,16,26,0.92)",
+                  backdropFilter: "blur(32px)", WebkitBackdropFilter: "blur(32px)",
+                  overflow: "visible", transition: "border-color 0.3s, box-shadow 0.3s",
+                  boxShadow: focused
+                    ? `0 0 0 1px rgba(124,58,237,0.3), 0 8px 40px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.06)`
+                    : `0 8px 32px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.04)`,
+                }}
+              >
+                <ComposerInner {...composerProps} compact={true} />
+              </div>
+            </div>
+          </motion.div>
+        )}
       </div>
 
       {/* ── Status Bar ── */}
