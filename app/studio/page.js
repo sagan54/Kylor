@@ -1583,7 +1583,15 @@ export default function MovieStudio() {
   const [credits, setCredits] = useState(9680);
   const [error, setError] = useState("");
   const [focused, setFocused] = useState(false);
-  const [outputs, setOutputs] = useState([]);
+  const [outputs, setOutputs] = useState(() => {
+    try {
+      const saved = localStorage.getItem("studio_outputs");
+      if (!saved) return [];
+      const parsed = JSON.parse(saved);
+      // Only restore completed outputs, drop any that were mid-processing
+      return parsed.filter(o => o.status === "succeeded" || o.status === "failed");
+    } catch { return []; }
+  });
   const [genreOpen, setGenreOpen] = useState(false);
   const [cameraOpen, setCameraOpen] = useState(false);
   const [hasGenerated, setHasGenerated] = useState(() => {
@@ -1594,6 +1602,14 @@ export default function MovieStudio() {
   useEffect(() => {
     setResolution(mode === "Image" ? "1K" : "1080p");
   }, [mode]);
+
+  // Persist completed outputs to localStorage
+  useEffect(() => {
+    try {
+      const toSave = outputs.filter(o => o.status === "succeeded" || o.status === "failed");
+      localStorage.setItem("studio_outputs", JSON.stringify(toSave));
+    } catch {}
+  }, [outputs]);
 
   const editorRef = useRef(null);
   const mentionDropdownRef = useRef(null);
