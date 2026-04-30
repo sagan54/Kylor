@@ -2488,7 +2488,7 @@ function ComposerInner({
   onOpenGenre, onOpenCamera, compact = false,
 }) {
   return (
-    <>
+    <div style={{ position: "relative" }}>
       {/* @ Mention Dropdown */}
       <AnimatePresence>
         {mentionOpen && (
@@ -2500,8 +2500,8 @@ function ComposerInner({
             transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
             style={{
               position: "absolute",
-              bottom: "calc(100% + 50px)",
-              left: 0,
+              bottom: "calc(100% + 8px)",
+              left: 16,
               zIndex: 9999,
               width: 260,
               borderRadius: 12,
@@ -2756,7 +2756,7 @@ function ComposerInner({
           <GenerateButton isGenerating={isGenerating} onClick={onGenerate} />
         </div>
       </div>
-    </>
+    </div>
   );
 }
 
