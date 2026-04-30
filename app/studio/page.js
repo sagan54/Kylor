@@ -28,31 +28,24 @@ const MODES = ["Image", "Video"];
 function friendlyError(raw) {
   if (!raw) return "Generation failed. Please try again.";
   const s = typeof raw === "string" ? raw : JSON.stringify(raw);
-  // 402 / insufficient credit
   if (s.includes("402") || s.toLowerCase().includes("insufficient credit") || s.toLowerCase().includes("payment required")) {
     return "Insufficient credits. Please top up your account to continue generating.";
   }
-  // 401 / auth
   if (s.includes("401") || s.toLowerCase().includes("unauthorized") || s.toLowerCase().includes("authentication")) {
     return "Authentication error. Please check your API configuration.";
   }
-  // 429 / rate limit
   if (s.includes("429") || s.toLowerCase().includes("rate limit") || s.toLowerCase().includes("too many requests")) {
     return "Too many requests. Please wait a moment before trying again.";
   }
-  // 500 / server
   if (s.includes("500") || s.toLowerCase().includes("internal server")) {
     return "The generation service is temporarily unavailable. Please try again shortly.";
   }
-  // Timeout
   if (s.toLowerCase().includes("timed out") || s.toLowerCase().includes("timeout")) {
     return "Generation timed out. Please try again.";
   }
-  // Strip raw JSON / URLs — if it looks like a JSON blob or a URL-heavy string, replace entirely
   if (s.startsWith("{") || s.startsWith("[") || (s.includes("https://") && s.length > 120)) {
     return "Generation failed. Please try again.";
   }
-  // Truncate anything still too long
   return s.length > 100 ? s.slice(0, 97) + "…" : s;
 }
 
@@ -1589,13 +1582,15 @@ export default function MovieStudio() {
   const [hasGenerated, setHasGenerated] = useState(false);
   const [galleryTab, setGalleryTab] = useState("All");
 
-  // ── Hydrate from localStorage after mount (client-side only) ──
+  // ── CHANGE 1: Hydrate from localStorage using user-specific keys ──
   useEffect(() => {
     try {
-      const savedFlag = localStorage.getItem("studio_has_generated");
+      const uid = localStorage.getItem("kylor_user_uid") || sessionStorage.getItem("kylor_user_uid") || "guest";
+
+      const savedFlag = localStorage.getItem(`studio_has_generated_${uid}`);
       if (savedFlag === "true") setHasGenerated(true);
 
-      const savedOutputs = localStorage.getItem("studio_outputs");
+      const savedOutputs = localStorage.getItem(`studio_outputs_${uid}`);
       if (savedOutputs) {
         const parsed = JSON.parse(savedOutputs);
         const restored = parsed.filter(o => o.status === "succeeded" || o.status === "failed");
@@ -1608,11 +1603,12 @@ export default function MovieStudio() {
     setResolution(mode === "Image" ? "1K" : "1080p");
   }, [mode]);
 
-  // Persist completed outputs to localStorage
+  // ── CHANGE 3: Persist completed outputs using user-specific key ──
   useEffect(() => {
     try {
+      const uid = localStorage.getItem("kylor_user_uid") || sessionStorage.getItem("kylor_user_uid") || "guest";
       const toSave = outputs.filter(o => o.status === "succeeded" || o.status === "failed");
-      localStorage.setItem("studio_outputs", JSON.stringify(toSave));
+      localStorage.setItem(`studio_outputs_${uid}`, JSON.stringify(toSave));
     } catch {}
   }, [outputs]);
 
@@ -1731,9 +1727,13 @@ export default function MovieStudio() {
     setError("");
     setIsGenerating(true);
 
+    // ── CHANGE 2: Set hasGenerated flag using user-specific key ──
     if (!hasGenerated) {
       setHasGenerated(true);
-      try { localStorage.setItem("studio_has_generated", "true"); } catch {}
+      try {
+        const uid = localStorage.getItem("kylor_user_uid") || sessionStorage.getItem("kylor_user_uid") || "guest";
+        localStorage.setItem(`studio_has_generated_${uid}`, "true");
+      } catch {}
     }
 
     const outputId = Date.now();
@@ -1816,7 +1816,6 @@ export default function MovieStudio() {
       setMentionQuery(atMatch[1]);
       setMentionOpen(true);
       fetchCharacters(atMatch[1]);
-      // Compute fixed position relative to editor element
       if (editorRef.current) {
         const rect = editorRef.current.getBoundingClientRect();
         setMentionPos({
@@ -2073,11 +2072,6 @@ export default function MovieStudio() {
       {/* ── Main Area ── */}
       <div style={{ flex: 1, display: "flex", flexDirection: "column", position: "relative", zIndex: 5, overflow: "hidden" }}>
 
-        {/* ══════════════════════════════════════════════════════════
-            HERO LAYOUT — shown before first generation
-            The hero text + centered composer live here.
-            On generate: hero text fades up, composer slides to bottom.
-        ══════════════════════════════════════════════════════════ */}
         <AnimatePresence>
           {!hasGenerated && (
             <motion.div
@@ -2093,7 +2087,7 @@ export default function MovieStudio() {
                 zIndex: 2,
               }}
             >
-              {/* ── Hero Text — fades up separately ── */}
+              {/* ── Hero Text ── */}
               <motion.div
                 exit={{
                   opacity: 0,
@@ -2156,7 +2150,7 @@ export default function MovieStudio() {
                 </motion.div>
               </motion.div>
 
-              {/* ── Hero Composer Card — slides down on exit ── */}
+              {/* ── Hero Composer Card ── */}
               <motion.div
                 exit={{
                   y: 80,
@@ -2285,9 +2279,7 @@ export default function MovieStudio() {
           )}
         </AnimatePresence>
 
-        {/* ══════════════════════════════════════════════════════════
-            GALLERY LAYOUT — slides in after first generation
-        ══════════════════════════════════════════════════════════ */}
+        {/* ── Gallery Layout ── */}
         <AnimatePresence>
           {hasGenerated && (
             <motion.div
@@ -2372,9 +2364,7 @@ export default function MovieStudio() {
           )}
         </AnimatePresence>
 
-        {/* ══════════════════════════════════════════════════════════
-            BOTTOM COMPOSER — slides up from below after first gen
-        ══════════════════════════════════════════════════════════ */}
+        {/* ── Bottom Composer ── */}
         <AnimatePresence>
           {hasGenerated && (
             <motion.div
@@ -2486,7 +2476,7 @@ export default function MovieStudio() {
   );
 }
 
-// ─── Shared Composer Inner (used by both hero and bottom layouts) ──────────────
+// ─── Shared Composer Inner ────────────────────────────────────────────────────
 function ComposerInner({
   prompt, setPrompt, mode, setMode, duration, setDuration,
   resolution, setResolution, camera, setCamera, genre, setGenre,
@@ -2500,7 +2490,7 @@ function ComposerInner({
   return (
     <div style={{ position: "relative" }}>
 
-      {/* @ Mention Dropdown — position:fixed to escape all overflow:hidden parents */}
+      {/* @ Mention Dropdown */}
       <AnimatePresence>
         {mentionOpen && (
           <motion.div
@@ -2770,4 +2760,3 @@ function ComposerInner({
     </div>
   );
 }
-
