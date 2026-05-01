@@ -236,19 +236,7 @@ function DurationButton({ duration, setDuration }) {
   const [isOpen, setIsOpen] = useState(false);
   const wrapperRef = useRef(null);
 
-  const DURATION_VALUES = { "4s": 4, "8s": 8, "16s": 16 };
   const DURATION_LABELS = ["4s", "8s", "16s"];
-  const sliderMin = 4;
-  const sliderMax = 16;
-  const sliderValue = DURATION_VALUES[duration] ?? 8;
-
-  const handleSliderChange = (e) => {
-    const val = Number(e.target.value);
-    const closest = DURATION_LABELS.reduce((prev, curr) =>
-      Math.abs(DURATION_VALUES[curr] - val) < Math.abs(DURATION_VALUES[prev] - val) ? curr : prev
-    );
-    setDuration(closest);
-  };
 
   useEffect(() => {
     if (!isOpen) return;
@@ -268,13 +256,19 @@ function DurationButton({ duration, setDuration }) {
         whileHover={{ scale: 1.04, y: -1 }}
         whileTap={{ scale: 0.97 }}
         style={{
-          display: "flex", alignItems: "center", gap: 5,
-          padding: "5px 11px", borderRadius: 999,
+          display: "flex",
+          alignItems: "center",
+          gap: 5,
+          padding: "5px 11px",
+          borderRadius: 999,
           border: `1px solid ${isOpen ? BORDER_HOVER : BORDER}`,
           background: isOpen ? SURFACE_HOVER : SURFACE,
           color: isOpen ? "rgba(255,255,255,0.85)" : TEXT_MUTED,
-          fontSize: 12, fontWeight: 500, cursor: "pointer",
-          fontFamily: "inherit", whiteSpace: "nowrap",
+          fontSize: 12,
+          fontWeight: 500,
+          cursor: "pointer",
+          fontFamily: "inherit",
+          whiteSpace: "nowrap",
           transition: "all 0.2s",
         }}
       >
@@ -295,79 +289,89 @@ function DurationButton({ duration, setDuration }) {
               left: "50%",
               transform: "translateX(-50%)",
               zIndex: 60,
-              width: 200,
+              width: 210,
               borderRadius: 16,
               border: `1px solid ${BORDER_HOVER}`,
               background: "#0b0f1c",
-              boxShadow: "0 8px 40px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.04), 0 0 30px rgba(124,58,237,0.08)",
-              padding: "18px 18px 16px",
+              boxShadow:
+                "0 8px 40px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.04), 0 0 30px rgba(124,58,237,0.08)",
+              padding: "16px",
             }}
           >
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-              <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.12em", color: TEXT_DIM, textTransform: "uppercase" }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                marginBottom: 12,
+              }}
+            >
+              <span
+                style={{
+                  fontSize: 10.5,
+                  fontWeight: 700,
+                  letterSpacing: "0.12em",
+                  color: TEXT_DIM,
+                  textTransform: "uppercase",
+                }}
+              >
                 Duration
               </span>
-              <span style={{ fontSize: 22, fontWeight: 800, letterSpacing: "-0.03em", color: "white", lineHeight: 1 }}>
+              <span
+                style={{
+                  fontSize: 20,
+                  fontWeight: 800,
+                  letterSpacing: "-0.03em",
+                  color: "white",
+                  lineHeight: 1,
+                }}
+              >
                 {duration}
               </span>
             </div>
 
-            <div style={{ position: "relative", paddingBottom: 4 }}>
-              <input
-                type="range"
-                min={sliderMin}
-                max={sliderMax}
-                step={1}
-                value={sliderValue}
-                onChange={handleSliderChange}
-                style={{
-                  width: "100%",
-                  appearance: "none", WebkitAppearance: "none",
-                  height: 4, borderRadius: 999,
-                  background: `linear-gradient(to right, #7c3aed ${((sliderValue - sliderMin) / (sliderMax - sliderMin)) * 100}%, rgba(255,255,255,0.1) ${((sliderValue - sliderMin) / (sliderMax - sliderMin)) * 100}%)`,
-                  outline: "none", cursor: "pointer",
-                  border: "none",
-                }}
-              />
-              <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8 }}>
-                {DURATION_LABELS.map((l) => (
-                  <span
+            <div
+              style={{
+                display: "flex",
+                gap: 6,
+                background: "rgba(255,255,255,0.03)",
+                padding: 4,
+                borderRadius: 999,
+                border: "1px solid rgba(255,255,255,0.06)",
+              }}
+            >
+              {DURATION_LABELS.map((l) => {
+                const isActive = duration === l;
+
+                return (
+                  <motion.button
                     key={l}
                     onClick={() => setDuration(l)}
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.96 }}
                     style={{
-                      fontSize: 10.5, fontWeight: 500, cursor: "pointer",
-                      color: duration === l ? "#c4b5fd" : TEXT_DIM,
-                      transition: "color 0.15s",
-                      userSelect: "none",
+                      flex: 1,
+                      padding: "8px 0",
+                      borderRadius: 999,
+                      border: isActive
+                        ? "1px solid rgba(124,58,237,0.5)"
+                        : "1px solid transparent",
+                      background: isActive
+                        ? "linear-gradient(135deg, rgba(124,58,237,0.25), rgba(79,70,229,0.2))"
+                        : "transparent",
+                      color: isActive ? "#c4b5fd" : "rgba(255,255,255,0.5)",
+                      fontSize: 13,
+                      fontWeight: 600,
+                      cursor: "pointer",
+                      fontFamily: "inherit",
+                      transition: "all 0.2s",
                     }}
                   >
                     {l}
-                  </span>
-                ))}
-              </div>
+                  </motion.button>
+                );
+              })}
             </div>
-
-            <style>{`
-              input[type=range]::-webkit-slider-thumb {
-                -webkit-appearance: none;
-                width: 16px; height: 16px;
-                border-radius: 50%;
-                background: white;
-                box-shadow: 0 0 0 3px rgba(124,58,237,0.4), 0 2px 6px rgba(0,0,0,0.5);
-                cursor: pointer;
-                transition: box-shadow 0.15s;
-              }
-              input[type=range]::-webkit-slider-thumb:hover {
-                box-shadow: 0 0 0 4px rgba(124,58,237,0.55), 0 2px 8px rgba(0,0,0,0.6);
-              }
-              input[type=range]::-moz-range-thumb {
-                width: 16px; height: 16px;
-                border-radius: 50%; border: none;
-                background: white;
-                box-shadow: 0 0 0 3px rgba(124,58,237,0.4), 0 2px 6px rgba(0,0,0,0.5);
-                cursor: pointer;
-              }
-            `}</style>
           </motion.div>
         )}
       </AnimatePresence>
@@ -1944,7 +1948,7 @@ height: "100%",
 export default function MovieStudio() {
   const [prompt, setPrompt] = useState("");
   const [mode, setMode] = useState("Video");
-  const [duration, setDuration] = useState("8s");
+  const [duration, setDuration] = useState("16s");
   const [resolution, setResolution] = useState("1K");
   const [camera, setCamera] = useState("Auto");
   const [genre, setGenre] = useState("general");
