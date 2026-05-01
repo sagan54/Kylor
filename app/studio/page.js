@@ -2970,11 +2970,10 @@ function ComposerInner({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 4, scale: 0.97 }}
             transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
-           style={{
+style={{
   position: "absolute",
-  top: -12,
+  top: compact ? -96 : -92,
   left: 0,
-  transform: "translateY(-100%)",
   zIndex: 99999,
   width: 260,
   borderRadius: 12,
