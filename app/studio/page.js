@@ -2895,8 +2895,34 @@ if (data.status === "succeeded" && data.generation?.images) {
           ))}
         </div>
 
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <IconButton title="Grid view" active={viewMode === "grid"} onClick={() => setViewMode("grid")}>
+<div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+  <div
+    style={{
+      display: "flex",
+      alignItems: "center",
+      gap: 10,
+      padding: "6px 10px",
+      borderRadius: 12,
+      border: `1px solid ${BORDER}`,
+      background: "rgba(255,255,255,0.035)",
+    }}
+  >
+    <input
+      type="range"
+      min="260"
+      max="620"
+      step="20"
+      value={thumbSize}
+      onChange={(e) => setThumbSize(Number(e.target.value))}
+      style={{
+        width: 110,
+        accentColor: "#7c3aed",
+        cursor: "pointer",
+      }}
+    />
+  </div>
+
+  <IconButton title="Grid view" active={viewMode === "grid"} onClick={() => setViewMode("grid")}>
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
               <rect x="0" y="0" width="6" height="6" rx="1.5" fill="currentColor" opacity="0.8" />
               <rect x="8" y="0" width="6" height="6" rx="1.5" fill="currentColor" opacity="0.8" />
@@ -2986,38 +3012,6 @@ if (data.status === "succeeded" && data.generation?.images) {
                       </span>
                     )}
 
-                    <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 10 }}>
-  <input
-    type="range"
-    min="260"
-    max="620"
-    step="20"
-    value={thumbSize}
-    onChange={(e) => setThumbSize(Number(e.target.value))}
-    style={{
-      width: 110,
-      accentColor: "#7c3aed",
-      cursor: "pointer",
-    }}
-  />
-
-  <div
-    style={{
-      width: 34,
-      height: 28,
-      borderRadius: 9,
-      border: `1px solid ${BORDER_HOVER}`,
-      background: SURFACE_HOVER,
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      color: TEXT_MUTED,
-      fontSize: 13,
-    }}
-  >
-    ▦
-  </div>
-</div>
                   </motion.button>
                 );
               })}
