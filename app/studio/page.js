@@ -1908,6 +1908,7 @@ export default function MovieStudio() {
 
   const editorRef = useRef(null);
   const mentionDropdownRef = useRef(null);
+  const composerWrapRef = useRef(null);
   const resumedPollsRef = useRef(new Set());
 
   const [mentionQuery, setMentionQuery] = useState("");
@@ -2149,11 +2150,13 @@ if (data.status === "succeeded" && data.generation?.images) {
       setMentionQuery(atMatch[1]);
       setMentionOpen(true);
       fetchCharacters(atMatch[1]);
-      if (editorRef.current) {
-  const rect = editorRef.current.getBoundingClientRect();
+const anchorEl = composerWrapRef.current || editorRef.current;
+
+if (anchorEl) {
+  const rect = anchorEl.getBoundingClientRect();
 
   setMentionPos({
-    bottom: window.innerHeight - rect.top + 58,
+    bottom: window.innerHeight - rect.top + 8,
     left: rect.left,
   });
 }
@@ -2238,7 +2241,7 @@ if (data.status === "succeeded" && data.generation?.images) {
     variants, setVariants, ratio, setRatio,
     focused, setFocused, error, setError, isGenerating,
     onGenerate: handleGenerate,
-    editorRef, mentionDropdownRef,
+    editorRef, mentionDropdownRef, composerWrapRef,
     mentionOpen, setMentionOpen, mentionChars, mentionLoading, mentionQuery,
     mentionPos,
     onMentionSelect: handleMentionSelect,
@@ -2963,13 +2966,13 @@ function ComposerInner({
   resolution, setResolution, camera, setCamera, genre, setGenre,
   variants, setVariants, ratio, setRatio,
   focused, setFocused, error, setError, isGenerating, onGenerate,
-  editorRef, mentionDropdownRef,
+  editorRef, mentionDropdownRef, composerWrapRef,
   mentionOpen, setMentionOpen, mentionChars, mentionLoading, mentionQuery, mentionPos,
   onMentionSelect, onInput, uploadedFile, fileInputRef, onFileChange, onRemoveFile,
   onOpenGenre, onOpenCamera, compact = false,
 }) {
   return (
-    <div style={{ position: "relative" }}>
+  <div ref={composerWrapRef} style={{ position: "relative" }}>
 
       {/* @ Mention Dropdown */}
       <AnimatePresence>
