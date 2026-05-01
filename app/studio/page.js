@@ -1972,7 +1972,7 @@ export default function MovieStudio() {
     const savedFlag = localStorage.getItem(`studio_has_generated_${uid}`);
     const savedOutputs = localStorage.getItem(`studio_outputs_${uid}`);
 
-    if (savedFlag === "true" || savedOutputs) {
+    if (savedFlag === "true") {
       setHasGenerated(true);
 
       try {
@@ -1999,13 +1999,6 @@ export default function MovieStudio() {
 
   async function hydrateStudio() {
     try {
-      const cachedUid = localStorage.getItem("kylor_user_uid");
-
-      if (cachedUid) {
-        setUserId(cachedUid);
-        loadInstantLocal(cachedUid);
-        setIsHydrated(true);
-      }
 
       const uid = await resolveStudioUserId();
       if (!mounted) return;
