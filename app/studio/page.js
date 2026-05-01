@@ -1598,12 +1598,7 @@ export default function MovieStudio() {
       }
 
       const savedFlag = localStorage.getItem(`studio_has_generated_${uid}`);
-
-      if (savedFlag === "true") {
-        setHasGenerated(true);
-      } else {
-        setHasGenerated(false);
-      }
+      setHasGenerated(savedFlag === "true");
 
       // Also restore completed outputs for this user
       const savedOutputs = localStorage.getItem(`studio_outputs_${uid}`);
@@ -1747,19 +1742,20 @@ export default function MovieStudio() {
       editorRef.current?.focus();
       return;
     }
+    if (!hasGenerated) {
+      setHasGenerated(true);
+
+      const uid =
+        localStorage.getItem("kylor_user_uid") ||
+        sessionStorage.getItem("kylor_user_uid");
+
+      if (uid) {
+        localStorage.setItem(`studio_has_generated_${uid}`, "true");
+      }
+    }
+
     setError("");
     setIsGenerating(true);
-
-    // ── TASK 5: Save flag on first generate, scoped to UID ──
-    if (!hasGenerated) {
-  setHasGenerated(true);
-
-  const uid = localStorage.getItem("kylor_user_uid");
-  if (uid) {
-    localStorage.setItem(`studio_has_generated_${uid}`, "true");
-  }
-}
-
     const outputId = Date.now();
     setOutputs((prev) => [{ id: outputId, type: mode, prompt, status: "processing", ratio }, ...prev]);
 
@@ -1940,12 +1936,12 @@ export default function MovieStudio() {
     onOpenCamera: () => setCameraOpen(true),
   };
 
-  // ── TASK 3: Block UI render entirely until localStorage has been read ──
   if (!isHydrated) {
     return <div className="opacity-0" />;
   }
 
-  return (
+  if (!hasGenerated) {
+    return (
     <div
       style={{
         position: "fixed", inset: 0,
@@ -2100,9 +2096,6 @@ export default function MovieStudio() {
 
       {/* ── Main Area ── */}
       <div style={{ flex: 1, display: "flex", flexDirection: "column", position: "relative", zIndex: 5, overflow: "hidden" }}>
-
-        {/* ── TASK 4: Pure hasGenerated condition — Hero layout ── */}
-        {!hasGenerated && (
           <motion.div
             key="hero-full"
             initial={{ opacity: 1 }}
@@ -2305,10 +2298,166 @@ export default function MovieStudio() {
               ))}
             </motion.div>
           </motion.div>
-        )}
+      </div>
+    </div>
+    );
+  }
 
-        {/* ── TASK 4: Pure hasGenerated condition — Gallery layout ── */}
-        {hasGenerated && (
+  return (
+    <div
+      style={{
+        position: "fixed", inset: 0,
+        fontFamily: "'Space Grotesk', 'DM Sans', ui-sans-serif, sans-serif",
+        color: "white", display: "flex", flexDirection: "column", overflow: "hidden",
+      }}
+    >
+      <style>{`
+        .studio-textarea::placeholder {
+          color: rgba(255, 255, 255, 0.22);
+          -webkit-text-fill-color: rgba(255, 255, 255, 0.22);
+          opacity: 1;
+        }
+        [contenteditable][data-placeholder]:empty::before {
+          content: attr(data-placeholder);
+          color: rgba(255, 255, 255, 0.22);
+          pointer-events: none;
+        }
+        .studio-textarea::-webkit-input-placeholder {
+          color: rgba(255, 255, 255, 0.22);
+          -webkit-text-fill-color: rgba(255, 255, 255, 0.22);
+        }
+        .studio-textarea::-moz-placeholder {
+          color: rgba(255, 255, 255, 0.22);
+          opacity: 1;
+        }
+        .gallery-scroll::-webkit-scrollbar { width: 4px; }
+        .gallery-scroll::-webkit-scrollbar-track { background: transparent; }
+        .gallery-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 2px; }
+        input[type=range]::-webkit-slider-thumb {
+          -webkit-appearance: none;
+          width: 16px; height: 16px;
+          border-radius: 50%;
+          background: white;
+          box-shadow: 0 0 0 3px rgba(124,58,237,0.4), 0 2px 6px rgba(0,0,0,0.5);
+          cursor: pointer;
+          transition: box-shadow 0.15s;
+        }
+        input[type=range]::-webkit-slider-thumb:hover {
+          box-shadow: 0 0 0 4px rgba(124,58,237,0.55), 0 2px 8px rgba(0,0,0,0.6);
+        }
+        input[type=range]::-moz-range-thumb {
+          width: 16px; height: 16px;
+          border-radius: 50%; border: none;
+          background: white;
+          box-shadow: 0 0 0 3px rgba(124,58,237,0.4), 0 2px 6px rgba(0,0,0,0.5);
+          cursor: pointer;
+        }
+      `}</style>
+
+      <AmbientBackground />
+
+      <AnimatePresence>
+        {genreOpen && (
+          <GenreModal
+            genre={genre}
+            onSelect={(id) => setGenre(id)}
+            onClose={() => setGenreOpen(false)}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {cameraOpen && (
+          <CameraModal
+            camera={camera}
+            setCamera={setCamera}
+            onClose={() => setCameraOpen(false)}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* ── Header ── */}
+      <motion.header
+        initial={{ opacity: 0, y: -16 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
+        style={{
+          position: "relative", zIndex: 10,
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          padding: "14px 28px", borderBottom: `1px solid ${BORDER}`,
+          background: "rgba(8,10,16,0.7)",
+          backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)",
+          flexShrink: 0,
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div
+            style={{
+              width: 30, height: 30, borderRadius: 9,
+              background: `linear-gradient(135deg, ${ACCENT} 0%, ${INDIGO} 100%)`,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontSize: 14, boxShadow: `0 0 18px ${ACCENT_GLOW}`,
+            }}
+          >
+            🎬
+          </div>
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.14em", color: "#c4b5fd", lineHeight: 1, textTransform: "uppercase" }}>
+              MOVIE STUDIO
+            </div>
+            <div style={{ fontSize: 10, color: TEXT_DIM, letterSpacing: "0.05em" }}>AI Filmmaking Suite</div>
+          </div>
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+          {["Studio", "Library", "Scenes", "Export"].map((item, i) => (
+            <motion.button
+              key={item} whileHover={{ y: -1 }}
+              style={{
+                padding: "5px 14px", borderRadius: 8, border: "none",
+                background: i === 0 ? ACCENT_SOFT : "transparent",
+                color: i === 0 ? "#c4b5fd" : TEXT_MUTED,
+                fontSize: 13, fontWeight: 500, cursor: "pointer",
+                letterSpacing: "0.01em", fontFamily: "inherit", transition: "all 0.2s",
+              }}
+            >
+              {item}
+            </motion.button>
+          ))}
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <IconButton title="Grid view" active={viewMode === "grid"} onClick={() => setViewMode("grid")}>
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+              <rect x="0" y="0" width="6" height="6" rx="1.5" fill="currentColor" opacity="0.8" />
+              <rect x="8" y="0" width="6" height="6" rx="1.5" fill="currentColor" opacity="0.8" />
+              <rect x="0" y="8" width="6" height="6" rx="1.5" fill="currentColor" opacity="0.8" />
+              <rect x="8" y="8" width="6" height="6" rx="1.5" fill="currentColor" opacity="0.8" />
+            </svg>
+          </IconButton>
+          <IconButton title="List view" active={viewMode === "list"} onClick={() => setViewMode("list")}>
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+              <rect x="0" y="1" width="14" height="2.5" rx="1.25" fill="currentColor" opacity="0.8" />
+              <rect x="0" y="5.75" width="14" height="2.5" rx="1.25" fill="currentColor" opacity="0.8" />
+              <rect x="0" y="10.5" width="14" height="2.5" rx="1.25" fill="currentColor" opacity="0.8" />
+            </svg>
+          </IconButton>
+          <div style={{ width: 1, height: 20, background: BORDER, margin: "0 4px" }} />
+          <div
+            style={{
+              width: 30, height: 30, borderRadius: "50%",
+              background: `linear-gradient(135deg, ${ACCENT} 0%, ${INDIGO} 100%)`,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontSize: 12, fontWeight: 700, cursor: "pointer",
+            }}
+          >
+            D
+          </div>
+        </div>
+      </motion.header>
+
+      {/* ── Main Area ── */}
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", position: "relative", zIndex: 5, overflow: "hidden" }}>
           <motion.div
             key="gallery-layout"
             initial={{ opacity: 0 }}
@@ -2388,10 +2537,7 @@ export default function MovieStudio() {
               <GalleryGrid outputs={outputs} viewMode={viewMode} activeTab={galleryTab} />
             </motion.div>
           </motion.div>
-        )}
 
-        {/* ── TASK 4: Pure hasGenerated condition — Bottom Composer ── */}
-        {hasGenerated && (
           <motion.div
             key="bottom-composer"
             initial={{ opacity: 0, y: 80 }}
@@ -2458,7 +2604,6 @@ export default function MovieStudio() {
               </div>
             </div>
           </motion.div>
-        )}
       </div>
 
       {/* ── Status Bar ── */}
@@ -2499,7 +2644,6 @@ export default function MovieStudio() {
     </div>
   );
 }
-
 // ─── Shared Composer Inner ────────────────────────────────────────────────────
 function ComposerInner({
   prompt, setPrompt, mode, setMode, duration, setDuration,
