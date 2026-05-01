@@ -2288,8 +2288,17 @@ if (data.status === "succeeded" && data.generation?.images) {
     const el = editorRef.current;
     if (!el) return;
 
-    const text = el.innerText.replace(/\n$/, "");
-    setPrompt(text);
+const text = el.innerText.replace(/\n$/, "");
+
+if (!text.trim()) {
+  el.innerHTML = "";
+  setPrompt("");
+  setMentionOpen(false);
+  setMentionQuery("");
+  return;
+}
+
+setPrompt(text);
     if (error) setError("");
 
     const sel = window.getSelection();
@@ -3296,6 +3305,11 @@ function ComposerInner({
           contentEditable
           suppressContentEditableWarning
           onInput={onInput}
+          onKeyUp={(e) => {
+  if (!e.currentTarget.innerText.trim()) {
+    e.currentTarget.innerHTML = "";
+  }
+}}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
           data-placeholder="Scene • Characters • Action • Camera • Lighting"
