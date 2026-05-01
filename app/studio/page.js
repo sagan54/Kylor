@@ -2973,7 +2973,7 @@ function ComposerInner({
             style={{
               position: "absolute",
               left: 0,
-              bottom: compact ? 78 : 92,
+              bottom: compact ? 140 : 184,
               zIndex: 99999,
               width: 260,
               borderRadius: 12,
