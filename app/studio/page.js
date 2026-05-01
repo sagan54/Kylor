@@ -2966,13 +2966,13 @@ function ComposerInner({
         {mentionOpen && (
           <motion.div
             ref={mentionDropdownRef}
-            initial={{ opacity: 0, y: 6, scale: 0.97 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 4, scale: 0.97 }}
+            initial={{ opacity: 0, scale: 0.97 }}
+animate={{ opacity: 1, scale: 1 }}
+exit={{ opacity: 0, scale: 0.97 }}
             transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
 style={{
   position: "absolute",
-  top: -8,
+  top: compact ? -54 : -60,
   left: 0,
   transform: "translateY(-100%)",
   zIndex: 99999,
