@@ -2973,7 +2973,7 @@ function ComposerInner({
             style={{
               position: "absolute",
               left: compact ? 0 : 20,
-              bottom: "calc(100% + 12px)",
+              bottom: "calc(100% + 40px)",   // clean cinematic spacing
               zIndex: 99999,
               width: 260,
               height: "auto",
