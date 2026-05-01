@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { supabase } from "../../lib/supabase";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const ACCENT = "#7c3aed";
@@ -1417,12 +1418,137 @@ function ratioToCss(r) {
 }
 
 // ─── Gallery Grid ─────────────────────────────────────────────────────────────
+function getFirstImageUrl(images) {
+  if (!Array.isArray(images)) return null;
+  for (const image of images) {
+    if (typeof image === "string" && image.trim()) return image;
+    if (image?.url) return image.url;
+    if (image?.image_url) return image.image_url;
+  }
+  return null;
+}
+
+function normalizeStudioType(value) {
+  return String(value || "").toLowerCase() === "video" ? "Video" : "Image";
+}
+
+function mapStudioGenerationRow(row) {
+  const metadata = row?.metadata || {};
+  const imageUrl = getFirstImageUrl(row?.images);
+  const state = String(metadata.state || "").toLowerCase();
+
+  return {
+    id: row.id,
+    predictionId: row.id,
+    type: normalizeStudioType(metadata.studioType || metadata.type || row.mode),
+    prompt: row.prompt || "",
+    status: imageUrl ? "succeeded" : state === "failed" ? "failed" : "processing",
+    ratio: row.ratio || "Auto",
+    imageUrl,
+    errorMsg: metadata.error || "",
+    generationData: row,
+    createdAt: row.created_at,
+  };
+}
+
+async function resolveStudioUserId() {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+
+  let uid = session?.user?.id ?? null;
+  if (!uid) {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    uid = user?.id ?? null;
+  }
+
+  if (uid) {
+    localStorage.setItem("kylor_user_uid", uid);
+  }
+
+  return uid;
+}
+
+async function loadStudioGenerations(userId) {
+  if (!userId) return [];
+
+  const { data, error } = await supabase
+    .from("image_generations")
+    .select("id, prompt, images, created_at, mode, ratio, style, metadata")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false })
+    .limit(60);
+
+  if (error) {
+    console.error("loadStudioGenerations failed:", error);
+    return null;
+  }
+
+  return (data || [])
+    .filter((row) => row?.metadata?.source === "studio" || row?.metadata?.studioType)
+    .map(mapStudioGenerationRow);
+}
+
+function mergeStudioOutputs(primary, fallback) {
+  const seen = new Set();
+  return [...(primary || []), ...(fallback || [])].filter((output) => {
+    const key = String(output?.predictionId || output?.id || "");
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function isVideoMediaUrl(url) {
+  return /\.(mp4|webm|mov|m4v)(\?|#|$)/i.test(String(url || ""));
+}
+
 function GalleryGrid({ outputs, viewMode, activeTab }) {
+  const [activeOutput, setActiveOutput] = useState(null);
+
   const filtered = outputs.filter(o => {
     if (activeTab === "Image") return o.type === "Image";
     if (activeTab === "Video") return o.type === "Video";
     return true;
   });
+
+  const renderMedia = (o, expanded = false) => {
+    const mediaUrl = o.videoUrl || o.imageUrl;
+    const isVideo = o.type === "Video" && isVideoMediaUrl(mediaUrl);
+
+    if (isVideo) {
+      return (
+        <video
+          src={mediaUrl}
+          controls={expanded}
+          autoPlay={expanded}
+          muted={!expanded}
+          playsInline
+          style={{
+            width: "100%",
+            height: "100%",
+            objectFit: "contain",
+            display: "block",
+          }}
+        />
+      );
+    }
+
+    return (
+      <img
+        src={mediaUrl}
+        alt={o.prompt}
+        style={{
+          width: "100%",
+          height: "100%",
+          objectFit: "contain",
+          display: "block",
+        }}
+      />
+    );
+  };
 
   if (filtered.length === 0) {
     return (
@@ -1438,6 +1564,7 @@ function GalleryGrid({ outputs, viewMode, activeTab }) {
   }
 
   return (
+    <>
     <div
       style={{
         display: "grid",
@@ -1459,7 +1586,10 @@ function GalleryGrid({ outputs, viewMode, activeTab }) {
             border: `1px solid ${o.status === "succeeded" ? "rgba(124,58,237,0.25)" : o.status === "failed" ? "rgba(248,113,113,0.2)" : BORDER}`,
             background: "rgba(10,12,22,0.8)",
             overflow: "hidden",
-            cursor: "pointer",
+            cursor: o.status === "succeeded" && o.imageUrl ? "zoom-in" : "default",
+          }}
+          onClick={() => {
+            if (o.status === "succeeded" && o.imageUrl) setActiveOutput(o);
           }}
         >
           <div
@@ -1473,11 +1603,7 @@ function GalleryGrid({ outputs, viewMode, activeTab }) {
           >
             {o.status === "succeeded" && o.imageUrl ? (
               <>
-                <img
-                  src={o.imageUrl}
-                  alt={o.prompt}
-                  style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                />
+                {renderMedia(o)}
                 {o.type === "Video" && (
                   <div style={{
                     position: "absolute", inset: 0,
@@ -1522,6 +1648,7 @@ function GalleryGrid({ outputs, viewMode, activeTab }) {
                 download
                 target="_blank"
                 rel="noreferrer"
+                onClick={(e) => e.stopPropagation()}
                 initial={{ opacity: 0 }}
                 whileHover={{ opacity: 1 }}
                 style={{
@@ -1539,7 +1666,7 @@ function GalleryGrid({ outputs, viewMode, activeTab }) {
             )}
           </div>
 
-          <div style={{ padding: "8px 10px" }}>
+          <div style={{ display: "none", padding: "8px 10px" }}>
             <div style={{ fontSize: 10.5, color: TEXT_MUTED, lineHeight: 1.35, marginBottom: 4 }}>
               {o.prompt.slice(0, 70)}{o.prompt.length > 70 ? "…" : ""}
             </div>
@@ -1557,6 +1684,69 @@ function GalleryGrid({ outputs, viewMode, activeTab }) {
         </motion.div>
       )})}
     </div>
+    <AnimatePresence>
+      {activeOutput && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          onClick={() => setActiveOutput(null)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 1000,
+            background: "rgba(0,0,0,0.92)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 24,
+            cursor: "zoom-out",
+          }}
+        >
+          <motion.button
+            onClick={(e) => {
+              e.stopPropagation();
+              setActiveOutput(null);
+            }}
+            whileHover={{ scale: 1.06 }}
+            whileTap={{ scale: 0.96 }}
+            style={{
+              position: "absolute",
+              top: 18,
+              right: 18,
+              width: 36,
+              height: 36,
+              borderRadius: 10,
+              border: `1px solid ${BORDER_HOVER}`,
+              background: "rgba(10,12,22,0.85)",
+              color: "white",
+              cursor: "pointer",
+              fontSize: 18,
+              lineHeight: 1,
+            }}
+          >
+            x
+          </motion.button>
+          <motion.div
+            initial={{ scale: 0.96, y: 10 }}
+            animate={{ scale: 1, y: 0 }}
+            exit={{ scale: 0.96, y: 10 }}
+            transition={{ duration: 0.2 }}
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "100%",
+              height: "100%",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            {renderMedia(activeOutput, true)}
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+    </>
   );
 }
 
@@ -1582,36 +1772,105 @@ export default function MovieStudio() {
   const [hasGenerated, setHasGenerated] = useState(false);
   const [isHydrated, setIsHydrated] = useState(false);
   const [galleryTab, setGalleryTab] = useState("All");
+  const [userId, setUserId] = useState(null);
 
-  // ── TASK 2 & 3: Fixed hydration — read UID first, fall back to new-user if absent ──
   useEffect(() => {
-    try {
-      const uid =
-        localStorage.getItem("kylor_user_uid") ||
-        sessionStorage.getItem("kylor_user_uid");
+    let mounted = true;
 
-      // If no UID → treat as new user, show hero
+    async function hydrateStudio() {
+      try {
+        const uid = await resolveStudioUserId();
+
+        if (!mounted) return;
+
+        if (!uid) {
+          setUserId(null);
+          setHasGenerated(false);
+          setIsHydrated(true);
+          return;
+        }
+
+        setUserId(uid);
+
+        let restored = [];
+        try {
+          const savedOutputs = localStorage.getItem(`studio_outputs_${uid}`);
+          if (savedOutputs) {
+            const parsed = JSON.parse(savedOutputs);
+            if (Array.isArray(parsed)) restored = parsed;
+          }
+        } catch {}
+
+        const dbOutputs = await loadStudioGenerations(uid);
+        if (!mounted) return;
+
+        const nextOutputs = mergeStudioOutputs(
+          Array.isArray(dbOutputs) ? dbOutputs : [],
+          restored
+        );
+
+        if (nextOutputs.length > 0) {
+          setOutputs(nextOutputs);
+        }
+
+        const savedFlag = localStorage.getItem(`studio_has_generated_${uid}`);
+        setHasGenerated(savedFlag === "true" || nextOutputs.length > 0);
+      } catch (err) {
+        console.error("Movie Studio hydration failed:", err);
+        setHasGenerated(false);
+      } finally {
+        if (mounted) {
+          setIsHydrated(true);
+        }
+      }
+    }
+
+    hydrateStudio();
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      const uid = session?.user?.id ?? null;
+
       if (!uid) {
+        localStorage.removeItem("kylor_user_uid");
+        setUserId(null);
+        setOutputs([]);
         setHasGenerated(false);
         setIsHydrated(true);
         return;
       }
 
+      localStorage.setItem("kylor_user_uid", uid);
+      setUserId(uid);
+
+      let restored = [];
+      try {
+        const savedOutputs = localStorage.getItem(`studio_outputs_${uid}`);
+        if (savedOutputs) {
+          const parsed = JSON.parse(savedOutputs);
+          if (Array.isArray(parsed)) restored = parsed;
+        }
+      } catch {}
+
+      const dbOutputs = await loadStudioGenerations(uid);
+      if (!mounted) return;
+
+      const nextOutputs = mergeStudioOutputs(
+        Array.isArray(dbOutputs) ? dbOutputs : [],
+        restored
+      );
+      setOutputs(nextOutputs);
+
       const savedFlag = localStorage.getItem(`studio_has_generated_${uid}`);
-      setHasGenerated(savedFlag === "true");
+      setHasGenerated(savedFlag === "true" || nextOutputs.length > 0);
+      setIsHydrated(true);
+    });
 
-      // Also restore completed outputs for this user
-      const savedOutputs = localStorage.getItem(`studio_outputs_${uid}`);
-      if (savedOutputs) {
-        const parsed = JSON.parse(savedOutputs);
-        const restored = parsed.filter(
-          (o) => o.status === "succeeded" || o.status === "failed"
-        );
-        if (restored.length > 0) setOutputs(restored);
-      }
-    } catch {}
-
-    setIsHydrated(true);
+    return () => {
+      mounted = false;
+      subscription?.unsubscribe();
+    };
   }, []);
 
   useEffect(() => {
@@ -1621,17 +1880,14 @@ export default function MovieStudio() {
   // Persist completed outputs using user-specific key
   useEffect(() => {
     try {
-      const uid =
-        localStorage.getItem("kylor_user_uid") ||
-        sessionStorage.getItem("kylor_user_uid");
-      if (!uid) return;
-      const toSave = outputs.filter(o => o.status === "succeeded" || o.status === "failed");
-      localStorage.setItem(`studio_outputs_${uid}`, JSON.stringify(toSave));
+      if (!userId) return;
+      localStorage.setItem(`studio_outputs_${userId}`, JSON.stringify(outputs));
     } catch {}
-  }, [outputs]);
+  }, [outputs, userId]);
 
   const editorRef = useRef(null);
   const mentionDropdownRef = useRef(null);
+  const resumedPollsRef = useRef(new Set());
 
   const [mentionQuery, setMentionQuery] = useState("");
   const [mentionOpen, setMentionOpen] = useState(false);
@@ -1694,7 +1950,7 @@ export default function MovieStudio() {
         const data = await res.json();
 
         if (data.status === "succeeded" && data.generation?.images?.length) {
-          const imageUrl = data.generation.images[0];
+          const imageUrl = getFirstImageUrl(data.generation.images);
           setOutputs((prev) =>
             prev.map((o) =>
               o.id === outputId
@@ -1736,22 +1992,44 @@ export default function MovieStudio() {
     setError("Generation timed out. Please try again.");
   }, []);
 
+  useEffect(() => {
+    if (!isHydrated || !hasGenerated) return;
+
+    outputs.forEach((output) => {
+      const predictionId = output?.predictionId || output?.id;
+      if (output?.status !== "processing" || !predictionId) return;
+
+      const key = String(predictionId);
+      if (resumedPollsRef.current.has(key)) return;
+
+      resumedPollsRef.current.add(key);
+      pollStatus(predictionId, output.id);
+    });
+  }, [hasGenerated, isHydrated, outputs, pollStatus]);
+
   const handleGenerate = useCallback(async () => {
     if (!prompt.trim()) {
       setError("Set the scene first — describe what you want to direct.");
       editorRef.current?.focus();
       return;
     }
+    let effectiveUserId = userId;
+    if (!effectiveUserId) {
+      try {
+        effectiveUserId = await resolveStudioUserId();
+        if (effectiveUserId) setUserId(effectiveUserId);
+      } catch {}
+    }
+
+    if (!effectiveUserId) {
+      setError("Please log in to save Movie Studio generations to your account.");
+      return;
+    }
+
     if (!hasGenerated) {
       setHasGenerated(true);
 
-      const uid =
-        localStorage.getItem("kylor_user_uid") ||
-        sessionStorage.getItem("kylor_user_uid");
-
-      if (uid) {
-        localStorage.setItem(`studio_has_generated_${uid}`, "true");
-      }
+      localStorage.setItem(`studio_has_generated_${effectiveUserId}`, "true");
     }
 
     setError("");
@@ -1764,6 +2042,9 @@ export default function MovieStudio() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          userId: effectiveUserId,
+          source: "studio",
+          studioType: mode,
           prompt,
           scenePrompt: prompt,
           style: genre,
@@ -1796,7 +2077,7 @@ export default function MovieStudio() {
       );
       setIsGenerating(false);
     }
-  }, [prompt, mode, genre, ratio, pollStatus, hasGenerated]);
+  }, [prompt, mode, genre, ratio, pollStatus, hasGenerated, userId]);
 
   useEffect(() => {
     const handler = (e) => {

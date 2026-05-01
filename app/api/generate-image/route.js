@@ -352,6 +352,8 @@ export async function POST(req) {
     const ratio = sanitizeText(rawBody.ratio) || "16:9";
     const size = sanitizeText(rawBody.size) || "16:9";
     const userId = sanitizeOptionalId(rawBody.userId);
+    const source = sanitizeText(rawBody.source);
+    const studioType = sanitizeText(rawBody.studioType);
     const characterId = sanitizeOptionalId(rawBody.characterId);
     const seed = sanitizeSeed(rawBody.seed);
     const finalPrompt = prompt || scenePrompt;
@@ -475,6 +477,8 @@ export async function POST(req) {
         characterId: characterId || null,
         characterName: character?.name || null,
         characterPrompt: characterPrompt || "",
+        source: source || null,
+        studioType: studioType || null,
         usedCharacter: usingCharacterMode,
         referenceCount: referenceUrls.length,
         referenceUrls,
