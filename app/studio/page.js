@@ -1419,12 +1419,27 @@ function ratioToCss(r) {
 
 // ─── Gallery Grid ─────────────────────────────────────────────────────────────
 function getFirstImageUrl(images) {
-  if (!Array.isArray(images)) return null;
-  for (const image of images) {
-    if (typeof image === "string" && image.trim()) return image;
-    if (image?.url) return image.url;
-    if (image?.image_url) return image.image_url;
+  if (!images) return null;
+
+  if (typeof images === "string") {
+    return images.trim() || null;
   }
+
+  if (Array.isArray(images)) {
+    for (const image of images) {
+      if (typeof image === "string" && image.trim()) return image;
+      if (image?.url) return image.url;
+      if (image?.image_url) return image.image_url;
+      if (image?.src) return image.src;
+    }
+  }
+
+  if (typeof images === "object") {
+    if (images.url) return images.url;
+    if (images.image_url) return images.image_url;
+    if (images.src) return images.src;
+  }
+
   return null;
 }
 
@@ -1435,17 +1450,18 @@ function normalizeStudioType(value) {
 function mapStudioGenerationRow(row) {
   const metadata = row?.metadata || {};
   const imageUrl = getFirstImageUrl(row?.images);
-  const state = String(metadata.state || "").toLowerCase();
+  const state = String(metadata.state || row?.status || "").toLowerCase();
 
   return {
     id: row.id,
-    predictionId: row.id,
+    predictionId: metadata.predictionId || metadata.prediction_id || null,
     type: normalizeStudioType(metadata.studioType || metadata.type || row.mode),
     prompt: row.prompt || "",
-    status: imageUrl ? "succeeded" : state === "failed" ? "failed" : "processing",
-    ratio: row.ratio || "Auto",
+    status: imageUrl ? "succeeded" : state === "failed" ? "failed" : "failed",
+    ratio: row.ratio || metadata.ratio || "Auto",
     imageUrl,
-    errorMsg: metadata.error || "",
+    videoUrl: metadata.videoUrl || metadata.video_url || null,
+    errorMsg: imageUrl ? "" : "Saved generation has no image URL.",
     generationData: row,
     createdAt: row.created_at,
   };
@@ -1476,19 +1492,28 @@ async function loadStudioGenerations(userId) {
 
   const { data, error } = await supabase
     .from("image_generations")
-    .select("id, prompt, images, created_at, mode, ratio, style, metadata")
+    .select("*")
     .eq("user_id", userId)
     .order("created_at", { ascending: false })
     .limit(60);
 
   if (error) {
-    console.error("loadStudioGenerations failed:", error);
-    return null;
+    console.error("[Studio] failed to load generations:", error);
+    return [];
   }
 
   return (data || [])
-    .filter((row) => row?.metadata?.source === "studio" || row?.metadata?.studioType)
-    .map(mapStudioGenerationRow);
+    .filter((row) => {
+      const metadata = row?.metadata || {};
+      return (
+        metadata?.source === "studio" ||
+        metadata?.studioType ||
+        row?.source === "studio" ||
+        row?.mode === "studio"
+      );
+    })
+    .map(mapStudioGenerationRow)
+    .filter((row) => row.imageUrl || row.videoUrl);
 }
 
 function mergeStudioOutputs(primary, fallback) {
@@ -1949,19 +1974,30 @@ export default function MovieStudio() {
         const res = await fetch(`/api/generate-image-status?predictionId=${predictionId}`);
         const data = await res.json();
 
-        if (data.status === "succeeded" && data.generation?.images?.length) {
-          const imageUrl = getFirstImageUrl(data.generation.images);
-          setOutputs((prev) =>
-            prev.map((o) =>
-              o.id === outputId
-                ? { ...o, status: "succeeded", imageUrl, generationData: data.generation }
-                : o
-            )
-          );
-          setIsGenerating(false);
-          setCredits((c) => Math.max(0, c - 120));
-          return;
-        }
+if (data.status === "succeeded" && data.generation?.images) {
+  const imageUrl = getFirstImageUrl(data.generation.images);
+
+  if (!imageUrl) {
+    continue;
+  }
+
+  setOutputs((prev) =>
+    prev.map((o) =>
+      o.id === outputId
+        ? {
+            ...o,
+            status: "succeeded",
+            imageUrl,
+            generationData: data.generation,
+          }
+        : o
+    )
+  );
+
+  setIsGenerating(false);
+  setCredits((c) => Math.max(0, c - 120));
+  return;
+}
 
         if (data.status === "failed") {
           const msg = friendlyError(data.error);
@@ -2217,9 +2253,25 @@ export default function MovieStudio() {
     onOpenCamera: () => setCameraOpen(true),
   };
 
-  if (!isHydrated) {
-    return <div className="opacity-0" />;
-  }
+if (!isHydrated) {
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: BG,
+        color: "rgba(255,255,255,0.45)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        fontFamily: "'Space Grotesk', 'DM Sans', sans-serif",
+        fontSize: 13,
+      }}
+    >
+      Loading Movie Studio…
+    </div>
+  );
+}
 
   if (!hasGenerated) {
     return (
