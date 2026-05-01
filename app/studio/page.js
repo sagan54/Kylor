@@ -1554,7 +1554,7 @@ function GalleryGrid({ outputs, viewMode, activeTab }) {
           style={{
             width: "100%",
             height: "100%",
-            objectFit: "contain",
+            objectFit: "cover",
             display: "block",
           }}
         />
@@ -1568,7 +1568,7 @@ function GalleryGrid({ outputs, viewMode, activeTab }) {
         style={{
           width: "100%",
           height: "100%",
-          objectFit: "contain",
+          objectFit: "cover",
           display: "block",
         }}
       />
@@ -1593,7 +1593,10 @@ function GalleryGrid({ outputs, viewMode, activeTab }) {
     <div
       style={{
         display: "grid",
-        gridTemplateColumns: viewMode === "grid" ? "repeat(auto-fill, minmax(480px,1fr))" : "1fr",
+        gridTemplateColumns:
+  viewMode === "grid"
+    ? "repeat(auto-fill, minmax(min(100%, 720px), 1fr))"
+    : "1fr",
         gap: 16,
         padding: "0 20px 20px",
       }}
@@ -1606,13 +1609,16 @@ function GalleryGrid({ outputs, viewMode, activeTab }) {
           initial={{ opacity: 0, scale: 0.92, y: 10 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           transition={{ duration: 0.35, delay: idx * 0.04, ease: [0.22, 1, 0.36, 1] }}
-          style={{
-            borderRadius: 14,
-            border: `1px solid ${o.status === "succeeded" ? "rgba(124,58,237,0.25)" : o.status === "failed" ? "rgba(248,113,113,0.2)" : BORDER}`,
-            background: "rgba(10,12,22,0.8)",
-            overflow: "hidden",
-            cursor: o.status === "succeeded" && o.imageUrl ? "zoom-in" : "default",
-          }}
+style={{
+  width: "100%",
+  maxWidth: viewMode === "grid" ? 900 : 1200,
+  margin: "0 auto",
+  borderRadius: 14,
+  border: `1px solid ${o.status === "succeeded" ? "rgba(124,58,237,0.25)" : o.status === "failed" ? "rgba(248,113,113,0.2)" : BORDER}`,
+  background: "rgba(10,12,22,0.8)",
+  overflow: "hidden",
+  cursor: o.status === "succeeded" && o.imageUrl ? "pointer" : "default",
+}}
           onClick={() => {
             if (o.status === "succeeded" && o.imageUrl) setActiveOutput(o);
           }}
@@ -1709,68 +1715,227 @@ function GalleryGrid({ outputs, viewMode, activeTab }) {
         </motion.div>
       )})}
     </div>
-    <AnimatePresence>
-      {activeOutput && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          onClick={() => setActiveOutput(null)}
+ <AnimatePresence>
+  {activeOutput && (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      onClick={() => setActiveOutput(null)}
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 1000,
+        background:
+          "radial-gradient(circle at 35% 45%, rgba(255,255,255,0.08), transparent 38%), rgba(5,7,12,0.92)",
+        backdropFilter: "blur(18px)",
+        WebkitBackdropFilter: "blur(18px)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "28px 32px",
+        cursor: "default",
+      }}
+    >
+      <motion.button
+        onClick={(e) => {
+          e.stopPropagation();
+          setActiveOutput(null);
+        }}
+        whileHover={{ scale: 1.06, background: "rgba(255,255,255,0.09)" }}
+        whileTap={{ scale: 0.96 }}
+        style={{
+          position: "absolute",
+          top: 22,
+          right: 24,
+          width: 38,
+          height: 38,
+          borderRadius: 12,
+          border: `1px solid ${BORDER_HOVER}`,
+          background: "rgba(10,12,22,0.78)",
+          color: "rgba(255,255,255,0.8)",
+          cursor: "pointer",
+          fontSize: 18,
+          lineHeight: 1,
+          zIndex: 4,
+        }}
+      >
+        ×
+      </motion.button>
+
+      <motion.div
+        initial={{ opacity: 0, scale: 0.96, y: 18 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.96, y: 18 }}
+        transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: "min(78vw, 1240px)",
+          maxHeight: "82vh",
+          display: "grid",
+          gridTemplateColumns: "minmax(0, 1fr) 330px",
+          gap: 18,
+          alignItems: "stretch",
+        }}
+      >
+        {/* Preview */}
+        <div
           style={{
-            position: "fixed",
-            inset: 0,
-            zIndex: 1000,
-            background: "rgba(0,0,0,0.92)",
+            borderRadius: 22,
+            overflow: "hidden",
+            border: `1px solid rgba(255,255,255,0.11)`,
+            background: "rgba(10,12,22,0.82)",
+            boxShadow:
+              "0 30px 120px rgba(0,0,0,0.65), 0 0 0 1px rgba(255,255,255,0.04)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            padding: 24,
-            cursor: "zoom-out",
+            minHeight: 360,
+            maxHeight: "82vh",
           }}
         >
-          <motion.button
-            onClick={(e) => {
-              e.stopPropagation();
-              setActiveOutput(null);
-            }}
-            whileHover={{ scale: 1.06 }}
-            whileTap={{ scale: 0.96 }}
-            style={{
-              position: "absolute",
-              top: 18,
-              right: 18,
-              width: 36,
-              height: 36,
-              borderRadius: 10,
-              border: `1px solid ${BORDER_HOVER}`,
-              background: "rgba(10,12,22,0.85)",
-              color: "white",
-              cursor: "pointer",
-              fontSize: 18,
-              lineHeight: 1,
-            }}
-          >
-            x
-          </motion.button>
-          <motion.div
-            initial={{ scale: 0.96, y: 10 }}
-            animate={{ scale: 1, y: 0 }}
-            exit={{ scale: 0.96, y: 10 }}
-            transition={{ duration: 0.2 }}
-            onClick={(e) => e.stopPropagation()}
+          <div
             style={{
               width: "100%",
-              height: "100%",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
+              aspectRatio: ratioToCss(activeOutput.ratio),
+              maxHeight: "82vh",
             }}
           >
             {renderMedia(activeOutput, true)}
-          </motion.div>
-        </motion.div>
-      )}
-    </AnimatePresence>
+          </div>
+        </div>
+
+        {/* Side panel */}
+        <div
+          style={{
+            borderRadius: 22,
+            border: `1px solid rgba(255,255,255,0.1)`,
+            background: "rgba(12,14,22,0.88)",
+            backdropFilter: "blur(22px)",
+            WebkitBackdropFilter: "blur(22px)",
+            boxShadow: "0 24px 80px rgba(0,0,0,0.45)",
+            padding: 18,
+            display: "flex",
+            flexDirection: "column",
+            gap: 14,
+            minHeight: 360,
+            maxHeight: "82vh",
+          }}
+        >
+          <div>
+            <div style={{ fontSize: 11, color: TEXT_DIM, marginBottom: 4 }}>
+              Movie Studio
+            </div>
+            <div style={{ fontSize: 18, fontWeight: 800, color: "white" }}>
+              Generated Frame
+            </div>
+          </div>
+
+          <div
+            style={{
+              height: 1,
+              background: "rgba(255,255,255,0.08)",
+              margin: "2px 0",
+            }}
+          />
+
+          <div>
+            <div
+              style={{
+                fontSize: 10,
+                fontWeight: 700,
+                letterSpacing: "0.12em",
+                textTransform: "uppercase",
+                color: TEXT_DIM,
+                marginBottom: 8,
+              }}
+            >
+              Prompt
+            </div>
+            <div
+              style={{
+                maxHeight: 190,
+                overflowY: "auto",
+                padding: 12,
+                borderRadius: 14,
+                background: "rgba(255,255,255,0.045)",
+                border: `1px solid ${BORDER}`,
+                color: "rgba(255,255,255,0.68)",
+                fontSize: 12,
+                lineHeight: 1.55,
+              }}
+            >
+              {activeOutput.prompt || "No prompt available."}
+            </div>
+          </div>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1fr 1fr",
+              gap: 8,
+            }}
+          >
+            <div style={{ padding: 10, borderRadius: 12, background: "rgba(255,255,255,0.04)", border: `1px solid ${BORDER}` }}>
+              <div style={{ fontSize: 10, color: TEXT_DIM }}>Type</div>
+              <div style={{ fontSize: 12, color: "white", fontWeight: 700 }}>{activeOutput.type}</div>
+            </div>
+
+            <div style={{ padding: 10, borderRadius: 12, background: "rgba(255,255,255,0.04)", border: `1px solid ${BORDER}` }}>
+              <div style={{ fontSize: 10, color: TEXT_DIM }}>Ratio</div>
+              <div style={{ fontSize: 12, color: "white", fontWeight: 700 }}>{activeOutput.ratio}</div>
+            </div>
+          </div>
+
+          <div style={{ marginTop: "auto", display: "flex", flexDirection: "column", gap: 8 }}>
+            <a
+              href={activeOutput.videoUrl || activeOutput.imageUrl}
+              download
+              target="_blank"
+              rel="noreferrer"
+              style={{
+                width: "100%",
+                height: 44,
+                borderRadius: 14,
+                border: "1px solid rgba(6,182,212,0.35)",
+                background: "linear-gradient(135deg, rgba(6,182,212,0.24), rgba(6,182,212,0.12))",
+                color: CYAN,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                textDecoration: "none",
+                fontSize: 13,
+                fontWeight: 800,
+                letterSpacing: "0.04em",
+                textTransform: "uppercase",
+              }}
+            >
+              Download
+            </a>
+
+            <button
+              onClick={() => setActiveOutput(null)}
+              style={{
+                width: "100%",
+                height: 40,
+                borderRadius: 13,
+                border: `1px solid ${BORDER_HOVER}`,
+                background: "rgba(255,255,255,0.04)",
+                color: TEXT_MUTED,
+                cursor: "pointer",
+                fontFamily: "inherit",
+                fontSize: 13,
+                fontWeight: 600,
+              }}
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      </motion.div>
+    </motion.div>
+  )}
+</AnimatePresence>
     </>
   );
 }
