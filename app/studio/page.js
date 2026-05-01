@@ -1530,7 +1530,7 @@ function isVideoMediaUrl(url) {
   return /\.(mp4|webm|mov|m4v)(\?|#|$)/i.test(String(url || ""));
 }
 
-function GalleryGrid({ outputs, viewMode, activeTab }) {
+function GalleryGrid({ outputs, viewMode, activeTab, thumbSize }) {
   const [activeOutput, setActiveOutput] = useState(null);
 
   const filtered = outputs.filter(o => {
@@ -1554,7 +1554,7 @@ function GalleryGrid({ outputs, viewMode, activeTab }) {
           style={{
             width: "100%",
             height: "100%",
-            objectFit: "cover",
+            objectFit: expanded ? "contain" : "cover",
             display: "block",
           }}
         />
@@ -1568,7 +1568,7 @@ function GalleryGrid({ outputs, viewMode, activeTab }) {
         style={{
           width: "100%",
           height: "100%",
-          objectFit: "cover",
+          objectFit: expanded ? "contain" : "cover",
           display: "block",
         }}
       />
@@ -1593,10 +1593,11 @@ function GalleryGrid({ outputs, viewMode, activeTab }) {
     <div
       style={{
         display: "grid",
-        gridTemplateColumns:
+gridTemplateColumns:
   viewMode === "grid"
-    ? "repeat(auto-fill, minmax(min(100%, 720px), 1fr))"
+    ? `repeat(auto-fill, minmax(${thumbSize}px, ${thumbSize}px))`
     : "1fr",
+justifyContent: "start",
         gap: 16,
         padding: "0 20px 20px",
       }}
@@ -1611,8 +1612,8 @@ function GalleryGrid({ outputs, viewMode, activeTab }) {
           transition={{ duration: 0.35, delay: idx * 0.04, ease: [0.22, 1, 0.36, 1] }}
 style={{
   width: "100%",
-  maxWidth: viewMode === "grid" ? 900 : 1200,
-  margin: "0 auto",
+  maxWidth: viewMode === "grid" ? thumbSize : 1200,
+  margin: viewMode === "grid" ? 0 : "0 auto",
   borderRadius: 14,
   border: `1px solid ${o.status === "succeeded" ? "rgba(124,58,237,0.25)" : o.status === "failed" ? "rgba(248,113,113,0.2)" : BORDER}`,
   background: "rgba(10,12,22,0.8)",
@@ -1770,11 +1771,11 @@ style={{
         transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
         onClick={(e) => e.stopPropagation()}
         style={{
-          width: "min(78vw, 1240px)",
-          maxHeight: "82vh",
-          display: "grid",
-          gridTemplateColumns: "minmax(0, 1fr) 330px",
-          gap: 18,
+width: "min(92vw, 1500px)",
+height: "min(82vh, 820px)",
+display: "grid",
+gridTemplateColumns: "minmax(0, 1fr) 300px",
+gap: 16,
           alignItems: "stretch",
         }}
       >
@@ -1790,15 +1791,14 @@ style={{
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            minHeight: 360,
-            maxHeight: "82vh",
+            height: "100%",
+            minHeight: 0,
           }}
         >
           <div
             style={{
-              width: "100%",
-              aspectRatio: ratioToCss(activeOutput.ratio),
-              maxHeight: "82vh",
+width: "100%",
+height: "100%",
             }}
           >
             {renderMedia(activeOutput, true)}
@@ -1953,6 +1953,7 @@ export default function MovieStudio() {
   const [sound, setSound] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [viewMode, setViewMode] = useState("grid");
+  const [thumbSize, setThumbSize] = useState(420);
   const [credits, setCredits] = useState(9680);
   const [error, setError] = useState("");
   const [focused, setFocused] = useState(false);
@@ -2984,6 +2985,39 @@ if (data.status === "succeeded" && data.generation?.images) {
                         {count}
                       </span>
                     )}
+
+                    <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 10 }}>
+  <input
+    type="range"
+    min="260"
+    max="620"
+    step="20"
+    value={thumbSize}
+    onChange={(e) => setThumbSize(Number(e.target.value))}
+    style={{
+      width: 110,
+      accentColor: "#7c3aed",
+      cursor: "pointer",
+    }}
+  />
+
+  <div
+    style={{
+      width: 34,
+      height: 28,
+      borderRadius: 9,
+      border: `1px solid ${BORDER_HOVER}`,
+      background: SURFACE_HOVER,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      color: TEXT_MUTED,
+      fontSize: 13,
+    }}
+  >
+    ▦
+  </div>
+</div>
                   </motion.button>
                 );
               })}
@@ -3003,7 +3037,12 @@ style={{
   minHeight: 0,
 }}
             >
-              <GalleryGrid outputs={outputs} viewMode={viewMode} activeTab={galleryTab} />
+              <GalleryGrid
+  outputs={outputs}
+  viewMode={viewMode}
+  activeTab={galleryTab}
+  thumbSize={thumbSize}
+/>
             </motion.div>
           </motion.div>
 
