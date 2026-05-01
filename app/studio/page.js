@@ -2959,128 +2959,127 @@ function ComposerInner({
   onOpenGenre, onOpenCamera, compact = false,
 }) {
   return (
-  <div style={{ position: "relative", overflow: "visible" }}>
+    <div style={{ position: "relative", overflow: "visible" }}>
 
       {/* @ Mention Dropdown */}
       <AnimatePresence>
         {mentionOpen && (
           <motion.div
             ref={mentionDropdownRef}
-            initial={{ opacity: 0, scale: 0.97 }}
-animate={{ opacity: 1, scale: 1 }}
-exit={{ opacity: 0, scale: 0.97 }}
+            initial={{ opacity: 0, y: 8, scale: 0.97 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 6, scale: 0.97 }}
             transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
-style={{
-  position: "absolute",
-  top: compact ? -54 : -60,
-  left: 0,
-  transform: "translateY(-100%)",
-  zIndex: 99999,
-  width: 260,
-  height: "auto",
-  maxHeight: 240,
-  borderRadius: 12,
-  border: `1px solid ${BORDER_HOVER}`,
-  background: "#0d1020",
-  boxShadow: "0 -8px 32px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.04)",
-  overflow: "hidden",
-  display: "flex",
-  flexDirection: "column",
-}}
+            style={{
+              position: "absolute",
+              left: compact ? 0 : 20,
+              bottom: "calc(100% + 12px)",
+              zIndex: 99999,
+              width: 260,
+              height: "auto",
+              maxHeight: 240,
+              borderRadius: 12,
+              border: `1px solid ${BORDER_HOVER}`,
+              background: "#0d1020",
+              boxShadow: "0 -8px 32px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.04)",
+              overflow: "hidden",
+              display: "flex",
+              flexDirection: "column",
+            }}
           >
-              <div style={{
-                padding: "7px 12px 6px",
-                fontSize: 9.5, fontWeight: 700, letterSpacing: "0.12em",
-                color: TEXT_DIM, textTransform: "uppercase",
-                borderBottom: `1px solid ${BORDER}`,
-                flexShrink: 0,
-                display: "flex", alignItems: "center", gap: 5,
-              }}>
-                <span style={{ color: "#a78bfa" }}>@</span>
-                Characters
-                {mentionQuery && (
-                  <span style={{ color: TEXT_DIM, fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>
-                    — {mentionQuery}
-                  </span>
-                )}
-              </div>
-
-              {mentionLoading ? (
-                <div style={{ padding: "16px", textAlign: "center" }}>
-                  <motion.div
-                    animate={{ rotate: 360 }}
-                    transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-                    style={{
-                      width: 18, height: 18, borderRadius: "50%",
-                      border: "2px solid rgba(167,139,250,0.2)",
-                      borderTopColor: "#a78bfa",
-                      margin: "0 auto",
-                    }}
-                  />
-                </div>
-              ) : mentionChars.length === 0 ? (
-                <div style={{ padding: "14px 16px", fontSize: 12, color: TEXT_DIM, textAlign: "center" }}>
-                  No characters found
-                </div>
-              ) : (
-  <div
-  style={{
-    overflowY: "auto",
-    flex: 1,
-    scrollbarWidth: "none",
-    maxHeight: 190,
-  }}
->
-                  {mentionChars.map((char) => (
-                    <motion.button
-                      key={char.id}
-                      onMouseDown={(e) => { e.preventDefault(); onMentionSelect(char); }}
-                      whileHover={{ background: "rgba(255,255,255,0.06)" }}
-                      style={{
-                        width: "100%", display: "flex", alignItems: "center", gap: 8,
-                        padding: "7px 12px",
-                        background: "transparent", border: "none",
-                        borderBottom: `1px solid rgba(255,255,255,0.04)`,
-                        cursor: "pointer", fontFamily: "inherit", textAlign: "left",
-                        transition: "background 0.12s",
-                      }}
-                    >
-                      <div style={{
-                        width: 28, height: 28, borderRadius: "50%",
-                        overflow: "hidden", flexShrink: 0,
-                        border: "1.5px solid rgba(167,139,250,0.3)",
-                        background: "rgba(124,58,237,0.15)",
-                        display: "flex", alignItems: "center", justifyContent: "center",
-                        fontSize: 12,
-                      }}>
-                        {char.master_image || char.reference_image || char.cover_image ? (
-                          <img
-                            src={char.master_image || char.reference_image || char.cover_image}
-                            alt={char.name}
-                            style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                            onError={(e) => { e.target.style.display = "none"; }}
-                          />
-                        ) : (
-                          <span>🎭</span>
-                        )}
-                      </div>
-                      <div>
-                        <div style={{ fontSize: 12, fontWeight: 600, color: "white", lineHeight: 1.2 }}>
-                          {char.name}
-                        </div>
-                        {char.description && (
-                          <div style={{ fontSize: 10.5, color: TEXT_MUTED, marginTop: 2, lineHeight: 1.3 }}>
-                            {String(char.description).slice(0, 50)}{char.description?.length > 50 ? "…" : ""}
-                          </div>
-                        )}
-                      </div>
-                    </motion.button>
-                  ))}
-                </div>
+            <div style={{
+              padding: "7px 12px 6px",
+              fontSize: 9.5, fontWeight: 700, letterSpacing: "0.12em",
+              color: TEXT_DIM, textTransform: "uppercase",
+              borderBottom: `1px solid ${BORDER}`,
+              flexShrink: 0,
+              display: "flex", alignItems: "center", gap: 5,
+            }}>
+              <span style={{ color: "#a78bfa" }}>@</span>
+              Characters
+              {mentionQuery && (
+                <span style={{ color: TEXT_DIM, fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>
+                  — {mentionQuery}
+                </span>
               )}
-            </motion.div>
-          )}
-        </AnimatePresence>
+            </div>
+
+            {mentionLoading ? (
+              <div style={{ padding: "16px", textAlign: "center" }}>
+                <motion.div
+                  animate={{ rotate: 360 }}
+                  transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+                  style={{
+                    width: 18, height: 18, borderRadius: "50%",
+                    border: "2px solid rgba(167,139,250,0.2)",
+                    borderTopColor: "#a78bfa",
+                    margin: "0 auto",
+                  }}
+                />
+              </div>
+            ) : mentionChars.length === 0 ? (
+              <div style={{ padding: "14px 16px", fontSize: 12, color: TEXT_DIM, textAlign: "center" }}>
+                No characters found
+              </div>
+            ) : (
+              <div
+                style={{
+                  overflowY: "auto",
+                  flex: 1,
+                  scrollbarWidth: "none",
+                  maxHeight: 190,
+                }}
+              >
+                {mentionChars.map((char) => (
+                  <motion.button
+                    key={char.id}
+                    onMouseDown={(e) => { e.preventDefault(); onMentionSelect(char); }}
+                    whileHover={{ background: "rgba(255,255,255,0.06)" }}
+                    style={{
+                      width: "100%", display: "flex", alignItems: "center", gap: 8,
+                      padding: "7px 12px",
+                      background: "transparent", border: "none",
+                      borderBottom: `1px solid rgba(255,255,255,0.04)`,
+                      cursor: "pointer", fontFamily: "inherit", textAlign: "left",
+                      transition: "background 0.12s",
+                    }}
+                  >
+                    <div style={{
+                      width: 28, height: 28, borderRadius: "50%",
+                      overflow: "hidden", flexShrink: 0,
+                      border: "1.5px solid rgba(167,139,250,0.3)",
+                      background: "rgba(124,58,237,0.15)",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      fontSize: 12,
+                    }}>
+                      {char.master_image || char.reference_image || char.cover_image ? (
+                        <img
+                          src={char.master_image || char.reference_image || char.cover_image}
+                          alt={char.name}
+                          style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                          onError={(e) => { e.target.style.display = "none"; }}
+                        />
+                      ) : (
+                        <span>🎭</span>
+                      )}
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: "white", lineHeight: 1.2 }}>
+                        {char.name}
+                      </div>
+                      {char.description && (
+                        <div style={{ fontSize: 10.5, color: TEXT_MUTED, marginTop: 2, lineHeight: 1.3 }}>
+                          {String(char.description).slice(0, 50)}{char.description?.length > 50 ? "…" : ""}
+                        </div>
+                      )}
+                    </div>
+                  </motion.button>
+                ))}
+              </div>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Textarea */}
       <div style={{ position: "relative", borderRadius: compact ? "16px 16px 0 0" : "24px 24px 0 0", overflow: "visible" }}>
