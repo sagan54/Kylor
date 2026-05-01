@@ -2830,12 +2830,13 @@ if (data.status === "succeeded" && data.generation?.images) {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.4, delay: 0.45 }}
               className="gallery-scroll"
-              style={{
-                flex: 1,
-                overflowY: "auto",
-                paddingTop: 16,
-                minHeight: 0,
-              }}
+style={{
+  flex: 1,
+  overflowY: "auto",
+  paddingTop: 16,
+  paddingBottom: 190,
+  minHeight: 0,
+}}
             >
               <GalleryGrid outputs={outputs} viewMode={viewMode} activeTab={galleryTab} />
             </motion.div>
@@ -2850,17 +2851,19 @@ if (data.status === "succeeded" && data.generation?.images) {
               delay: 0.15,
               ease: [0.22, 1, 0.36, 1],
             }}
-            style={{
-              flexShrink: 0,
-              padding: "12px 20px 54px",
-              background: "rgba(8,10,16,0.85)",
-              backdropFilter: "blur(24px)", WebkitBackdropFilter: "blur(24px)",
-              borderTop: `1px solid ${BORDER}`,
-              position: "relative", zIndex: 10,
-              overflow: "visible",
-            }}
+style={{
+  position: "absolute",
+  left: 0,
+  right: 0,
+  bottom: 36,
+  zIndex: 30,
+  padding: "0 20px 18px",
+  background: "transparent",
+  pointerEvents: "none",
+  overflow: "visible",
+}}
           >
-            <div style={{ position: "relative", maxWidth: 1200, margin: "0 auto", width: "100%" }}>
+            <div style={{ position: "relative", maxWidth: 1200, margin: "0 auto", width: "100%", pointerEvents: "auto" }}>
               {/* Mode toggle for bottom composer */}
               <div
                 style={{
