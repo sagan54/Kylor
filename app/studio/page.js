@@ -1800,65 +1800,51 @@ export default function MovieStudio() {
   const [userId, setUserId] = useState(null);
 
   useEffect(() => {
-    let mounted = true;
+  let mounted = true;
 
-    async function hydrateStudio() {
+  function loadInstantLocal(uid) {
+    const savedFlag = localStorage.getItem(`studio_has_generated_${uid}`);
+    const savedOutputs = localStorage.getItem(`studio_outputs_${uid}`);
+
+    if (savedFlag === "true" || savedOutputs) {
+      setHasGenerated(true);
+
       try {
-        const uid = await resolveStudioUserId();
-
-        if (!mounted) return;
-
-        if (!uid) {
-          setUserId(null);
-          setHasGenerated(false);
-          setIsHydrated(true);
-          return;
+        const parsed = JSON.parse(savedOutputs || "[]");
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setOutputs(parsed);
         }
-
-        setUserId(uid);
-
-        let restored = [];
-        try {
-          const savedOutputs = localStorage.getItem(`studio_outputs_${uid}`);
-          if (savedOutputs) {
-            const parsed = JSON.parse(savedOutputs);
-            if (Array.isArray(parsed)) restored = parsed;
-          }
-        } catch {}
-
-        const dbOutputs = await loadStudioGenerations(uid);
-        if (!mounted) return;
-
-        const nextOutputs = mergeStudioOutputs(
-          Array.isArray(dbOutputs) ? dbOutputs : [],
-          restored
-        );
-
-        if (nextOutputs.length > 0) {
-          setOutputs(nextOutputs);
-        }
-
-        const savedFlag = localStorage.getItem(`studio_has_generated_${uid}`);
-        setHasGenerated(savedFlag === "true" || nextOutputs.length > 0);
-      } catch (err) {
-        console.error("Movie Studio hydration failed:", err);
-        setHasGenerated(false);
-      } finally {
-        if (mounted) {
-          setIsHydrated(true);
-        }
-      }
+      } catch {}
     }
+  }
 
-    hydrateStudio();
+  async function syncDbInBackground(uid) {
+    const dbOutputs = await loadStudioGenerations(uid);
+    if (!mounted) return;
 
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      const uid = session?.user?.id ?? null;
+    if (Array.isArray(dbOutputs) && dbOutputs.length > 0) {
+      setOutputs((prev) => mergeStudioOutputs(dbOutputs, prev));
+      setHasGenerated(true);
+
+      localStorage.setItem(`studio_outputs_${uid}`, JSON.stringify(dbOutputs));
+      localStorage.setItem(`studio_has_generated_${uid}`, "true");
+    }
+  }
+
+  async function hydrateStudio() {
+    try {
+      const cachedUid = localStorage.getItem("kylor_user_uid");
+
+      if (cachedUid) {
+        setUserId(cachedUid);
+        loadInstantLocal(cachedUid);
+        setIsHydrated(true);
+      }
+
+      const uid = await resolveStudioUserId();
+      if (!mounted) return;
 
       if (!uid) {
-        localStorage.removeItem("kylor_user_uid");
         setUserId(null);
         setOutputs([]);
         setHasGenerated(false);
@@ -1866,37 +1852,47 @@ export default function MovieStudio() {
         return;
       }
 
-      localStorage.setItem("kylor_user_uid", uid);
       setUserId(uid);
-
-      let restored = [];
-      try {
-        const savedOutputs = localStorage.getItem(`studio_outputs_${uid}`);
-        if (savedOutputs) {
-          const parsed = JSON.parse(savedOutputs);
-          if (Array.isArray(parsed)) restored = parsed;
-        }
-      } catch {}
-
-      const dbOutputs = await loadStudioGenerations(uid);
-      if (!mounted) return;
-
-      const nextOutputs = mergeStudioOutputs(
-        Array.isArray(dbOutputs) ? dbOutputs : [],
-        restored
-      );
-      setOutputs(nextOutputs);
-
-      const savedFlag = localStorage.getItem(`studio_has_generated_${uid}`);
-      setHasGenerated(savedFlag === "true" || nextOutputs.length > 0);
+      loadInstantLocal(uid);
       setIsHydrated(true);
-    });
 
-    return () => {
-      mounted = false;
-      subscription?.unsubscribe();
-    };
-  }, []);
+      syncDbInBackground(uid);
+    } catch (err) {
+      console.error("Movie Studio hydration failed:", err);
+      setIsHydrated(true);
+    }
+  }
+
+  hydrateStudio();
+
+  const {
+    data: { subscription },
+  } = supabase.auth.onAuthStateChange((_event, session) => {
+    const uid = session?.user?.id ?? null;
+
+    if (!uid) {
+      localStorage.removeItem("kylor_user_uid");
+      setUserId(null);
+      setOutputs([]);
+      setHasGenerated(false);
+      setIsHydrated(true);
+      return;
+    }
+
+    localStorage.setItem("kylor_user_uid", uid);
+    setUserId(uid);
+
+    loadInstantLocal(uid);
+    setIsHydrated(true);
+
+    syncDbInBackground(uid);
+  });
+
+  return () => {
+    mounted = false;
+    subscription?.unsubscribe();
+  };
+}, []);
 
   useEffect(() => {
     setResolution(mode === "Image" ? "1K" : "1080p");
