@@ -2972,16 +2972,18 @@ function ComposerInner({
             transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
 style={{
   position: "absolute",
-  top: compact ? -120 : -130,
+  top: -8,
   left: 0,
+  transform: "translateY(-100%)",
   zIndex: 99999,
   width: 260,
+  height: "auto",
+  maxHeight: 240,
   borderRadius: 12,
   border: `1px solid ${BORDER_HOVER}`,
   background: "#0d1020",
   boxShadow: "0 -8px 32px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.04)",
   overflow: "hidden",
-  maxHeight: 240,
   display: "flex",
   flexDirection: "column",
 }}
@@ -3021,7 +3023,14 @@ style={{
                   No characters found
                 </div>
               ) : (
-                <div style={{ overflowY: "auto", flex: 1, scrollbarWidth: "none" }}>
+  <div
+  style={{
+    overflowY: "auto",
+    flex: 1,
+    scrollbarWidth: "none",
+    maxHeight: 190,
+  }}
+>
                   {mentionChars.map((char) => (
                     <motion.button
                       key={char.id}
