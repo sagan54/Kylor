@@ -1908,14 +1908,12 @@ export default function MovieStudio() {
 
   const editorRef = useRef(null);
   const mentionDropdownRef = useRef(null);
-  const composerWrapRef = useRef(null);
   const resumedPollsRef = useRef(new Set());
 
   const [mentionQuery, setMentionQuery] = useState("");
   const [mentionOpen, setMentionOpen] = useState(false);
   const [mentionChars, setMentionChars] = useState([]);
   const [mentionLoading, setMentionLoading] = useState(false);
-  const [mentionPos, setMentionPos] = useState({ bottom: 0, left: 0 });
   const [selectedChar, setSelectedChar] = useState(null);
 
   const fetchCharacters = useCallback(async (query = "") => {
@@ -2150,16 +2148,6 @@ if (data.status === "succeeded" && data.generation?.images) {
       setMentionQuery(atMatch[1]);
       setMentionOpen(true);
       fetchCharacters(atMatch[1]);
-const anchorEl = composerWrapRef.current || editorRef.current;
-
-if (anchorEl) {
-  const rect = anchorEl.getBoundingClientRect();
-
-  setMentionPos({
-    bottom: window.innerHeight - rect.top + 8,
-    left: rect.left,
-  });
-}
     } else {
       setMentionOpen(false);
       setMentionQuery("");
@@ -2241,9 +2229,8 @@ if (anchorEl) {
     variants, setVariants, ratio, setRatio,
     focused, setFocused, error, setError, isGenerating,
     onGenerate: handleGenerate,
-    editorRef, mentionDropdownRef, composerWrapRef,
+    editorRef, mentionDropdownRef,
     mentionOpen, setMentionOpen, mentionChars, mentionLoading, mentionQuery,
-    mentionPos,
     onMentionSelect: handleMentionSelect,
     onInput: handleInput,
     uploadedFile, fileInputRef,
@@ -2966,13 +2953,13 @@ function ComposerInner({
   resolution, setResolution, camera, setCamera, genre, setGenre,
   variants, setVariants, ratio, setRatio,
   focused, setFocused, error, setError, isGenerating, onGenerate,
-  editorRef, mentionDropdownRef, composerWrapRef,
-  mentionOpen, setMentionOpen, mentionChars, mentionLoading, mentionQuery, mentionPos,
+  editorRef, mentionDropdownRef,
+  mentionOpen, setMentionOpen, mentionChars, mentionLoading, mentionQuery,
   onMentionSelect, onInput, uploadedFile, fileInputRef, onFileChange, onRemoveFile,
   onOpenGenre, onOpenCamera, compact = false,
 }) {
   return (
-  <div ref={composerWrapRef} style={{ position: "relative" }}>
+  <div style={{ position: "relative", overflow: "visible" }}>
 
       {/* @ Mention Dropdown */}
       <AnimatePresence>
@@ -2984,9 +2971,9 @@ function ComposerInner({
             exit={{ opacity: 0, y: 4, scale: 0.97 }}
             transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
             style={{
-              position: "fixed",
-              bottom: mentionPos.bottom,
-              left: mentionPos.left,
+              position: "absolute",
+              left: 0,
+              bottom: compact ? 78 : 92,
               zIndex: 99999,
               width: 260,
               borderRadius: 12,
