@@ -2150,12 +2150,13 @@ if (data.status === "succeeded" && data.generation?.images) {
       setMentionOpen(true);
       fetchCharacters(atMatch[1]);
       if (editorRef.current) {
-        const rect = editorRef.current.getBoundingClientRect();
-        setMentionPos({
-          bottom: window.innerHeight - rect.top + 8,
-          left: rect.left + 16,
-        });
-      }
+  const rect = editorRef.current.getBoundingClientRect();
+
+  setMentionPos({
+    bottom: window.innerHeight - rect.top + 58,
+    left: rect.left,
+  });
+}
     } else {
       setMentionOpen(false);
       setMentionQuery("");
