@@ -2970,20 +2970,22 @@ function ComposerInner({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 4, scale: 0.97 }}
             transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
-            style={{
-              position: "absolute",
-              left: 0,
-              bottom: compact ? 140 : 184,
-              zIndex: 99999,
-              width: 260,
-              borderRadius: 12,
-              border: `1px solid ${BORDER_HOVER}`,
-              background: "#0d1020",
-              boxShadow: "0 -8px 32px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.04)",
-              overflow: "hidden",
-              maxHeight: 240,
-              display: "flex", flexDirection: "column",
-            }}
+           style={{
+  position: "absolute",
+  top: -12,
+  left: 0,
+  transform: "translateY(-100%)",
+  zIndex: 99999,
+  width: 260,
+  borderRadius: 12,
+  border: `1px solid ${BORDER_HOVER}`,
+  background: "#0d1020",
+  boxShadow: "0 -8px 32px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.04)",
+  overflow: "hidden",
+  maxHeight: 240,
+  display: "flex",
+  flexDirection: "column",
+}}
           >
               <div style={{
                 padding: "7px 12px 6px",
