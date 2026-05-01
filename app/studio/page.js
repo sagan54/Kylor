@@ -2029,7 +2029,7 @@ if (data.status === "succeeded" && data.generation?.images) {
   }, []);
 
   useEffect(() => {
-    if (!isHydrated || !hasGenerated) return;
+    if (!hasGenerated) return;
 
     outputs.forEach((output) => {
       const predictionId = output?.predictionId || output?.id;
@@ -2253,25 +2253,8 @@ if (data.status === "succeeded" && data.generation?.images) {
     onOpenCamera: () => setCameraOpen(true),
   };
 
-if (!isHydrated) {
-  return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: BG,
-        color: "rgba(255,255,255,0.45)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        fontFamily: "'Space Grotesk', 'DM Sans', sans-serif",
-        fontSize: 13,
-      }}
-    >
-      Loading Movie Studio…
-    </div>
-  );
-}
+// Do not block Movie Studio UI while account history loads.
+// Studio should open instantly.
 
   if (!hasGenerated) {
     return (
