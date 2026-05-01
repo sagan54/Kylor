@@ -2972,7 +2972,7 @@ function ComposerInner({
             transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
 style={{
   position: "absolute",
-  top: compact ? -96 : -92,
+  top: compact ? -120 : -130,
   left: 0,
   zIndex: 99999,
   width: 260,
