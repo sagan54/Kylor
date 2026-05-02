@@ -1068,7 +1068,7 @@ function AmbientBackground() {
 }
 
 // ─── GenerateButton ───────────────────────────────────────────────────────────
-function GenerateButton({ isGenerating, onClick }) {
+function GenerateButton({ isGenerating, onClick, label }) {
   return (
     <motion.button
       onClick={onClick}
@@ -1122,7 +1122,7 @@ function GenerateButton({ isGenerating, onClick }) {
               border: "2px solid rgba(6,182,212,0.3)", borderTopColor: CYAN,
             }}
           />
-          Generating…
+          {label || "Generating..."}
         </>
       ) : (
         <>
@@ -1494,6 +1494,7 @@ async function loadStudioGenerations(userId) {
     .from("image_generations")
     .select("*")
     .eq("user_id", userId)
+    .or("mode.eq.studio,mode.eq.movie-studio,metadata->>source.eq.studio,metadata->>pipeline.eq.movie-studio-video-v1")
     .order("created_at", { ascending: false })
     .limit(20);
 
@@ -1507,9 +1508,12 @@ async function loadStudioGenerations(userId) {
       const metadata = row?.metadata || {};
       return (
         metadata?.source === "studio" ||
+        metadata?.source === "movie-studio" ||
         metadata?.studioType ||
+        metadata?.pipeline === "movie-studio-video-v1" ||
         row?.source === "studio" ||
-        row?.mode === "studio"
+        row?.mode === "studio" ||
+        row?.mode === "movie-studio"
       );
     })
     .map(mapStudioGenerationRow)
@@ -1523,6 +1527,7 @@ async function hasAnyStudioGeneration(userId) {
     .from("image_generations")
     .select("id")
     .eq("user_id", userId)
+    .or("mode.eq.studio,mode.eq.movie-studio,metadata->>source.eq.studio,metadata->>pipeline.eq.movie-studio-video-v1")
     .limit(1);
 
   if (error) {
@@ -1677,7 +1682,7 @@ style={{
                     margin: "0 auto 8px",
                   }}
                 />
-                <div style={{ fontSize: 10, color: TEXT_MUTED }}>Generating…</div>
+                <div style={{ fontSize: 10, color: TEXT_MUTED }}>{o.statusText || "Generating..."}</div>
               </div>
             )}
 
@@ -1959,6 +1964,7 @@ export default function MovieStudio() {
   const [ratio, setRatio] = useState("Auto");
   const [sound, setSound] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [generationStage, setGenerationStage] = useState("");
   const [viewMode, setViewMode] = useState("grid");
   const [thumbSize, setThumbSize] = useState(620);
   const [credits, setCredits] = useState(9680);
@@ -2189,6 +2195,79 @@ if (data.status === "succeeded" && data.generation?.images) {
     const outputId = Date.now();
     setOutputs((prev) => [{ id: outputId, type: mode, prompt, status: "processing", ratio }, ...prev]);
 
+    if (mode === "Video") {
+      const stageTimers = [];
+      const setMovieStage = (label) => {
+        setGenerationStage(label);
+        setOutputs((prev) =>
+          prev.map((o) => (o.id === outputId ? { ...o, statusText: label } : o))
+        );
+      };
+
+      setMovieStage("Directing scene...");
+      stageTimers.push(setTimeout(() => setMovieStage("Generating hero frame..."), 1200));
+      stageTimers.push(setTimeout(() => setMovieStage("Animating shot..."), 5000));
+      stageTimers.push(setTimeout(() => setMovieStage("Finalizing..."), 14000));
+
+      try {
+        const res = await fetch("/api/generate-movie-scene", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            prompt,
+            duration,
+            ratio: ratio === "Auto" ? "16:9" : ratio,
+            resolution,
+            genre,
+            camera,
+            selectedModel: "auto",
+            userId: effectiveUserId,
+          }),
+        });
+
+        const data = await res.json();
+
+        if (!res.ok || !data.success || !data.videoUrl) {
+          throw new Error(friendlyError(data.error));
+        }
+
+        setOutputs((prev) =>
+          prev.map((o) =>
+            o.id === outputId
+              ? {
+                  ...o,
+                  status: "succeeded",
+                  statusText: "",
+                  predictionId: data.generationId,
+                  generationId: data.generationId,
+                  imageUrl: data.videoUrl,
+                  videoUrl: data.videoUrl,
+                  heroFrameUrl: data.heroFrameUrl,
+                  modelUsed: data.modelUsed,
+                  imageModelUsed: data.imageModelUsed,
+                  scenePlan: data.scenePlan,
+                }
+              : o
+          )
+        );
+        setCredits((c) => Math.max(0, c - 120));
+      } catch (e) {
+        const msg = friendlyError(e.message);
+        setError(msg);
+        setOutputs((prev) =>
+          prev.map((o) =>
+            o.id === outputId ? { ...o, status: "failed", statusText: "", errorMsg: msg } : o
+          )
+        );
+      } finally {
+        stageTimers.forEach((timer) => clearTimeout(timer));
+        setGenerationStage("");
+        setIsGenerating(false);
+      }
+
+      return;
+    }
+
     try {
       const res = await fetch("/api/generate-image", {
         method: "POST",
@@ -2229,7 +2308,7 @@ if (data.status === "succeeded" && data.generation?.images) {
       );
       setIsGenerating(false);
     }
-  }, [prompt, mode, genre, ratio, pollStatus, hasGenerated, userId]);
+  }, [prompt, mode, duration, resolution, genre, camera, ratio, pollStatus, hasGenerated, userId, selectedChar]);
 
   useEffect(() => {
     const handler = (e) => {
@@ -2357,7 +2436,7 @@ setPrompt(text);
     prompt, setPrompt, mode, setMode, duration, setDuration,
     resolution, setResolution, camera, setCamera, genre, setGenre,
     variants, setVariants, ratio, setRatio,
-    focused, setFocused, error, setError, isGenerating,
+    focused, setFocused, error, setError, isGenerating, generationStage,
     onGenerate: handleGenerate,
     editorRef, mentionDropdownRef,
     mentionOpen, setMentionOpen, mentionChars, mentionLoading, mentionQuery,
@@ -3117,7 +3196,7 @@ function ComposerInner({
   prompt, setPrompt, mode, setMode, duration, setDuration,
   resolution, setResolution, camera, setCamera, genre, setGenre,
   variants, setVariants, ratio, setRatio,
-  focused, setFocused, error, setError, isGenerating, onGenerate,
+  focused, setFocused, error, setError, isGenerating, generationStage, onGenerate,
   editorRef, mentionDropdownRef,
   mentionOpen, setMentionOpen, mentionChars, mentionLoading, mentionQuery,
   onMentionSelect, onInput, uploadedFile, fileInputRef, onFileChange, onRemoveFile,
@@ -3404,7 +3483,7 @@ function ComposerInner({
         </div>
 
         <div style={{ display: "flex", alignItems: "center", flexShrink: 0 }}>
-          <GenerateButton isGenerating={isGenerating} onClick={onGenerate} />
+          <GenerateButton isGenerating={isGenerating} onClick={onGenerate} label={generationStage} />
         </div>
       </div>
     </div>
