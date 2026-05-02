@@ -1484,10 +1484,6 @@ async function resolveStudioUserId() {
     uid = user?.id ?? null;
   }
 
-  if (uid) {
-    localStorage.setItem("kylor_user_uid", uid);
-  }
-
   return uid;
 }
 
@@ -1499,10 +1495,10 @@ async function loadStudioGenerations(userId) {
     .select("*")
     .eq("user_id", userId)
     .order("created_at", { ascending: false })
-    .limit(60);
+    .limit(20);
 
   if (error) {
-    console.error("[Studio] failed to load generations:", error);
+    console.warn("[Studio] failed to load generations:", error);
     return [];
   }
 
@@ -1520,14 +1516,22 @@ async function loadStudioGenerations(userId) {
     .filter((row) => row.imageUrl || row.videoUrl);
 }
 
-function mergeStudioOutputs(primary, fallback) {
-  const seen = new Set();
-  return [...(primary || []), ...(fallback || [])].filter((output) => {
-    const key = String(output?.predictionId || output?.id || "");
-    if (!key || seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+async function hasAnyStudioGeneration(userId) {
+  if (!userId) return false;
+
+  const { data, error } = await supabase
+    .from("image_generations")
+    .select("id")
+    .eq("user_id", userId)
+    .or("mode.eq.studio,source.eq.studio")
+    .limit(1);
+
+  if (error) {
+    console.warn("[Studio] failed to check studio state:", error);
+    return false;
+  }
+
+  return Array.isArray(data) && data.length > 0;
 }
 
 function isVideoMediaUrl(url) {
@@ -1970,104 +1974,61 @@ export default function MovieStudio() {
   const [userId, setUserId] = useState(null);
 
   useEffect(() => {
-  let mounted = true;
+    let mounted = true;
 
-  function loadInstantLocal(uid) {
-    const savedFlag = localStorage.getItem(`studio_has_generated_${uid}`);
-    const savedOutputs = localStorage.getItem(`studio_outputs_${uid}`);
-
-    if (savedFlag === "true") {
-      setHasGenerated(true);
-
+    async function hydrateStudio() {
       try {
-        const parsed = JSON.parse(savedOutputs || "[]");
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          setOutputs(parsed);
+        const uid = await resolveStudioUserId();
+
+        if (!mounted) return;
+
+        if (!uid) {
+          setUserId(null);
+          setOutputs([]);
+          setHasGenerated(false);
+          setIsHydrated(true);
+          return;
         }
-      } catch {}
-    }
-  }
 
-  async function syncDbInBackground(uid) {
-    const dbOutputs = await loadStudioGenerations(uid);
-    if (!mounted) return;
+        setUserId(uid);
 
-    if (Array.isArray(dbOutputs) && dbOutputs.length > 0) {
-      setOutputs((prev) => mergeStudioOutputs(dbOutputs, prev));
-      setHasGenerated(true);
+        const hasStudio = await hasAnyStudioGeneration(uid);
+        if (!mounted) return;
 
-      localStorage.setItem(`studio_outputs_${uid}`, JSON.stringify(dbOutputs));
-      localStorage.setItem(`studio_has_generated_${uid}`, "true");
-    }
-  }
-
-  async function hydrateStudio() {
-    try {
-
-      const uid = await resolveStudioUserId();
-      if (!mounted) return;
-
-      if (!uid) {
-        setUserId(null);
-        setOutputs([]);
-        setHasGenerated(false);
+        setHasGenerated(hasStudio);
         setIsHydrated(true);
-        return;
+
+        if (hasStudio) {
+          const dbOutputs = await loadStudioGenerations(uid);
+          if (!mounted) return;
+
+          setOutputs(Array.isArray(dbOutputs) ? dbOutputs : []);
+        } else {
+          setOutputs([]);
+        }
+      } catch (err) {
+        console.error("Movie Studio hydration failed:", err);
+        setIsHydrated(true);
       }
-
-      setUserId(uid);
-      loadInstantLocal(uid);
-      setIsHydrated(true);
-
-      syncDbInBackground(uid);
-    } catch (err) {
-      console.error("Movie Studio hydration failed:", err);
-      setIsHydrated(true);
-    }
-  }
-
-  hydrateStudio();
-
-  const {
-    data: { subscription },
-  } = supabase.auth.onAuthStateChange((_event, session) => {
-    const uid = session?.user?.id ?? null;
-
-    if (!uid) {
-      localStorage.removeItem("kylor_user_uid");
-      setUserId(null);
-      setOutputs([]);
-      setHasGenerated(false);
-      setIsHydrated(true);
-      return;
     }
 
-    localStorage.setItem("kylor_user_uid", uid);
-    setUserId(uid);
+    hydrateStudio();
 
-    loadInstantLocal(uid);
-    setIsHydrated(true);
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(() => {
+      hydrateStudio();
+    });
 
-    syncDbInBackground(uid);
-  });
-
-  return () => {
-    mounted = false;
-    subscription?.unsubscribe();
-  };
-}, []);
+    return () => {
+      mounted = false;
+      subscription?.unsubscribe();
+    };
+  }, []);
 
   useEffect(() => {
     setResolution(mode === "Image" ? "1K" : "1080p");
   }, [mode]);
-
-  // Persist completed outputs using user-specific key
-  useEffect(() => {
-    try {
-      if (!userId) return;
-      localStorage.setItem(`studio_outputs_${userId}`, JSON.stringify(outputs));
-    } catch {}
-  }, [outputs, userId]);
 
   const editorRef = useRef(null);
   const mentionDropdownRef = useRef(null);
@@ -2222,8 +2183,6 @@ if (data.status === "succeeded" && data.generation?.images) {
 
     if (!hasGenerated) {
       setHasGenerated(true);
-
-      localStorage.setItem(`studio_has_generated_${effectiveUserId}`, "true");
     }
 
     setError("");
