@@ -1494,7 +1494,7 @@ async function loadStudioGenerations(userId) {
     .from("image_generations")
     .select("*")
     .eq("user_id", userId)
-    .or("mode.eq.studio,mode.eq.movie-studio,metadata->>source.eq.studio,metadata->>pipeline.eq.movie-studio-video-v1")
+    .in("mode", ["studio", "movie-studio"])
     .order("created_at", { ascending: false })
     .limit(20);
 
@@ -1527,7 +1527,7 @@ async function hasAnyStudioGeneration(userId) {
     .from("image_generations")
     .select("id")
     .eq("user_id", userId)
-    .or("mode.eq.studio,mode.eq.movie-studio,metadata->>source.eq.studio,metadata->>pipeline.eq.movie-studio-video-v1")
+    .in("mode", ["studio", "movie-studio"])
     .limit(1);
 
   if (error) {
@@ -2156,7 +2156,9 @@ if (data.status === "succeeded" && data.generation?.images) {
     if (!hasGenerated) return;
 
     outputs.forEach((output) => {
-      const predictionId = output?.predictionId || output?.id;
+      if (output?.source === "movie-studio") return;
+
+      const predictionId = output?.predictionId;
       if (output?.status !== "processing" || !predictionId) return;
 
       const key = String(predictionId);
@@ -2193,7 +2195,17 @@ if (data.status === "succeeded" && data.generation?.images) {
     setError("");
     setIsGenerating(true);
     const outputId = Date.now();
-    setOutputs((prev) => [{ id: outputId, type: mode, prompt, status: "processing", ratio }, ...prev]);
+    setOutputs((prev) => [
+      {
+        id: outputId,
+        type: mode,
+        prompt,
+        status: "processing",
+        ratio,
+        ...(mode === "Video" ? { source: "movie-studio" } : {}),
+      },
+      ...prev,
+    ]);
 
     if (mode === "Video") {
       const stageTimers = [];
@@ -2225,10 +2237,23 @@ if (data.status === "succeeded" && data.generation?.images) {
           }),
         });
 
-        const data = await res.json();
+        let data = null;
+        try {
+          data = await res.json();
+        } catch {
+          data = {
+            success: false,
+            error: "Movie Studio generation failed.",
+            details: "The Movie Studio route returned an invalid response.",
+          };
+        }
 
-        if (!res.ok || !data.success || !data.videoUrl) {
-          throw new Error(friendlyError(data.error));
+        if (!data?.success || !data.videoUrl) {
+          const message =
+            data?.error === "Movie Studio generation failed." && data?.details
+              ? data.details
+              : data?.error || data?.details || "Movie Studio generation failed.";
+          throw new Error(message);
         }
 
         setOutputs((prev) =>
@@ -2238,8 +2263,8 @@ if (data.status === "succeeded" && data.generation?.images) {
                   ...o,
                   status: "succeeded",
                   statusText: "",
-                  predictionId: data.generationId,
                   generationId: data.generationId,
+                  source: "movie-studio",
                   imageUrl: data.videoUrl,
                   videoUrl: data.videoUrl,
                   heroFrameUrl: data.heroFrameUrl,
@@ -2252,7 +2277,7 @@ if (data.status === "succeeded" && data.generation?.images) {
         );
         setCredits((c) => Math.max(0, c - 120));
       } catch (e) {
-        const msg = friendlyError(e.message);
+        const msg = e?.message || "Movie Studio generation failed.";
         setError(msg);
         setOutputs((prev) =>
           prev.map((o) =>

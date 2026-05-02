@@ -45,14 +45,24 @@ function normalizeFluxResolution(value) {
   return "1 MP";
 }
 
-function assertServerConfig() {
-  if (!process.env.REPLICATE_API_TOKEN) {
+function assertServerConfig({ requireReplicate = true } = {}) {
+  if (requireReplicate && !process.env.REPLICATE_API_TOKEN) {
     throw new Error("Movie Studio generation is not configured.");
   }
 
   if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
     throw new Error("Movie Studio storage is not configured.");
   }
+}
+
+function isReplicateBillingError(error) {
+  const message = String(error?.message || error || "").toLowerCase();
+  return (
+    message.includes("insufficient credit") ||
+    message.includes("payment required") ||
+    message.includes("billing") ||
+    message.includes("402")
+  );
 }
 
 async function fileOutputToUrl(output) {
@@ -331,59 +341,32 @@ async function saveMovieGeneration({
   return data;
 }
 
-function friendlyError(error) {
-  const message = String(error?.message || error || "Movie Studio generation failed.");
-  const lowered = message.toLowerCase();
-
-  if (message.includes("402") || lowered.includes("insufficient") || lowered.includes("payment") || lowered.includes("billing") || lowered.includes("credit")) {
-    return "Insufficient generation credits. Please add credits and try again.";
-  }
-
-  if (message.includes("429") || lowered.includes("rate limit") || lowered.includes("too many requests")) {
-    return "The video service is busy. Please wait a moment and try again.";
-  }
-
-  if (lowered.includes("timeout") || lowered.includes("timed out")) {
-    return "Movie Studio generation timed out. Please try a shorter scene or try again.";
-  }
-
-  if (lowered.includes("non-video")) {
-    return "The video model did not return a playable video. Please try again.";
-  }
-
-  if (lowered.includes("veo not configured")) {
-    return "Veo is not configured yet. Please use Auto or Kling for now.";
-  }
-
-  if (lowered.includes("seedance not configured")) {
-    return "Seedance is not configured yet. Please use Auto or Kling for now.";
-  }
-
-  if (lowered.includes("not configured")) {
-    return message;
-  }
-
-  return "Movie Studio generation failed. Please try again.";
-}
-
 export async function POST(req) {
   try {
-    assertServerConfig();
+    console.log("[MovieStudio] received request");
 
     let body;
     try {
       body = await req.json();
     } catch {
       return Response.json(
-        { success: false, error: "Malformed JSON request body." },
-        { status: 400 }
+        {
+          success: false,
+          error: "Movie Studio generation failed.",
+          details: "Malformed JSON request body.",
+        },
+        { status: 200 }
       );
     }
 
     if (!body || typeof body !== "object" || Array.isArray(body)) {
       return Response.json(
-        { success: false, error: "Request body must be a JSON object." },
-        { status: 400 }
+        {
+          success: false,
+          error: "Movie Studio generation failed.",
+          details: "Request body must be a JSON object.",
+        },
+        { status: 200 }
       );
     }
 
@@ -395,19 +378,32 @@ export async function POST(req) {
     const genre = sanitizeText(body.genre) || "general";
     const camera = sanitizeText(body.camera) || "Auto";
     const selectedModel = sanitizeText(body.selectedModel).toLowerCase() || "auto";
+    const mockMode = process.env.MOVIE_STUDIO_MOCK === "true" || body.mockMode === true;
 
     if (!prompt) {
       return Response.json(
-        { success: false, error: "Describe a scene before generating." },
-        { status: 400 }
+        {
+          success: false,
+          error: "Describe a scene before generating.",
+          details: "Missing prompt.",
+        },
+        { status: 200 }
       );
     }
 
     if (!userId) {
       return Response.json(
-        { success: false, error: "Please log in to save Movie Studio generations to your account." },
-        { status: 401 }
+        {
+          success: false,
+          error: "Please log in to save Movie Studio generations to your account.",
+          details: "Missing userId.",
+        },
+        { status: 200 }
       );
+    }
+
+    if (!mockMode) {
+      assertServerConfig({ requireReplicate: true });
     }
 
     const scenePlan = expandScene(prompt, {
@@ -417,7 +413,69 @@ export async function POST(req) {
       genre,
       camera,
     });
+    console.log("[MovieStudio] scene planned");
 
+    const videoPrompt = buildVideoPrompt(scenePlan);
+
+    if (mockMode) {
+      const heroFrameUrl = "/mock/movie-studio-hero.jpg";
+      const videoUrl = "/mock/movie-studio-video.mp4";
+      const imageModelUsed = "mock-flux-2-max";
+      let generationId = null;
+
+      console.log("[MovieStudio] generating hero frame");
+      console.log("[MovieStudio] hero frame generated");
+      const modelUsed = chooseVideoModel({
+        selectedModel,
+        motionIntent: scenePlan.motionIntent,
+        mood: scenePlan.mood,
+        prompt,
+      });
+      console.log("[MovieStudio] selected video model:", modelUsed);
+      console.log("[MovieStudio] generating video");
+      console.log("[MovieStudio] video generated");
+      console.log("[MovieStudio] saving to Supabase");
+
+      try {
+        const savedGeneration = await saveMovieGeneration({
+          userId,
+          prompt,
+          ratio,
+          genre,
+          duration,
+          resolution,
+          camera,
+          selectedModel,
+          videoUrl,
+          heroFrameUrl,
+          videoStoragePath: null,
+          heroFrameStoragePath: null,
+          modelUsed,
+          imageModelUsed,
+          scenePlan,
+          heroPrompt: "mock movie studio hero frame",
+          videoPrompt,
+        });
+        generationId = savedGeneration?.id || null;
+      } catch (mockSaveError) {
+        console.warn("[MovieStudio] mock Supabase save failed:", mockSaveError);
+      }
+
+      console.log("[MovieStudio] done");
+
+      return Response.json({
+        success: true,
+        videoUrl,
+        heroFrameUrl,
+        modelUsed,
+        imageModelUsed,
+        scenePlan,
+        generationId,
+        mock: true,
+      });
+    }
+
+    console.log("[MovieStudio] generating hero frame");
     const {
       heroFrameUrl: temporaryHeroFrameUrl,
       imageModelUsed,
@@ -428,6 +486,7 @@ export async function POST(req) {
       genre,
       resolution,
     });
+    console.log("[MovieStudio] hero frame generated");
 
     const heroUpload = await uploadRemoteAsset({
       remoteUrl: temporaryHeroFrameUrl,
@@ -446,8 +505,9 @@ export async function POST(req) {
       mood: scenePlan.mood,
       prompt,
     });
+    console.log("[MovieStudio] selected video model:", modelUsed);
 
-    const videoPrompt = buildVideoPrompt(scenePlan);
+    console.log("[MovieStudio] generating video");
     const temporaryVideoUrl = await generateVideoForModel({
       modelUsed,
       imageUrl: heroUpload.publicUrl,
@@ -455,6 +515,7 @@ export async function POST(req) {
       duration,
       ratio,
     });
+    console.log("[MovieStudio] video generated");
 
     const videoUpload = await uploadRemoteAsset({
       remoteUrl: temporaryVideoUrl,
@@ -467,6 +528,7 @@ export async function POST(req) {
       throw new Error("Failed to upload generated video.");
     }
 
+    console.log("[MovieStudio] saving to Supabase");
     const savedGeneration = await saveMovieGeneration({
       userId,
       prompt,
@@ -486,6 +548,7 @@ export async function POST(req) {
       heroPrompt,
       videoPrompt,
     });
+    console.log("[MovieStudio] done");
 
     return Response.json({
       success: true,
@@ -497,17 +560,20 @@ export async function POST(req) {
       generationId: savedGeneration.id,
     });
   } catch (error) {
-    console.error("generate-movie-scene failed:", {
-      message: error?.message || "Unknown Movie Studio error",
-      stack: error?.stack || null,
-    });
+    console.error("[MovieStudio] route failed:", error);
+
+    const details = error?.message || String(error);
+    const billingError = isReplicateBillingError(error);
 
     return Response.json(
       {
         success: false,
-        error: friendlyError(error),
+        error: billingError
+          ? "Replicate credit is insufficient. Add credits or enable MOVIE_STUDIO_MOCK=true to test without generation."
+          : "Movie Studio generation failed.",
+        details,
       },
-      { status: 500 }
+      { status: 200 }
     );
   }
 }
