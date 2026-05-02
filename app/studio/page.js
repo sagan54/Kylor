@@ -1542,6 +1542,17 @@ function isVideoMediaUrl(url) {
   return /\.(mp4|webm|mov|m4v)(\?|#|$)/i.test(String(url || ""));
 }
 
+async function parseMovieStudioJsonResponse(response) {
+  const rawText = await response.text();
+
+  try {
+    return JSON.parse(rawText);
+  } catch (error) {
+    console.error("[MovieStudio] non-JSON response:", rawText);
+    throw new Error("Movie Studio returned a non-JSON response. Check Vercel function logs.");
+  }
+}
+
 function GalleryGrid({ outputs, viewMode, activeTab, thumbSize }) {
   const [activeOutput, setActiveOutput] = useState(null);
 
@@ -1977,6 +1988,7 @@ export default function MovieStudio() {
   const [isHydrated, setIsHydrated] = useState(false);
   const [galleryTab, setGalleryTab] = useState("All");
   const [userId, setUserId] = useState(null);
+  const [activeMoviePrediction, setActiveMoviePrediction] = useState(null);
 
   useEffect(() => {
     let mounted = true;
@@ -2156,6 +2168,104 @@ if (data.status === "succeeded" && data.generation?.images) {
     setError("Generation timed out. Please try again.");
   }, []);
 
+  const pollMovieStudioStatus = useCallback(async (moviePrediction, outputId) => {
+    const MAX_POLLS = 180;
+    const POLL_INTERVAL = 3000;
+    const params = new URLSearchParams({
+      predictionId: moviePrediction.predictionId,
+    });
+
+    if (moviePrediction.generationId) {
+      params.set("generationId", moviePrediction.generationId);
+    }
+
+    for (let i = 0; i < MAX_POLLS; i++) {
+      await new Promise((r) => setTimeout(r, POLL_INTERVAL));
+
+      try {
+        const response = await fetch(`/api/movie-studio-status?${params.toString()}`);
+        const data = await parseMovieStudioJsonResponse(response);
+
+        if (!response.ok) {
+          throw new Error(data?.error || "Movie Studio request failed.");
+        }
+
+        if (data?.success === false || data?.status === "failed") {
+          throw new Error(data?.error || data?.details || "Movie Studio video generation failed.");
+        }
+
+        if (data?.status === "succeeded" && data.videoUrl) {
+          setOutputs((prev) =>
+            prev.map((o) =>
+              o.id === outputId
+                ? {
+                    ...o,
+                    status: "succeeded",
+                    statusText: "",
+                    predictionId: data.predictionId,
+                    generationId: data.generationId || moviePrediction.generationId || null,
+                    source: "movie-studio",
+                    imageUrl: data.videoUrl,
+                    videoUrl: data.videoUrl,
+                    heroFrameUrl: moviePrediction.heroFrameUrl,
+                  }
+                : o
+            )
+          );
+          setActiveMoviePrediction(null);
+          setIsGenerating(false);
+          generationRequestInFlightRef.current = false;
+          setGenerationStage("");
+          setCredits((c) => Math.max(0, c - 120));
+          return;
+        }
+
+        if (data?.status === "processing") {
+          setGenerationStage("Animating shot with Kling...");
+          setOutputs((prev) =>
+            prev.map((o) =>
+              o.id === outputId ? { ...o, statusText: "Animating shot with Kling..." } : o
+            )
+          );
+          continue;
+        }
+
+        if (data && !("success" in data) && !("status" in data)) {
+          throw new Error("The Movie Studio route returned an invalid response.");
+        }
+
+        throw new Error(data?.error || data?.details || "Movie Studio returned an unexpected status.");
+      } catch (error) {
+        const msg = error?.message || "Movie Studio video generation failed.";
+        setError(msg);
+        setOutputs((prev) =>
+          prev.map((o) =>
+            o.id === outputId ? { ...o, status: "failed", statusText: "", errorMsg: msg } : o
+          )
+        );
+        setActiveMoviePrediction(null);
+        setIsGenerating(false);
+        generationRequestInFlightRef.current = false;
+        setGenerationStage("");
+        return;
+      }
+    }
+
+    const timeoutMessage = "Movie Studio video generation timed out. Please try again.";
+    setError(timeoutMessage);
+    setOutputs((prev) =>
+      prev.map((o) =>
+        o.id === outputId
+          ? { ...o, status: "failed", statusText: "", errorMsg: timeoutMessage }
+          : o
+      )
+    );
+    setActiveMoviePrediction(null);
+    setIsGenerating(false);
+    generationRequestInFlightRef.current = false;
+    setGenerationStage("");
+  }, []);
+
   useEffect(() => {
     if (!hasGenerated) return;
 
@@ -2233,7 +2343,7 @@ if (data.status === "succeeded" && data.generation?.images) {
       stageTimers.push(setTimeout(() => setMovieStage("Finalizing..."), 14000));
 
       try {
-        const res = await fetch("/api/generate-movie-scene", {
+        const response = await fetch("/api/generate-movie-scene", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -2248,18 +2358,14 @@ if (data.status === "succeeded" && data.generation?.images) {
           }),
         });
 
-        let data = null;
-        try {
-          data = await res.json();
-        } catch {
-          data = {
-            success: false,
-            error: "Movie Studio generation failed.",
-            details: "The Movie Studio route returned an invalid response.",
-          };
+        const data = await parseMovieStudioJsonResponse(response);
+        console.log("[MovieStudio] start response:", data);
+
+        if (!response.ok) {
+          throw new Error(data?.error || "Movie Studio request failed.");
         }
 
-        if (!data?.success || !data.videoUrl) {
+        if (data?.success === false) {
           const message =
             data?.error === "Movie Studio generation failed." && data?.details
               ? data.details
@@ -2267,17 +2373,36 @@ if (data.status === "succeeded" && data.generation?.images) {
           throw new Error(message);
         }
 
+        if (data && !("success" in data) && !("status" in data)) {
+          throw new Error("The Movie Studio route returned an invalid response.");
+        }
+
+        if (!(data?.success === true && data?.status === "processing" && data?.predictionId)) {
+          throw new Error(data?.error || data?.details || "Movie Studio returned an unexpected start response.");
+        }
+
+        const moviePrediction = {
+          predictionId: data.predictionId,
+          generationId: data.generationId || null,
+          heroFrameUrl: data.heroFrameUrl || null,
+          prompt,
+          startedAt: Date.now(),
+        };
+
+        setActiveMoviePrediction(moviePrediction);
+        stageTimers.forEach((timer) => clearTimeout(timer));
+        setMovieStage("Animating shot with Kling...");
+
         setOutputs((prev) =>
           prev.map((o) =>
             o.id === outputId
               ? {
                   ...o,
-                  status: "succeeded",
-                  statusText: "",
+                  status: "processing",
+                  statusText: "Animating shot with Kling...",
+                  predictionId: data.predictionId,
                   generationId: data.generationId,
                   source: "movie-studio",
-                  imageUrl: data.videoUrl,
-                  videoUrl: data.videoUrl,
                   heroFrameUrl: data.heroFrameUrl,
                   modelUsed: data.modelUsed,
                   imageModelUsed: data.imageModelUsed,
@@ -2286,8 +2411,10 @@ if (data.status === "succeeded" && data.generation?.images) {
               : o
           )
         );
-        setCredits((c) => Math.max(0, c - 120));
+
+        pollMovieStudioStatus(moviePrediction, outputId);
       } catch (e) {
+        stageTimers.forEach((timer) => clearTimeout(timer));
         const msg = e?.message || "Movie Studio generation failed.";
         setError(msg);
         setOutputs((prev) =>
@@ -2295,8 +2422,6 @@ if (data.status === "succeeded" && data.generation?.images) {
             o.id === outputId ? { ...o, status: "failed", statusText: "", errorMsg: msg } : o
           )
         );
-      } finally {
-        stageTimers.forEach((timer) => clearTimeout(timer));
         setGenerationStage("");
         setIsGenerating(false);
         generationRequestInFlightRef.current = false;
@@ -2346,7 +2471,7 @@ if (data.status === "succeeded" && data.generation?.images) {
       setIsGenerating(false);
       generationRequestInFlightRef.current = false;
     }
-  }, [prompt, mode, duration, resolution, genre, camera, ratio, pollStatus, hasGenerated, userId, selectedChar, isGenerating]);
+  }, [prompt, mode, duration, resolution, genre, camera, ratio, pollStatus, pollMovieStudioStatus, hasGenerated, userId, selectedChar, isGenerating]);
 
   useEffect(() => {
     const handler = (e) => {

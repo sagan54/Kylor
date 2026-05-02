@@ -3,7 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import Replicate from "replicate";
 import { expandScene } from "../../../lib/movieStudio/scenePlanner";
 import { chooseVideoModel, getVideoModelFallbackReason, VIDEO_MODEL_FALLBACK_REASON } from "../../../lib/movieStudio/modelRouter";
-import { generateKlingVideo, KLING_MODEL } from "../../../lib/movieStudio/videoAdapters/klingAdapter";
+import { createKlingVideoPrediction, KLING_MODEL } from "../../../lib/movieStudio/videoAdapters/klingAdapter";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -277,9 +277,9 @@ async function uploadRemoteAsset({ remoteUrl, userId, kind, expectedType }) {
   };
 }
 
-async function generateVideoForModel({ modelUsed, imageUrl, prompt, duration, ratio }) {
+async function createVideoPredictionForModel({ modelUsed, imageUrl, prompt, duration, ratio }) {
   if (modelUsed === "kling") {
-    return await generateKlingVideo({ imageUrl, prompt, duration, ratio });
+    return await createKlingVideoPrediction({ imageUrl, prompt, duration, ratio });
   }
 
   throw new Error(VIDEO_MODEL_FALLBACK_REASON);
@@ -294,10 +294,12 @@ async function saveMovieGeneration({
   resolution,
   camera,
   selectedModel,
-  videoUrl,
+  videoUrl = null,
   heroFrameUrl,
-  videoStoragePath,
+  videoStoragePath = null,
   heroFrameStoragePath,
+  predictionId = null,
+  state = "processing",
   modelUsed,
   imageModelUsed,
   modelFallbackReason = null,
@@ -313,7 +315,7 @@ async function saveMovieGeneration({
     images: [
       {
         type: "video",
-        url: videoUrl,
+        url: videoUrl || null,
         heroFrameUrl,
         modelUsed,
         imageModelUsed,
@@ -323,7 +325,7 @@ async function saveMovieGeneration({
     style: genre || "general",
     created_at: new Date().toISOString(),
     metadata: {
-      state: "succeeded",
+      state,
       source: "studio",
       studioType: "Video",
       pipeline: "movie-studio-video-v1",
@@ -333,6 +335,7 @@ async function saveMovieGeneration({
       imageModelUsed,
       selectedModel,
       modelFallbackReason,
+      remotePredictionId: predictionId,
       duration,
       resolution,
       camera,
@@ -344,7 +347,8 @@ async function saveMovieGeneration({
       scenePlan,
       heroPrompt,
       videoPrompt,
-      completedAt: new Date().toISOString(),
+      startedAt: new Date().toISOString(),
+      completedAt: state === "succeeded" ? new Date().toISOString() : null,
     },
   };
 
@@ -372,6 +376,7 @@ export async function POST(req) {
       return Response.json(
         {
           success: false,
+          status: "failed",
           error: "Movie Studio generation failed.",
           details: "Malformed JSON request body.",
         },
@@ -383,6 +388,7 @@ export async function POST(req) {
       return Response.json(
         {
           success: false,
+          status: "failed",
           error: "Movie Studio generation failed.",
           details: "Request body must be a JSON object.",
         },
@@ -404,6 +410,7 @@ export async function POST(req) {
       return Response.json(
         {
           success: false,
+          status: "failed",
           error: "Describe a scene before generating.",
           details: "Missing prompt.",
         },
@@ -415,6 +422,7 @@ export async function POST(req) {
       return Response.json(
         {
           success: false,
+          status: "failed",
           error: "Please log in to save Movie Studio generations to your account.",
           details: "Missing userId.",
         },
@@ -439,9 +447,9 @@ export async function POST(req) {
 
     if (mockMode) {
       const heroFrameUrl = "/mock/movie-studio-hero.jpg";
-      const videoUrl = "/mock/movie-studio-video.mp4";
       const imageModelUsed = "mock-flux-2-max";
       let generationId = null;
+      const predictionId = `mock-${randomUUID()}`;
       let requestedModelFallbackReason = getVideoModelFallbackReason(selectedModel);
 
       console.log("[MovieStudio] generating hero frame");
@@ -471,10 +479,12 @@ export async function POST(req) {
           resolution,
           camera,
           selectedModel,
-          videoUrl,
+          videoUrl: null,
           heroFrameUrl,
           videoStoragePath: null,
           heroFrameStoragePath: null,
+          predictionId,
+          state: "processing",
           modelUsed,
           imageModelUsed,
           modelFallbackReason: requestedModelFallbackReason,
@@ -488,18 +498,28 @@ export async function POST(req) {
       }
 
       console.log("[MovieStudio] done");
+      console.log("[MovieStudio] returning processing response", {
+        predictionId,
+        generationId: generationId || null,
+        heroFrameUrl: Boolean(heroFrameUrl),
+        modelUsed: "kling",
+      });
 
       return Response.json({
         success: true,
-        videoUrl,
+        status: "processing",
+        predictionId,
+        generationId: generationId || null,
         heroFrameUrl,
-        modelUsed,
+        videoUrl: null,
+        modelUsed: "kling",
         imageModelUsed,
         scenePlan,
-        generationId,
-        mock: true,
         meta: {
-          modelFallbackReason: requestedModelFallbackReason,
+          pipeline: "movie-studio-video-v1",
+          async: true,
+          ...(requestedModelFallbackReason ? { modelFallbackReason: requestedModelFallbackReason } : {}),
+          mock: true,
         },
       });
     }
@@ -542,59 +562,70 @@ export async function POST(req) {
     console.log("[MovieStudio] selected video model:", modelUsed);
 
     console.log("[MovieStudio] generating video");
-    const temporaryVideoUrl = await generateVideoForModel({
+    const videoPrediction = await createVideoPredictionForModel({
       modelUsed,
       imageUrl: heroUpload.publicUrl,
       prompt: videoPrompt,
       duration,
       ratio,
     });
-    console.log("[MovieStudio] video generated");
 
-    const videoUpload = await uploadRemoteAsset({
-      remoteUrl: temporaryVideoUrl,
-      userId,
-      kind: "video",
-      expectedType: "video",
-    });
-
-    if (!videoUpload.publicUrl) {
-      throw new Error("Failed to upload generated video.");
+    const predictionId = videoPrediction?.id || null;
+    if (!predictionId) {
+      throw new Error("Kling did not return a prediction id.");
     }
 
     console.log("[MovieStudio] saving to Supabase");
-    const savedGeneration = await saveMovieGeneration({
-      userId,
-      prompt,
-      ratio,
-      genre,
-      duration,
-      resolution,
-      camera,
-      selectedModel,
-      videoUrl: videoUpload.publicUrl,
-      heroFrameUrl: heroUpload.publicUrl,
-      videoStoragePath: videoUpload.storagePath,
-      heroFrameStoragePath: heroUpload.storagePath,
-      modelUsed,
-      imageModelUsed,
-      modelFallbackReason: requestedModelFallbackReason,
-      scenePlan,
-      heroPrompt,
-      videoPrompt,
-    });
+    let savedGeneration = null;
+    try {
+      savedGeneration = await saveMovieGeneration({
+        userId,
+        prompt,
+        ratio,
+        genre,
+        duration,
+        resolution,
+        camera,
+        selectedModel,
+        videoUrl: null,
+        heroFrameUrl: heroUpload.publicUrl,
+        videoStoragePath: null,
+        heroFrameStoragePath: heroUpload.storagePath,
+        predictionId,
+        state: "processing",
+        modelUsed,
+        imageModelUsed,
+        modelFallbackReason: requestedModelFallbackReason,
+        scenePlan,
+        heroPrompt,
+        videoPrompt,
+      });
+    } catch (saveError) {
+      console.warn("[MovieStudio] pending Supabase save failed:", saveError);
+    }
     console.log("[MovieStudio] done");
+
+    console.log("[MovieStudio] returning processing response", {
+      predictionId,
+      generationId: savedGeneration?.id || null,
+      heroFrameUrl: Boolean(heroUpload.publicUrl),
+      modelUsed: "kling",
+    });
 
     return Response.json({
       success: true,
-      videoUrl: videoUpload.publicUrl,
+      status: "processing",
+      predictionId,
+      generationId: savedGeneration?.id || null,
       heroFrameUrl: heroUpload.publicUrl,
-      modelUsed,
+      videoUrl: null,
+      modelUsed: "kling",
       imageModelUsed,
       scenePlan,
-      generationId: savedGeneration.id,
       meta: {
-        modelFallbackReason: requestedModelFallbackReason,
+        pipeline: "movie-studio-video-v1",
+        async: true,
+        ...(requestedModelFallbackReason ? { modelFallbackReason: requestedModelFallbackReason } : {}),
       },
     });
   } catch (error) {
@@ -607,6 +638,7 @@ export async function POST(req) {
     return Response.json(
       {
         success: false,
+        status: "failed",
         error: rateLimitError
           ? "Replicate is rate-limiting this request. Wait 1–2 minutes and try again."
           : billingError
