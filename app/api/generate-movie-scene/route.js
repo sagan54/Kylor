@@ -2,10 +2,8 @@ import { randomUUID } from "crypto";
 import { createClient } from "@supabase/supabase-js";
 import Replicate from "replicate";
 import { expandScene } from "../../../lib/movieStudio/scenePlanner";
-import { chooseVideoModel } from "../../../lib/movieStudio/modelRouter";
+import { chooseVideoModel, getVideoModelFallbackReason, VIDEO_MODEL_FALLBACK_REASON } from "../../../lib/movieStudio/modelRouter";
 import { generateKlingVideo, KLING_MODEL } from "../../../lib/movieStudio/videoAdapters/klingAdapter";
-import { generateVeoVideo } from "../../../lib/movieStudio/videoAdapters/veoAdapter";
-import { generateSeedanceVideo } from "../../../lib/movieStudio/videoAdapters/seedanceAdapter";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -284,15 +282,7 @@ async function generateVideoForModel({ modelUsed, imageUrl, prompt, duration, ra
     return await generateKlingVideo({ imageUrl, prompt, duration, ratio });
   }
 
-  if (modelUsed === "veo") {
-    return await generateVeoVideo({ imageUrl, prompt, duration, ratio });
-  }
-
-  if (modelUsed === "seedance") {
-    return await generateSeedanceVideo({ imageUrl, prompt, duration, ratio });
-  }
-
-  throw new Error("Selected video model is not supported.");
+  throw new Error(VIDEO_MODEL_FALLBACK_REASON);
 }
 
 async function saveMovieGeneration({
@@ -310,6 +300,7 @@ async function saveMovieGeneration({
   heroFrameStoragePath,
   modelUsed,
   imageModelUsed,
+  modelFallbackReason = null,
   scenePlan,
   heroPrompt,
   videoPrompt,
@@ -341,6 +332,7 @@ async function saveMovieGeneration({
       modelUsed,
       imageModelUsed,
       selectedModel,
+      modelFallbackReason,
       duration,
       resolution,
       camera,
@@ -450,15 +442,20 @@ export async function POST(req) {
       const videoUrl = "/mock/movie-studio-video.mp4";
       const imageModelUsed = "mock-flux-2-max";
       let generationId = null;
+      let requestedModelFallbackReason = getVideoModelFallbackReason(selectedModel);
 
       console.log("[MovieStudio] generating hero frame");
       console.log("[MovieStudio] hero frame generated");
-      const modelUsed = chooseVideoModel({
+      let modelUsed = chooseVideoModel({
         selectedModel,
         motionIntent: scenePlan.motionIntent,
         mood: scenePlan.mood,
         prompt,
       });
+      if (modelUsed !== "kling") {
+        modelUsed = "kling";
+        requestedModelFallbackReason ||= VIDEO_MODEL_FALLBACK_REASON;
+      }
       console.log("[MovieStudio] selected video model:", modelUsed);
       console.log("[MovieStudio] generating video");
       console.log("[MovieStudio] video generated");
@@ -480,6 +477,7 @@ export async function POST(req) {
           heroFrameStoragePath: null,
           modelUsed,
           imageModelUsed,
+          modelFallbackReason: requestedModelFallbackReason,
           scenePlan,
           heroPrompt: "mock movie studio hero frame",
           videoPrompt,
@@ -500,6 +498,9 @@ export async function POST(req) {
         scenePlan,
         generationId,
         mock: true,
+        meta: {
+          modelFallbackReason: requestedModelFallbackReason,
+        },
       });
     }
 
@@ -527,12 +528,17 @@ export async function POST(req) {
       throw new Error("Failed to upload hero frame.");
     }
 
-    const modelUsed = chooseVideoModel({
+    let modelUsed = chooseVideoModel({
       selectedModel,
       motionIntent: scenePlan.motionIntent,
       mood: scenePlan.mood,
       prompt,
     });
+    let requestedModelFallbackReason = getVideoModelFallbackReason(selectedModel);
+    if (modelUsed !== "kling") {
+      modelUsed = "kling";
+      requestedModelFallbackReason ||= VIDEO_MODEL_FALLBACK_REASON;
+    }
     console.log("[MovieStudio] selected video model:", modelUsed);
 
     console.log("[MovieStudio] generating video");
@@ -572,6 +578,7 @@ export async function POST(req) {
       heroFrameStoragePath: heroUpload.storagePath,
       modelUsed,
       imageModelUsed,
+      modelFallbackReason: requestedModelFallbackReason,
       scenePlan,
       heroPrompt,
       videoPrompt,
@@ -586,6 +593,9 @@ export async function POST(req) {
       imageModelUsed,
       scenePlan,
       generationId: savedGeneration.id,
+      meta: {
+        modelFallbackReason: requestedModelFallbackReason,
+      },
     });
   } catch (error) {
     console.error("[MovieStudio] route failed:", error);
