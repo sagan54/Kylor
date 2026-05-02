@@ -1957,7 +1957,7 @@ export default function MovieStudio() {
   const [sound, setSound] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [viewMode, setViewMode] = useState("grid");
-  const [thumbSize, setThumbSize] = useState(420);
+  const [thumbSize, setThumbSize] = useState(620);
   const [credits, setCredits] = useState(9680);
   const [error, setError] = useState("");
   const [focused, setFocused] = useState(false);
