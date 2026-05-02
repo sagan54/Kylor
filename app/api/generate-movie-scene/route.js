@@ -8,7 +8,7 @@ import { generateVeoVideo } from "../../../lib/movieStudio/videoAdapters/veoAdap
 import { generateSeedanceVideo } from "../../../lib/movieStudio/videoAdapters/seedanceAdapter";
 
 export const runtime = "nodejs";
-export const maxDuration = 600;
+export const maxDuration = 300;
 
 const GENERATED_BUCKET = "generated-images";
 const FLUX_2_MAX_MODEL = "black-forest-labs/flux-2-max";
