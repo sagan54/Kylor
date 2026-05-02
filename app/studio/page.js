@@ -1850,7 +1850,11 @@ height: "100%",
               Movie Studio
             </div>
             <div style={{ fontSize: 18, fontWeight: 800, color: "white" }}>
-              Generated Frame
+              {activeOutput.status === "processing"
+                ? "Animating cinematic shot..."
+                : activeOutput.type === "Video"
+                  ? "Generated Movie Scene"
+                  : "Movie Scene"}
             </div>
           </div>
 

@@ -165,10 +165,15 @@ export async function GET(req) {
           images: [
             {
               type: "video",
+              status: "succeeded",
               url: videoUrl,
               heroFrameUrl,
               modelUsed: "kling",
               imageModelUsed: metadata.imageModelUsed || "mock-flux-2-max",
+              title: metadata.title || "Movie Scene",
+              cinematicPreset: metadata.cinematicPreset || null,
+              heroFramePrompt: metadata.heroPrompt || null,
+              videoMotionPrompt: metadata.videoPrompt || null,
             },
           ],
           metadata: {
@@ -253,10 +258,15 @@ export async function GET(req) {
         images: [
           {
             type: "video",
+            status: "succeeded",
             url: videoUrl,
             heroFrameUrl,
             modelUsed: metadata.modelUsed || "kling",
             imageModelUsed: metadata.imageModelUsed || null,
+            title: metadata.title || "Movie Scene",
+            cinematicPreset: metadata.cinematicPreset || null,
+            heroFramePrompt: metadata.heroPrompt || null,
+            videoMotionPrompt: metadata.videoPrompt || null,
           },
         ],
         metadata: {

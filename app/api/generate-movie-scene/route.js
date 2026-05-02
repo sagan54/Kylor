@@ -3,7 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import Replicate from "replicate";
 import { expandScene } from "../../../lib/movieStudio/scenePlanner";
 import { chooseVideoModel, getVideoModelFallbackReason, VIDEO_MODEL_FALLBACK_REASON } from "../../../lib/movieStudio/modelRouter";
-import { createKlingVideoPrediction, KLING_MODEL } from "../../../lib/movieStudio/videoAdapters/klingAdapter";
+import { createKlingVideoPrediction, getKlingResolutionWarning, KLING_MODEL } from "../../../lib/movieStudio/videoAdapters/klingAdapter";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -41,6 +41,21 @@ function normalizeFluxResolution(value) {
   if (resolution.includes("4k")) return "2 MP";
   if (resolution.includes("1080")) return "1 MP";
   return "1 MP";
+}
+
+function buildShortTitle(prompt) {
+  const cleaned = sanitizeText(prompt)
+    .replace(/^(a|an|the)\s+/i, "")
+    .replace(/[^\w\s-]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  const words = cleaned.split(" ").filter(Boolean).slice(0, 6);
+  const title = words
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(" ");
+
+  return title || "Movie Scene";
 }
 
 function assertServerConfig({ requireReplicate = true } = {}) {
@@ -106,34 +121,8 @@ async function fileOutputToUrl(output) {
   return null;
 }
 
-function buildHeroFramePrompt(scenePlan, { genre, resolution }) {
-  return [
-    "Premium cinematic hero frame for image-to-video generation.",
-    `Original scene: ${scenePlan.scene}`,
-    `Subject: ${scenePlan.subject}.`,
-    `Action: ${scenePlan.action}.`,
-    `Environment: ${scenePlan.environment}.`,
-    `Lighting: ${scenePlan.lighting}.`,
-    `Mood: ${scenePlan.mood}.`,
-    `Camera: ${scenePlan.shotType}, ${scenePlan.cameraMovement}, ${scenePlan.lens}.`,
-    `Genre language: ${genre || "general"}.`,
-    `Target finish: ${resolution || "1080p"}, cinematic color grade, sharp hero composition, high production value.`,
-    "No text, no captions, no UI, no watermark.",
-  ].join(" ");
-}
-
-function buildVideoPrompt(scenePlan) {
-  return [
-    scenePlan.scene,
-    `Animate this as ${scenePlan.motionIntent}.`,
-    `Subject motion: ${scenePlan.action}.`,
-    `Camera motion: ${scenePlan.cameraMovement}.`,
-    `Maintain ${scenePlan.mood} mood, ${scenePlan.lighting}, and coherent physical motion.`,
-  ].join(" ");
-}
-
-async function generateHeroFrame({ scenePlan, ratio, genre, resolution }) {
-  const prompt = buildHeroFramePrompt(scenePlan, { genre, resolution });
+async function generateHeroFrame({ scenePlan, ratio, resolution }) {
+  const prompt = scenePlan.heroFramePrompt || scenePlan.originalPrompt || scenePlan.scene || "";
   const input = {
     prompt,
     aspect_ratio: normalizeRatio(ratio),
@@ -277,9 +266,9 @@ async function uploadRemoteAsset({ remoteUrl, userId, kind, expectedType }) {
   };
 }
 
-async function createVideoPredictionForModel({ modelUsed, imageUrl, prompt, duration, ratio }) {
+async function createVideoPredictionForModel({ modelUsed, imageUrl, prompt, duration, ratio, resolution }) {
   if (modelUsed === "kling") {
-    return await createKlingVideoPrediction({ imageUrl, prompt, duration, ratio });
+    return await createKlingVideoPrediction({ imageUrl, prompt, duration, ratio, resolution });
   }
 
   throw new Error(VIDEO_MODEL_FALLBACK_REASON);
@@ -307,6 +296,8 @@ async function saveMovieGeneration({
   heroPrompt,
   videoPrompt,
 }) {
+  const title = buildShortTitle(prompt);
+
   const payload = {
     user_id: userId,
     prompt,
@@ -315,10 +306,15 @@ async function saveMovieGeneration({
     images: [
       {
         type: "video",
+        status: state,
         url: videoUrl || null,
         heroFrameUrl,
         modelUsed,
         imageModelUsed,
+        title,
+        cinematicPreset: scenePlan.cinematicPreset || null,
+        heroFramePrompt: heroPrompt,
+        videoMotionPrompt: videoPrompt,
       },
     ],
     ratio,
@@ -335,6 +331,8 @@ async function saveMovieGeneration({
       imageModelUsed,
       selectedModel,
       modelFallbackReason,
+      title,
+      cinematicPreset: scenePlan.cinematicPreset || null,
       remotePredictionId: predictionId,
       duration,
       resolution,
@@ -443,7 +441,7 @@ export async function POST(req) {
     });
     console.log("[MovieStudio] scene planned");
 
-    const videoPrompt = buildVideoPrompt(scenePlan);
+    const videoPrompt = scenePlan.videoMotionPrompt || scenePlan.originalPrompt || prompt;
 
     if (mockMode) {
       const heroFrameUrl = "/mock/movie-studio-hero.jpg";
@@ -451,6 +449,7 @@ export async function POST(req) {
       let generationId = null;
       const predictionId = `mock-${randomUUID()}`;
       let requestedModelFallbackReason = getVideoModelFallbackReason(selectedModel);
+      const resolutionWarning = getKlingResolutionWarning(resolution);
 
       console.log("[MovieStudio] generating hero frame");
       console.log("[MovieStudio] hero frame generated");
@@ -487,9 +486,9 @@ export async function POST(req) {
           state: "processing",
           modelUsed,
           imageModelUsed,
-          modelFallbackReason: requestedModelFallbackReason,
+          modelFallbackReason: requestedModelFallbackReason || resolutionWarning,
           scenePlan,
-          heroPrompt: "mock movie studio hero frame",
+          heroPrompt: scenePlan.heroFramePrompt || "mock movie studio hero frame",
           videoPrompt,
         });
         generationId = savedGeneration?.id || null;
@@ -515,10 +514,15 @@ export async function POST(req) {
         modelUsed: "kling",
         imageModelUsed,
         scenePlan,
+        heroFramePrompt: scenePlan.heroFramePrompt,
+        videoMotionPrompt: scenePlan.videoMotionPrompt,
         meta: {
           pipeline: "movie-studio-video-v1",
           async: true,
+          heroFramePrompt: scenePlan.heroFramePrompt,
+          videoMotionPrompt: scenePlan.videoMotionPrompt,
           ...(requestedModelFallbackReason ? { modelFallbackReason: requestedModelFallbackReason } : {}),
+          ...(resolutionWarning ? { resolutionWarning } : {}),
           mock: true,
         },
       });
@@ -532,7 +536,6 @@ export async function POST(req) {
     } = await generateHeroFrame({
       scenePlan,
       ratio,
-      genre,
       resolution,
     });
     console.log("[MovieStudio] hero frame generated");
@@ -555,6 +558,7 @@ export async function POST(req) {
       prompt,
     });
     let requestedModelFallbackReason = getVideoModelFallbackReason(selectedModel);
+    const resolutionWarning = getKlingResolutionWarning(resolution);
     if (modelUsed !== "kling") {
       modelUsed = "kling";
       requestedModelFallbackReason ||= VIDEO_MODEL_FALLBACK_REASON;
@@ -568,6 +572,7 @@ export async function POST(req) {
       prompt: videoPrompt,
       duration,
       ratio,
+      resolution,
     });
 
     const predictionId = videoPrediction?.id || null;
@@ -593,10 +598,10 @@ export async function POST(req) {
         heroFrameStoragePath: heroUpload.storagePath,
         predictionId,
         state: "processing",
-        modelUsed,
-        imageModelUsed,
-        modelFallbackReason: requestedModelFallbackReason,
-        scenePlan,
+      modelUsed,
+      imageModelUsed,
+      modelFallbackReason: requestedModelFallbackReason || resolutionWarning,
+      scenePlan,
         heroPrompt,
         videoPrompt,
       });
@@ -622,10 +627,15 @@ export async function POST(req) {
       modelUsed: "kling",
       imageModelUsed,
       scenePlan,
+      heroFramePrompt: scenePlan.heroFramePrompt,
+      videoMotionPrompt: scenePlan.videoMotionPrompt,
       meta: {
         pipeline: "movie-studio-video-v1",
         async: true,
+        heroFramePrompt: scenePlan.heroFramePrompt,
+        videoMotionPrompt: scenePlan.videoMotionPrompt,
         ...(requestedModelFallbackReason ? { modelFallbackReason: requestedModelFallbackReason } : {}),
+        ...(resolutionWarning ? { resolutionWarning } : {}),
       },
     });
   } catch (error) {
