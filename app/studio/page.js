@@ -1523,7 +1523,6 @@ async function hasAnyStudioGeneration(userId) {
     .from("image_generations")
     .select("id")
     .eq("user_id", userId)
-    .or("mode.eq.studio,source.eq.studio")
     .limit(1);
 
   if (error) {
