@@ -2038,6 +2038,7 @@ export default function MovieStudio() {
   const editorRef = useRef(null);
   const mentionDropdownRef = useRef(null);
   const resumedPollsRef = useRef(new Set());
+  const generationRequestInFlightRef = useRef(false);
 
   const [mentionQuery, setMentionQuery] = useState("");
   const [mentionOpen, setMentionOpen] = useState(false);
@@ -2119,6 +2120,7 @@ if (data.status === "succeeded" && data.generation?.images) {
   );
 
   setIsGenerating(false);
+  generationRequestInFlightRef.current = false;
   setCredits((c) => Math.max(0, c - 120));
   return;
 }
@@ -2133,6 +2135,7 @@ if (data.status === "succeeded" && data.generation?.images) {
             )
           );
           setIsGenerating(false);
+          generationRequestInFlightRef.current = false;
           setError(msg);
           return;
         }
@@ -2149,6 +2152,7 @@ if (data.status === "succeeded" && data.generation?.images) {
       )
     );
     setIsGenerating(false);
+    generationRequestInFlightRef.current = false;
     setError("Generation timed out. Please try again.");
   }, []);
 
@@ -2170,11 +2174,17 @@ if (data.status === "succeeded" && data.generation?.images) {
   }, [hasGenerated, isHydrated, outputs, pollStatus]);
 
   const handleGenerate = useCallback(async () => {
+    if (isGenerating || generationRequestInFlightRef.current) {
+      return;
+    }
+
     if (!prompt.trim()) {
       setError("Set the scene first — describe what you want to direct.");
       editorRef.current?.focus();
       return;
     }
+    generationRequestInFlightRef.current = true;
+
     let effectiveUserId = userId;
     if (!effectiveUserId) {
       try {
@@ -2185,6 +2195,7 @@ if (data.status === "succeeded" && data.generation?.images) {
 
     if (!effectiveUserId) {
       setError("Please log in to save Movie Studio generations to your account.");
+      generationRequestInFlightRef.current = false;
       return;
     }
 
@@ -2288,6 +2299,7 @@ if (data.status === "succeeded" && data.generation?.images) {
         stageTimers.forEach((timer) => clearTimeout(timer));
         setGenerationStage("");
         setIsGenerating(false);
+        generationRequestInFlightRef.current = false;
       }
 
       return;
@@ -2332,8 +2344,9 @@ if (data.status === "succeeded" && data.generation?.images) {
         )
       );
       setIsGenerating(false);
+      generationRequestInFlightRef.current = false;
     }
-  }, [prompt, mode, duration, resolution, genre, camera, ratio, pollStatus, hasGenerated, userId, selectedChar]);
+  }, [prompt, mode, duration, resolution, genre, camera, ratio, pollStatus, hasGenerated, userId, selectedChar, isGenerating]);
 
   useEffect(() => {
     const handler = (e) => {

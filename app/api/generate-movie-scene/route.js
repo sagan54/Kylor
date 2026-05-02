@@ -65,6 +65,22 @@ function isReplicateBillingError(error) {
   );
 }
 
+function isReplicateRateLimitError(error) {
+  const status =
+    error?.status ||
+    error?.response?.status ||
+    error?.cause?.status ||
+    error?.request?.status;
+  const message = String(error?.message || error || "").toLowerCase();
+
+  return (
+    status === 429 ||
+    message.includes("too many requests") ||
+    message.includes("rate limit") ||
+    message.includes("throttled")
+  );
+}
+
 async function fileOutputToUrl(output) {
   if (!output) return null;
   if (typeof output === "string") return output;
@@ -130,6 +146,7 @@ async function generateHeroFrame({ scenePlan, ratio, genre, resolution }) {
   };
 
   try {
+    console.log("[MovieStudio] generating hero frame with:", FLUX_2_MAX_MODEL);
     const output = await replicate.run(FLUX_2_MAX_MODEL, { input });
     const heroFrameUrl = await fileOutputToUrl(output);
     if (!heroFrameUrl) {
@@ -142,22 +159,33 @@ async function generateHeroFrame({ scenePlan, ratio, genre, resolution }) {
       heroPrompt: prompt,
     };
   } catch (primaryError) {
+    console.log("[MovieStudio] hero frame failed:", primaryError?.message || primaryError);
+    if (isReplicateRateLimitError(primaryError)) {
+      throw primaryError;
+    }
+
     console.warn("[Movie Studio] FLUX.2 Max failed, falling back to FLUX.2 Pro:", {
       error: primaryError?.message || "Unknown FLUX.2 Max error",
     });
   }
 
-  const fallbackOutput = await replicate.run(FLUX_2_PRO_MODEL, { input });
-  const fallbackHeroFrameUrl = await fileOutputToUrl(fallbackOutput);
-  if (!fallbackHeroFrameUrl) {
-    throw new Error("No hero frame URL returned from FLUX.2 Pro.");
-  }
+  try {
+    console.log("[MovieStudio] generating hero frame with:", FLUX_2_PRO_MODEL);
+    const fallbackOutput = await replicate.run(FLUX_2_PRO_MODEL, { input });
+    const fallbackHeroFrameUrl = await fileOutputToUrl(fallbackOutput);
+    if (!fallbackHeroFrameUrl) {
+      throw new Error("No hero frame URL returned from FLUX.2 Pro.");
+    }
 
-  return {
-    heroFrameUrl: fallbackHeroFrameUrl,
-    imageModelUsed: FLUX_2_PRO_MODEL,
-    heroPrompt: prompt,
-  };
+    return {
+      heroFrameUrl: fallbackHeroFrameUrl,
+      imageModelUsed: FLUX_2_PRO_MODEL,
+      heroPrompt: prompt,
+    };
+  } catch (fallbackError) {
+    console.log("[MovieStudio] hero frame failed:", fallbackError?.message || fallbackError);
+    throw fallbackError;
+  }
 }
 
 function getExtensionFromContentType(contentType = "", fallback = "bin") {
@@ -563,15 +591,19 @@ export async function POST(req) {
     console.error("[MovieStudio] route failed:", error);
 
     const details = error?.message || String(error);
+    const rateLimitError = isReplicateRateLimitError(error);
     const billingError = isReplicateBillingError(error);
 
     return Response.json(
       {
         success: false,
-        error: billingError
-          ? "Replicate credit is insufficient. Add credits or enable MOVIE_STUDIO_MOCK=true to test without generation."
-          : "Movie Studio generation failed.",
+        error: rateLimitError
+          ? "Replicate is rate-limiting this request. Wait 1–2 minutes and try again."
+          : billingError
+            ? "Replicate credit is insufficient. Add credits or enable MOVIE_STUDIO_MOCK=true to test without generation."
+            : "Movie Studio generation failed.",
         details,
+        ...(rateLimitError ? { retryAfter: 60 } : {}),
       },
       { status: 200 }
     );
