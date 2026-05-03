@@ -1432,6 +1432,8 @@ function getFirstImageUrl(images) {
   if (Array.isArray(images)) {
     for (const image of images) {
       if (typeof image === "string" && image.trim()) return image;
+      if (image?.videoUrl) return image.videoUrl;
+      if (image?.video_url) return image.video_url;
       if (image?.url) return image.url;
       if (image?.image_url) return image.image_url;
       if (image?.src) return image.src;
@@ -1439,6 +1441,8 @@ function getFirstImageUrl(images) {
   }
 
   if (typeof images === "object") {
+    if (images.videoUrl) return images.videoUrl;
+    if (images.video_url) return images.video_url;
     if (images.url) return images.url;
     if (images.image_url) return images.image_url;
     if (images.src) return images.src;
@@ -1451,23 +1455,125 @@ function normalizeStudioType(value) {
   return String(value || "").toLowerCase() === "video" ? "Video" : "Image";
 }
 
+function getPrimaryGenerationImage(images) {
+  if (!images) return {};
+  if (Array.isArray(images)) {
+    return images.find((image) => image && typeof image === "object") || {};
+  }
+  return typeof images === "object" ? images : {};
+}
+
+function getOutputMediaUrl(output) {
+  return output?.videoUrl || output?.url || output?.imageUrl || null;
+}
+
+function getOutputPreviewUrl(output) {
+  return (
+    output?.thumbnailUrl ||
+    output?.heroFrameUrl ||
+    output?.imageUrl ||
+    output?.videoUrl ||
+    output?.url ||
+    null
+  );
+}
+
+function isMovieStudioOutput(output) {
+  return (
+    output?.mode === "movie-studio" ||
+    output?.source === "movie-studio" ||
+    output?.metadata?.pipeline === "movie-studio-video-v1" ||
+    Boolean(output?.predictionId && normalizeStudioType(output?.type) === "Video")
+  );
+}
+
+function isVideoOutput(output) {
+  return (
+    normalizeStudioType(output?.type) === "Video" ||
+    output?.mode === "movie-studio" ||
+    output?.source === "movie-studio" ||
+    Boolean(output?.videoUrl) ||
+    Boolean(output?.url && isVideoMediaUrl(output.url))
+  );
+}
+
+function outputMatchesMoviePrediction(output, predictionId, generationId) {
+  return (
+    (predictionId && output?.predictionId === predictionId) ||
+    (generationId && output?.generationId === generationId) ||
+    (generationId && output?.id === generationId)
+  );
+}
+
 function mapStudioGenerationRow(row) {
   const metadata = row?.metadata || {};
-  const imageUrl = getFirstImageUrl(row?.images);
+  const primaryImage = getPrimaryGenerationImage(row?.images);
+  const predictionId =
+    primaryImage.predictionId ||
+    primaryImage.prediction_id ||
+    metadata.remotePredictionId ||
+    metadata.predictionId ||
+    metadata.prediction_id ||
+    null;
+  const videoUrl =
+    primaryImage.videoUrl ||
+    primaryImage.video_url ||
+    metadata.videoUrl ||
+    metadata.video_url ||
+    (String(primaryImage.type || "").toLowerCase() === "video" ? primaryImage.url : null);
+  const heroFrameUrl =
+    primaryImage.heroFrameUrl ||
+    primaryImage.hero_frame_url ||
+    primaryImage.thumbnailUrl ||
+    primaryImage.thumbnail_url ||
+    metadata.heroFrameUrl ||
+    metadata.hero_frame_url ||
+    null;
+  const imageUrl = videoUrl || getFirstImageUrl(row?.images) || heroFrameUrl;
   const state = String(metadata.state || row?.status || "").toLowerCase();
+  const imageState = String(primaryImage.status || "").toLowerCase();
+  const status =
+    videoUrl
+      ? "succeeded"
+      : imageState === "processing" || (state === "processing" && predictionId)
+        ? "processing"
+        : imageState === "failed" || state === "failed"
+          ? "failed"
+          : heroFrameUrl && predictionId
+            ? "processing"
+            : "failed";
+  const type = normalizeStudioType(
+    primaryImage.type ||
+      metadata.studioType ||
+      metadata.type ||
+      (row.mode === "movie-studio" ? "Video" : row.mode)
+  );
 
   return {
     id: row.id,
-    predictionId: metadata.predictionId || metadata.prediction_id || null,
-    type: normalizeStudioType(metadata.studioType || metadata.type || row.mode),
+    generationId: row.id,
+    predictionId,
+    type,
+    mode: row.mode,
+    source: row.mode === "movie-studio" ? "movie-studio" : metadata.source,
     prompt: row.prompt || "",
-    status: imageUrl ? "succeeded" : state === "failed" ? "failed" : "failed",
+    status,
+    url: videoUrl || null,
     ratio: row.ratio || metadata.ratio || "Auto",
     imageUrl,
-    videoUrl: metadata.videoUrl || metadata.video_url || null,
-    errorMsg: imageUrl ? "" : "Saved generation has no image URL.",
+    videoUrl: videoUrl || null,
+    heroFrameUrl,
+    thumbnailUrl: primaryImage.thumbnailUrl || primaryImage.thumbnail_url || heroFrameUrl || null,
+    modelUsed: primaryImage.modelUsed || metadata.modelUsed || null,
+    imageModelUsed: primaryImage.imageModelUsed || metadata.imageModelUsed || null,
+    duration: metadata.duration || null,
+    resolution: metadata.resolution || null,
+    title: primaryImage.title || metadata.title || "Movie Scene",
+    statusText: status === "processing" ? "Animating shot with Kling..." : "",
+    errorMsg: status === "failed" ? primaryImage.error || metadata.error || "Movie Studio video failed." : "",
     generationData: row,
     createdAt: row.created_at,
+    completedAt: primaryImage.completedAt || metadata.completedAt || null,
   };
 }
 
@@ -1517,7 +1623,7 @@ async function loadStudioGenerations(userId) {
       );
     })
     .map(mapStudioGenerationRow)
-    .filter((row) => row.imageUrl || row.videoUrl);
+    .filter((row) => row.status === "processing" || row.imageUrl || row.videoUrl || row.heroFrameUrl);
 }
 
 async function hasAnyStudioGeneration(userId) {
@@ -1557,14 +1663,30 @@ function GalleryGrid({ outputs, viewMode, activeTab, thumbSize }) {
   const [activeOutput, setActiveOutput] = useState(null);
 
   const filtered = outputs.filter(o => {
-    if (activeTab === "Image") return o.type === "Image";
-    if (activeTab === "Video") return o.type === "Video";
+    if (activeTab === "Image") return !isVideoOutput(o);
+    if (activeTab === "Video") return isVideoOutput(o) || isMovieStudioOutput(o);
     return true;
   });
 
   const renderMedia = (o, expanded = false) => {
-    const mediaUrl = o.videoUrl || o.imageUrl;
-    const isVideo = o.type === "Video" && isVideoMediaUrl(mediaUrl);
+    const mediaUrl = getOutputMediaUrl(o);
+    const previewUrl = getOutputPreviewUrl(o);
+    const isVideo = isVideoOutput(o) && isVideoMediaUrl(mediaUrl);
+
+    if (!mediaUrl && previewUrl) {
+      return (
+        <img
+          src={previewUrl}
+          alt={o.prompt}
+          style={{
+            width: "100%",
+            height: "100%",
+            objectFit: expanded ? "contain" : "cover",
+            display: "block",
+          }}
+        />
+      );
+    }
 
     if (isVideo) {
       return (
@@ -1627,6 +1749,10 @@ justifyContent: "start",
     >
       {filtered.map((o, idx) => {
         const aspectRatio = ratioToCss(o.ratio);
+        const mediaUrl = getOutputMediaUrl(o);
+        const previewUrl = getOutputPreviewUrl(o);
+        const canOpen = o.status === "succeeded" && Boolean(mediaUrl);
+        const isVideoCard = isVideoOutput(o);
         return (
         <motion.div
           key={o.id}
@@ -1641,10 +1767,10 @@ style={{
   border: `1px solid ${o.status === "succeeded" ? "rgba(124,58,237,0.25)" : o.status === "failed" ? "rgba(248,113,113,0.2)" : BORDER}`,
   background: "rgba(10,12,22,0.8)",
   overflow: "hidden",
-  cursor: o.status === "succeeded" && o.imageUrl ? "pointer" : "default",
+  cursor: canOpen ? "pointer" : "default",
 }}
           onClick={() => {
-            if (o.status === "succeeded" && o.imageUrl) setActiveOutput(o);
+            if (canOpen) setActiveOutput(o);
           }}
         >
           <div
@@ -1656,10 +1782,10 @@ style={{
               overflow: "hidden",
             }}
           >
-            {o.status === "succeeded" && o.imageUrl ? (
+            {o.status === "succeeded" && mediaUrl ? (
               <>
                 {renderMedia(o)}
-                {o.type === "Video" && (
+                {isVideoCard && (
                   <div style={{
                     position: "absolute", inset: 0,
                     display: "flex", alignItems: "center", justifyContent: "center",
@@ -1673,6 +1799,55 @@ style={{
                     }}>▶</div>
                   </div>
                 )}
+              </>
+            ) : o.status === "processing" ? (
+              <>
+                {previewUrl && (
+                  <img
+                    src={previewUrl}
+                    alt={o.prompt}
+                    style={{
+                      position: "absolute",
+                      inset: 0,
+                      width: "100%",
+                      height: "100%",
+                      objectFit: "cover",
+                      opacity: 0.74,
+                      filter: "saturate(0.92) brightness(0.72)",
+                    }}
+                  />
+                )}
+                <div style={{
+                  position: "absolute",
+                  inset: 0,
+                  background: previewUrl
+                    ? "linear-gradient(180deg, rgba(4,6,12,0.18), rgba(4,6,12,0.82))"
+                    : "linear-gradient(135deg, #0d0f1a, #1a1f2e)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flexDirection: "column",
+                  gap: 8,
+                  padding: 18,
+                  textAlign: "center",
+                }}>
+                  <motion.div
+                    animate={{ rotate: 360 }}
+                    transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }}
+                    style={{
+                      width: 30, height: 30, borderRadius: "50%",
+                      border: "2px solid rgba(6,182,212,0.24)",
+                      borderTopColor: CYAN,
+                      boxShadow: "0 0 18px rgba(6,182,212,0.28)",
+                    }}
+                  />
+                  <div style={{ fontSize: 11, color: "rgba(255,255,255,0.88)", fontWeight: 700 }}>
+                    Animating shot with Kling...
+                  </div>
+                  <div style={{ fontSize: 10, color: TEXT_MUTED, lineHeight: 1.35 }}>
+                    This can take 1-4 minutes
+                  </div>
+                </div>
               </>
             ) : o.status === "failed" ? (
               <div style={{ textAlign: "center", padding: 16 }}>
@@ -1697,9 +1872,9 @@ style={{
               </div>
             )}
 
-            {o.status === "succeeded" && o.imageUrl && (
+            {o.status === "succeeded" && mediaUrl && (
               <motion.a
-                href={o.imageUrl}
+                href={mediaUrl}
                 download
                 target="_blank"
                 rel="noreferrer"
@@ -1852,7 +2027,7 @@ height: "100%",
             <div style={{ fontSize: 18, fontWeight: 800, color: "white" }}>
               {activeOutput.status === "processing"
                 ? "Animating cinematic shot..."
-                : activeOutput.type === "Video"
+                : isVideoOutput(activeOutput)
                   ? "Generated Movie Scene"
                   : "Movie Scene"}
             </div>
@@ -2054,6 +2229,7 @@ export default function MovieStudio() {
   const editorRef = useRef(null);
   const mentionDropdownRef = useRef(null);
   const resumedPollsRef = useRef(new Set());
+  const movieStatusPollsRef = useRef(new Set());
   const generationRequestInFlightRef = useRef(false);
 
   const [mentionQuery, setMentionQuery] = useState("");
@@ -2172,109 +2348,121 @@ if (data.status === "succeeded" && data.generation?.images) {
     setError("Generation timed out. Please try again.");
   }, []);
 
-  const pollMovieStudioStatus = useCallback(async (moviePrediction, outputId) => {
-    const MAX_POLLS = 180;
-    const POLL_INTERVAL = 3000;
-    const params = new URLSearchParams({
-      predictionId: moviePrediction.predictionId,
-    });
+  const pollMovieStudioPrediction = useCallback(async (item) => {
+    const predictionId = item?.predictionId;
+    if (!predictionId) return;
 
-    if (moviePrediction.generationId) {
-      params.set("generationId", moviePrediction.generationId);
+    const generationId = item?.generationId || (item?.id !== predictionId ? item?.id : null);
+    const startedAt = Number(item?.startedAt) || Date.parse(item?.createdAt || "");
+    const timedOut = Number.isFinite(startedAt) && startedAt > 0 && Date.now() - startedAt > 15 * 60 * 1000;
+
+    if (timedOut) {
+      const timeoutMessage = "Movie Studio video generation timed out. Please try again.";
+      setOutputs((prev) =>
+        prev.map((output) =>
+          outputMatchesMoviePrediction(output, predictionId, generationId)
+            ? { ...output, status: "failed", statusText: "", errorMsg: timeoutMessage }
+            : output
+        )
+      );
+      setActiveMoviePrediction((current) =>
+        current?.predictionId === predictionId ? null : current
+      );
+      setGenerationStage("");
+      return;
     }
 
-    for (let i = 0; i < MAX_POLLS; i++) {
-      await new Promise((r) => setTimeout(r, POLL_INTERVAL));
+    const key = String(predictionId);
+    if (movieStatusPollsRef.current.has(key)) return;
+    movieStatusPollsRef.current.add(key);
 
-      try {
-        const response = await fetch(`/api/movie-studio-status?${params.toString()}`);
-        const data = await parseMovieStudioJsonResponse(response);
+    try {
+      const params = new URLSearchParams({ predictionId });
+      if (generationId) {
+        params.set("generationId", generationId);
+      }
 
-        if (!response.ok) {
-          throw new Error(data?.error || "Movie Studio request failed.");
-        }
+      const response = await fetch(`/api/movie-studio-status?${params.toString()}`);
+      const data = await parseMovieStudioJsonResponse(response);
 
-        if (data?.success === false || data?.status === "failed") {
-          throw new Error(data?.error || data?.details || "Movie Studio video generation failed.");
-        }
+      if (!response.ok) {
+        throw new Error(data?.error || "Movie Studio request failed.");
+      }
 
-        if (data?.status === "succeeded" && data.videoUrl) {
-          setOutputs((prev) =>
-            prev.map((o) =>
-              o.id === outputId
-                ? {
-                    ...o,
-                    status: "succeeded",
-                    statusText: "",
-                    predictionId: data.predictionId,
-                    generationId: data.generationId || moviePrediction.generationId || null,
-                    source: "movie-studio",
-                    imageUrl: data.videoUrl,
-                    videoUrl: data.videoUrl,
-                    heroFrameUrl: moviePrediction.heroFrameUrl,
-                  }
-                : o
-            )
-          );
-          setActiveMoviePrediction(null);
-          setIsGenerating(false);
-          generationRequestInFlightRef.current = false;
-          setGenerationStage("");
-          setCredits((c) => Math.max(0, c - 120));
-          return;
-        }
+      if (data && !("success" in data) && !("status" in data)) {
+        throw new Error("The Movie Studio route returned an invalid response.");
+      }
 
-        if (data?.status === "processing") {
-          setGenerationStage("Animating shot with Kling...");
-          setOutputs((prev) =>
-            prev.map((o) =>
-              o.id === outputId ? { ...o, statusText: "Animating shot with Kling..." } : o
-            )
-          );
-          continue;
-        }
-
-        if (data && !("success" in data) && !("status" in data)) {
-          throw new Error("The Movie Studio route returned an invalid response.");
-        }
-
-        throw new Error(data?.error || data?.details || "Movie Studio returned an unexpected status.");
-      } catch (error) {
-        const msg = error?.message || "Movie Studio video generation failed.";
-        setError(msg);
+      if (data?.success === false || data?.status === "failed") {
+        const msg = data?.error || data?.details || "Movie Studio video failed.";
         setOutputs((prev) =>
-          prev.map((o) =>
-            o.id === outputId ? { ...o, status: "failed", statusText: "", errorMsg: msg } : o
+          prev.map((output) =>
+            outputMatchesMoviePrediction(output, predictionId, generationId)
+              ? { ...output, status: "failed", statusText: "", errorMsg: msg }
+              : output
           )
         );
-        setActiveMoviePrediction(null);
-        setIsGenerating(false);
-        generationRequestInFlightRef.current = false;
+        setActiveMoviePrediction((current) =>
+          current?.predictionId === predictionId ? null : current
+        );
         setGenerationStage("");
+        setError(msg);
         return;
       }
-    }
 
-    const timeoutMessage = "Movie Studio video generation timed out. Please try again.";
-    setError(timeoutMessage);
-    setOutputs((prev) =>
-      prev.map((o) =>
-        o.id === outputId
-          ? { ...o, status: "failed", statusText: "", errorMsg: timeoutMessage }
-          : o
-      )
-    );
-    setActiveMoviePrediction(null);
-    setIsGenerating(false);
-    generationRequestInFlightRef.current = false;
-    setGenerationStage("");
+      if (data?.status === "succeeded" && data.videoUrl) {
+        setOutputs((prev) =>
+          prev.map((output) =>
+            outputMatchesMoviePrediction(output, predictionId, generationId)
+              ? {
+                  ...output,
+                  status: "succeeded",
+                  statusText: "",
+                  predictionId: data.predictionId || predictionId,
+                  generationId: data.generationId || generationId || null,
+                  source: "movie-studio",
+                  mode: "movie-studio",
+                  url: data.videoUrl,
+                  imageUrl: data.videoUrl,
+                  videoUrl: data.videoUrl,
+                  thumbnailUrl: output.heroFrameUrl || output.thumbnailUrl || null,
+                  completedAt: new Date().toISOString(),
+                }
+              : output
+          )
+        );
+        setActiveMoviePrediction((current) =>
+          current?.predictionId === predictionId ? null : current
+        );
+        setGenerationStage("");
+        setCredits((c) => Math.max(0, c - 120));
+        return;
+      }
+
+      if (data?.status === "processing") {
+        setOutputs((prev) =>
+          prev.map((output) =>
+            outputMatchesMoviePrediction(output, predictionId, generationId) && output.statusText !== "Animating shot with Kling..."
+              ? { ...output, status: "processing", statusText: "Animating shot with Kling..." }
+              : output
+          )
+        );
+        return;
+      }
+
+      throw new Error(data?.error || data?.details || "Movie Studio returned an unexpected status.");
+    } catch (error) {
+      console.warn("[MovieStudio] status polling failed:", error);
+    } finally {
+      movieStatusPollsRef.current.delete(key);
+    }
   }, []);
 
   useEffect(() => {
     if (!hasGenerated) return;
 
     outputs.forEach((output) => {
-      if (output?.source === "movie-studio") return;
+      if (isMovieStudioOutput(output)) return;
 
       const predictionId = output?.predictionId;
       if (output?.status !== "processing" || !predictionId) return;
@@ -2287,8 +2475,43 @@ if (data.status === "succeeded" && data.generation?.images) {
     });
   }, [hasGenerated, isHydrated, outputs, pollStatus]);
 
+  useEffect(() => {
+    if (!hasGenerated) return;
+
+    const processingMovies = outputs.filter(
+      (output) =>
+        output?.status === "processing" &&
+        output?.predictionId &&
+        isMovieStudioOutput(output)
+    );
+
+    if (processingMovies.length === 0) return;
+
+    const pollProcessingMovies = () => {
+      processingMovies.forEach((output) => {
+        pollMovieStudioPrediction(output);
+      });
+    };
+
+    pollProcessingMovies();
+    const intervalId = setInterval(pollProcessingMovies, 5000);
+    return () => clearInterval(intervalId);
+  }, [hasGenerated, outputs, pollMovieStudioPrediction]);
+
+  const hasProcessingMovie = outputs.some(
+    (output) =>
+      output?.status === "processing" &&
+      output?.predictionId &&
+      isMovieStudioOutput(output)
+  );
+
   const handleGenerate = useCallback(async () => {
     if (isGenerating || generationRequestInFlightRef.current) {
+      return;
+    }
+
+    if (mode === "Video" && hasProcessingMovie) {
+      setError("Movie Studio is already animating a shot. Wait for it to finish before starting another.");
       return;
     }
 
@@ -2392,31 +2615,56 @@ if (data.status === "succeeded" && data.generation?.images) {
           prompt,
           startedAt: Date.now(),
         };
+        const processingItem = {
+          id: data.generationId || data.predictionId,
+          generationId: data.generationId || null,
+          predictionId: data.predictionId,
+          type: "video",
+          mode: "movie-studio",
+          source: "movie-studio",
+          status: "processing",
+          statusText: "Animating shot with Kling...",
+          url: null,
+          imageUrl: data.heroFrameUrl || null,
+          videoUrl: null,
+          heroFrameUrl: data.heroFrameUrl || null,
+          thumbnailUrl: data.heroFrameUrl || null,
+          prompt,
+          ratio,
+          duration,
+          resolution,
+          modelUsed: data.modelUsed || "kling",
+          imageModelUsed: data.imageModelUsed || null,
+          scenePlan: data.scenePlan || null,
+          createdAt: new Date().toISOString(),
+          startedAt: Date.now(),
+        };
 
         setActiveMoviePrediction(moviePrediction);
         stageTimers.forEach((timer) => clearTimeout(timer));
         setMovieStage("Animating shot with Kling...");
 
-        setOutputs((prev) =>
-          prev.map((o) =>
-            o.id === outputId
-              ? {
-                  ...o,
-                  status: "processing",
-                  statusText: "Animating shot with Kling...",
-                  predictionId: data.predictionId,
-                  generationId: data.generationId,
-                  source: "movie-studio",
-                  heroFrameUrl: data.heroFrameUrl,
-                  modelUsed: data.modelUsed,
-                  imageModelUsed: data.imageModelUsed,
-                  scenePlan: data.scenePlan,
-                }
-              : o
-          )
-        );
+        setOutputs((prev) => {
+          const withoutTemp = prev.filter((item) => item.id !== outputId);
+          const exists = withoutTemp.some(
+            (item) =>
+              item.predictionId === processingItem.predictionId ||
+              item.id === processingItem.id
+          );
 
-        pollMovieStudioStatus(moviePrediction, outputId);
+          if (exists) {
+            return withoutTemp.map((item) =>
+              item.predictionId === processingItem.predictionId || item.id === processingItem.id
+                ? { ...item, ...processingItem }
+                : item
+            );
+          }
+
+          return [processingItem, ...withoutTemp];
+        });
+
+        setIsGenerating(false);
+        generationRequestInFlightRef.current = false;
       } catch (e) {
         stageTimers.forEach((timer) => clearTimeout(timer));
         const msg = e?.message || "Movie Studio generation failed.";
@@ -2475,7 +2723,7 @@ if (data.status === "succeeded" && data.generation?.images) {
       setIsGenerating(false);
       generationRequestInFlightRef.current = false;
     }
-  }, [prompt, mode, duration, resolution, genre, camera, ratio, pollStatus, pollMovieStudioStatus, hasGenerated, userId, selectedChar, isGenerating]);
+  }, [prompt, mode, duration, resolution, genre, camera, ratio, pollStatus, hasGenerated, userId, selectedChar, isGenerating, hasProcessingMovie]);
 
   useEffect(() => {
     const handler = (e) => {
@@ -2596,14 +2844,19 @@ setPrompt(text);
     }
   }
 
-  const imageCount = outputs.filter(o => o.type === "Image").length;
-  const videoCount = outputs.filter(o => o.type === "Video").length;
+  const imageCount = outputs.filter(o => !isVideoOutput(o)).length;
+  const videoCount = outputs.filter(o => isVideoOutput(o) || isMovieStudioOutput(o)).length;
+  const composerIsGenerating = isGenerating || (mode === "Video" && hasProcessingMovie);
+  const composerGenerationStage =
+    mode === "Video" && hasProcessingMovie
+      ? "Animating shot with Kling..."
+      : generationStage;
 
   const composerProps = {
     prompt, setPrompt, mode, setMode, duration, setDuration,
     resolution, setResolution, camera, setCamera, genre, setGenre,
     variants, setVariants, ratio, setRatio,
-    focused, setFocused, error, setError, isGenerating, generationStage,
+    focused, setFocused, error, setError, isGenerating: composerIsGenerating, generationStage: composerGenerationStage,
     onGenerate: handleGenerate,
     editorRef, mentionDropdownRef,
     mentionOpen, setMentionOpen, mentionChars, mentionLoading, mentionQuery,

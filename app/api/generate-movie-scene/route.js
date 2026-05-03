@@ -297,6 +297,7 @@ async function saveMovieGeneration({
   videoPrompt,
 }) {
   const title = buildShortTitle(prompt);
+  const now = new Date().toISOString();
 
   const payload = {
     user_id: userId,
@@ -308,18 +309,23 @@ async function saveMovieGeneration({
         type: "video",
         status: state,
         url: videoUrl || null,
+        videoUrl: videoUrl || null,
+        predictionId,
         heroFrameUrl,
+        thumbnailUrl: heroFrameUrl,
         modelUsed,
         imageModelUsed,
         title,
         cinematicPreset: scenePlan.cinematicPreset || null,
         heroFramePrompt: heroPrompt,
         videoMotionPrompt: videoPrompt,
+        createdAt: now,
+        completedAt: state === "succeeded" ? now : null,
       },
     ],
     ratio,
     style: genre || "general",
-    created_at: new Date().toISOString(),
+    created_at: now,
     metadata: {
       state,
       source: "studio",
@@ -345,8 +351,8 @@ async function saveMovieGeneration({
       scenePlan,
       heroPrompt,
       videoPrompt,
-      startedAt: new Date().toISOString(),
-      completedAt: state === "succeeded" ? new Date().toISOString() : null,
+      startedAt: now,
+      completedAt: state === "succeeded" ? now : null,
     },
   };
 

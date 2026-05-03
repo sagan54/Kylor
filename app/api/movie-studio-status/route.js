@@ -126,6 +126,32 @@ async function updateGeneration(generationId, patch) {
   }
 }
 
+function getPrimaryImageItem(generation) {
+  const images = generation?.images;
+  if (Array.isArray(images)) {
+    return images.find((item) => item && typeof item === "object") || {};
+  }
+  return images && typeof images === "object" ? images : {};
+}
+
+function buildMovieImageItem(generation, patch) {
+  const current = getPrimaryImageItem(generation);
+  const heroFrameUrl =
+    patch.heroFrameUrl ||
+    current.heroFrameUrl ||
+    current.hero_frame_url ||
+    generation?.metadata?.heroFrameUrl ||
+    null;
+
+  return {
+    ...current,
+    type: "video",
+    heroFrameUrl,
+    thumbnailUrl: patch.thumbnailUrl || current.thumbnailUrl || current.thumbnail_url || heroFrameUrl,
+    ...patch,
+  };
+}
+
 function buildFailedResponse({ predictionId, generationId, details }) {
   return Response.json({
     success: false,
@@ -161,26 +187,30 @@ export async function GET(req) {
       const heroFrameUrl = metadata.heroFrameUrl || generation?.images?.[0]?.heroFrameUrl || "/mock/movie-studio-hero.jpg";
 
       if (generationId && generation) {
+        const completedAt = new Date().toISOString();
         await updateGeneration(generationId, {
           images: [
-            {
-              type: "video",
+            buildMovieImageItem(generation, {
               status: "succeeded",
+              predictionId,
               url: videoUrl,
+              videoUrl,
               heroFrameUrl,
+              thumbnailUrl: heroFrameUrl,
               modelUsed: "kling",
               imageModelUsed: metadata.imageModelUsed || "mock-flux-2-max",
               title: metadata.title || "Movie Scene",
               cinematicPreset: metadata.cinematicPreset || null,
               heroFramePrompt: metadata.heroPrompt || null,
               videoMotionPrompt: metadata.videoPrompt || null,
-            },
+              completedAt,
+            }),
           ],
           metadata: {
             ...metadata,
             state: "succeeded",
             videoUrl,
-            completedAt: new Date().toISOString(),
+            completedAt,
           },
         });
       }
@@ -210,13 +240,22 @@ export async function GET(req) {
       const details = prediction?.error || `Replicate prediction ${remoteStatus}.`;
       const generation = await loadGeneration(generationId);
       if (generationId && generation) {
+        const completedAt = new Date().toISOString();
         await updateGeneration(generationId, {
+          images: [
+            buildMovieImageItem(generation, {
+              status: "failed",
+              predictionId,
+              error: details,
+              completedAt,
+            }),
+          ],
           metadata: {
             ...(generation.metadata || {}),
             state: "failed",
             error: details,
             remoteStatus,
-            completedAt: new Date().toISOString(),
+            completedAt,
           },
         });
       }
@@ -236,6 +275,27 @@ export async function GET(req) {
     const remoteVideoUrl = await fileOutputToUrl(prediction?.output);
     if (!remoteVideoUrl) {
       const details = "Kling succeeded without returning a video URL.";
+      const generation = await loadGeneration(generationId);
+      if (generationId && generation) {
+        const completedAt = new Date().toISOString();
+        await updateGeneration(generationId, {
+          images: [
+            buildMovieImageItem(generation, {
+              status: "failed",
+              predictionId,
+              error: details,
+              completedAt,
+            }),
+          ],
+          metadata: {
+            ...(generation.metadata || {}),
+            state: "failed",
+            error: details,
+            remoteStatus,
+            completedAt,
+          },
+        });
+      }
       return buildFailedResponse({ predictionId, generationId, details });
     }
 
@@ -253,21 +313,25 @@ export async function GET(req) {
 
       const metadata = generation.metadata || {};
       const heroFrameUrl = metadata.heroFrameUrl || generation.images?.[0]?.heroFrameUrl || null;
+      const completedAt = new Date().toISOString();
 
       await updateGeneration(generationId, {
         images: [
-          {
-            type: "video",
+          buildMovieImageItem(generation, {
             status: "succeeded",
+            predictionId,
             url: videoUrl,
+            videoUrl,
             heroFrameUrl,
+            thumbnailUrl: heroFrameUrl,
             modelUsed: metadata.modelUsed || "kling",
             imageModelUsed: metadata.imageModelUsed || null,
             title: metadata.title || "Movie Scene",
             cinematicPreset: metadata.cinematicPreset || null,
             heroFramePrompt: metadata.heroPrompt || null,
             videoMotionPrompt: metadata.videoPrompt || null,
-          },
+            completedAt,
+          }),
         ],
         metadata: {
           ...metadata,
@@ -275,7 +339,7 @@ export async function GET(req) {
           remoteStatus,
           videoUrl,
           videoStoragePath,
-          completedAt: new Date().toISOString(),
+          completedAt,
         },
       });
     }
